@@ -8,7 +8,8 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="用户ID")
-    phone = Column(String(20), nullable=False, unique=True, comment="手机号/登录账号")
+    login_name = Column(String(50), nullable=False, unique=True, comment="登录账号（唯一，用于登录）")
+    phone = Column(String(20), unique=True, comment="手机号（可选，可用于登录）")
     email = Column(String(100), unique=True, comment="邮箱")
     password_hash = Column(String(255), nullable=False, comment="密码哈希值")
     username = Column(String(50), nullable=False, comment="用户姓名/昵称")
@@ -25,16 +26,19 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
     __table_args__ = (
+        Index("idx_login_name", "login_name"),
+        Index("idx_phone", "phone"),
         Index("idx_hermes_profile", "hermes_profile"),
         Index("idx_is_active", "is_active"),
     )
 
     def __repr__(self):
-        return f"<User(id={self.id}, phone={self.phone}, username={self.username})>"
+        return f"<User(id={self.id}, login_name={self.login_name}, username={self.username})>"
 
     def to_dict(self):
         return {
             "id": self.id,
+            "login_name": self.login_name,
             "phone": self.phone,
             "email": self.email,
             "username": self.username,

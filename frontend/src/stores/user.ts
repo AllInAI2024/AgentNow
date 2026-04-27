@@ -8,7 +8,7 @@ export const useUserStore = defineStore('user', () => {
   const userInfo = ref<User | null>(null)
 
   const isLoggedIn = computed(() => !!token.value)
-  const isAdmin = computed(() => userInfo.value?.role === 'admin')
+  const isAdmin = computed(() => userInfo.value?.is_super_admin ?? false)
   const needsChangePassword = computed(() => userInfo.value?.is_default_password ?? false)
 
   const setToken = (newToken: string) => {
@@ -21,8 +21,8 @@ export const useUserStore = defineStore('user', () => {
     localStorage.setItem('userInfo', JSON.stringify(info))
   }
 
-  const login = async (phone: string, password: string) => {
-    const result = await authApi.login({ phone, password })
+  const login = async (loginName: string, password: string) => {
+    const result = await authApi.login({ login_name: loginName, password })
     setToken(result.access_token)
     setUserInfo(result.user)
     return result

@@ -18,13 +18,16 @@ router = APIRouter(prefix="/auth", tags=["认证"])
     "/login",
     response_model=Token,
     summary="用户登录",
-    description="使用账号+密码登录，返回JWT Token和用户信息"
+    description="使用登录名或手机号+密码登录，返回JWT Token和用户信息"
 )
 def login(
     login_data: UserLogin,
     db: Session = Depends(get_db)
 ):
-    user = db.query(User).filter(User.phone == login_data.phone).first()
+    user = db.query(User).filter(
+        (User.login_name == login_data.login_name) | 
+        (User.phone == login_data.login_name)
+    ).first()
     
     if not user or not verify_password(login_data.password, user.password_hash):
         raise HTTPException(

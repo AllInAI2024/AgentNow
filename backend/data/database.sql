@@ -1,6 +1,6 @@
 -- 智现 AgentNow 智能体平台数据库初始化脚本
 -- 数据库: agentnow
--- 版本: v4.0 (简化版 RBAC 权限管理系统)
+-- 版本: v5.0 (支持登录名和手机号双登录方式)
 -- 日期: 2026-04-27
 
 -- 创建数据库
@@ -11,9 +11,13 @@ USE agentnow;
 -- ============================================
 -- 一、用户表
 -- ============================================
+-- 用户可以用 login_name（登录名）或 phone（手机号）登录
+-- login_name 是必填的唯一登录账号
+-- phone 是可选的，但如果设置了必须唯一
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '用户ID',
-    phone VARCHAR(20) NOT NULL COMMENT '手机号/登录账号',
+    login_name VARCHAR(50) NOT NULL COMMENT '登录账号（唯一，用于登录）',
+    phone VARCHAR(20) COMMENT '手机号（可选，可用于登录）',
     email VARCHAR(100) COMMENT '邮箱',
     password_hash VARCHAR(255) NOT NULL COMMENT '密码哈希值',
     username VARCHAR(50) NOT NULL COMMENT '用户姓名/昵称',
@@ -28,6 +32,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_changed_at DATETIME COMMENT '密码修改时间',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_login_name (login_name),
     UNIQUE KEY uk_phone (phone),
     UNIQUE KEY uk_email (email),
     INDEX idx_hermes_profile (hermes_profile),
@@ -216,11 +221,13 @@ WHERE code IN (
 -- 七、初始化默认管理员用户
 -- ============================================
 -- 默认管理员账号：
+-- 登录名: admin
 -- 手机号: 13651165117
 -- 密码: 123456 (bcrypt哈希值)
 -- 注意: 首次登录后必须修改密码
 
 INSERT INTO users (
+    login_name,
     phone, 
     email, 
     password_hash, 
@@ -236,6 +243,7 @@ INSERT INTO users (
     password_changed_at
 )
 VALUES (
+    'admin',
     '13651165117',
     NULL,
     '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/XewdhYfU/xBBbq/2K',
@@ -252,7 +260,7 @@ VALUES (
 );
 
 -- 为管理员用户分配超级管理员角色
-SET @admin_user_id = (SELECT id FROM users WHERE phone = '13651165117');
+SET @admin_user_id = (SELECT id FROM users WHERE login_name = 'admin');
 SET @super_admin_role_id = (SELECT id FROM roles WHERE code = 'super_admin');
 
 INSERT INTO user_roles (user_id, role_id)
@@ -263,6 +271,7 @@ VALUES (@admin_user_id, @super_admin_role_id);
 -- ============================================
 -- 数据库初始化完成
 -- 默认管理员账号:
+-- 登录名: admin
 -- 手机号: 13651165117
 -- 密码: 123456
 -- 注意: 首次登录后必须修改密码

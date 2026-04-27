@@ -56,7 +56,7 @@
           <div class="login-card">
             <div class="card-header">
               <h2 class="card-title">欢迎登录</h2>
-              <p class="card-subtitle">请使用您的企业账号登录平台</p>
+              <p class="card-subtitle">请使用您的登录账号或手机号登录</p>
             </div>
 
             <a-form
@@ -67,12 +67,12 @@
               @finish="handleLogin"
               class="login-form"
             >
-              <a-form-item class="form-item" name="phone" label="账号">
+              <a-form-item class="form-item" name="login_name" label="账号">
                 <div class="input-wrapper">
                   <a-input
-                    v-model:value="formState.phone"
+                    v-model:value="formState.login_name"
                     size="large"
-                    placeholder="请输入账号或手机号"
+                    placeholder="请输入登录名或手机号"
                     class="custom-input"
                   >
                     <template #prefix>
@@ -164,12 +164,12 @@ const loading = ref(false)
 const rememberMe = ref(false)
 
 const formState = reactive({
-  phone: '',
+  login_name: '',
   password: '',
 })
 
 const rules: Record<string, Rule[]> = {
-  phone: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+  login_name: [{ required: true, message: '请输入登录名或手机号', trigger: 'blur' }],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 6, message: '密码长度至少6位', trigger: 'blur' },
@@ -187,7 +187,7 @@ const handleLogin = async () => {
 
   loading.value = true
   try {
-    const result = await userStore.login(formState.phone, formState.password)
+    const result = await userStore.login(formState.login_name, formState.password)
 
     message.success('登录成功')
 
