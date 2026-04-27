@@ -1,7 +1,7 @@
 -- 智现 AgentNow 智能体平台数据库初始化脚本
 -- 数据库: agentnow
--- 版本: v5.0 (支持登录名和手机号双登录方式)
--- 日期: 2026-04-27
+-- 版本: v6.0 (新增部门管理和员工管理)
+-- 日期: 2026-04-28
 
 -- 创建数据库
 CREATE DATABASE IF NOT EXISTS agentnow DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -9,13 +9,36 @@ CREATE DATABASE IF NOT EXISTS agentnow DEFAULT CHARACTER SET utf8mb4 COLLATE utf
 USE agentnow;
 
 -- ============================================
--- 一、用户表
+-- 一、部门表
+-- ============================================
+-- 部门是树形结构，支持多级部门
+-- 删除父级部门时级联删除所有子部门
+CREATE TABLE IF NOT EXISTS departments (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '部门ID',
+    parent_id BIGINT DEFAULT 0 COMMENT '父部门ID（0表示顶级部门）',
+    name VARCHAR(100) NOT NULL COMMENT '部门名称',
+    code VARCHAR(50) COMMENT '部门编码',
+    description VARCHAR(500) COMMENT '部门描述',
+    sort INT DEFAULT 0 COMMENT '排序号',
+    status TINYINT DEFAULT 1 COMMENT '状态：1-启用，0-禁用',
+    leader_id BIGINT COMMENT '部门负责人ID（关联用户表）',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_parent_id (parent_id),
+    INDEX idx_code (code),
+    INDEX idx_sort (sort)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='部门表';
+
+-- ============================================
+-- 二、用户表（员工表）
 -- ============================================
 -- 用户可以用 login_name（登录名）或 phone（手机号）登录
 -- login_name 是必填的唯一登录账号
 -- phone 是可选的，但如果设置了必须唯一
+-- 员工必须属于某一个部门（department_id 不为空）
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '用户ID',
+    department_id BIGINT COMMENT '所属部门ID',
     login_name VARCHAR(50) NOT NULL COMMENT '登录账号（唯一，用于登录）',
     phone VARCHAR(20) COMMENT '手机号（可选，可用于登录）',
     email VARCHAR(100) COMMENT '邮箱',
@@ -35,12 +58,13 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE KEY uk_login_name (login_name),
     UNIQUE KEY uk_phone (phone),
     UNIQUE KEY uk_email (email),
+    INDEX idx_department_id (department_id),
     INDEX idx_hermes_profile (hermes_profile),
     INDEX idx_is_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 -- ============================================
--- 二、角色表
+-- 三、角色表
 -- ============================================
 CREATE TABLE IF NOT EXISTS roles (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '角色ID',
@@ -53,7 +77,7 @@ CREATE TABLE IF NOT EXISTS roles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色表';
 
 -- ============================================
--- 三、权限表
+-- 四、权限表
 -- ============================================
 CREATE TABLE IF NOT EXISTS permissions (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '权限ID',
@@ -71,7 +95,7 @@ CREATE TABLE IF NOT EXISTS permissions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='权限表';
 
 -- ============================================
--- 四、角色-权限关联表
+-- 五、角色-权限关联表
 -- ============================================
 CREATE TABLE IF NOT EXISTS role_permissions (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '关联ID',
@@ -86,7 +110,7 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色-权限关联表';
 
 -- ============================================
--- 五、用户-角色关联表
+-- 六、用户-角色关联表
 -- ============================================
 CREATE TABLE IF NOT EXISTS user_roles (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '关联ID',
@@ -116,30 +140,31 @@ VALUES
 INSERT INTO permissions (parent_id, name, code, type, path, icon)
 VALUES 
 (0, '工作台', 'dashboard', 1, '/dashboard', 'dashboard'),
+(0, '组织管理', 'organization', 1, '/organization', 'team'),
 (0, '系统管理', 'system', 1, '/system', 'setting'),
-(0, '用户管理', 'user', 1, '/user', 'user'),
 (0, '角色权限', 'role', 1, '/role', 'safety-certificate'),
 (0, '智能体管理', 'agent', 1, '/agent', 'robot'),
 (0, '知识库管理', 'knowledge', 1, '/knowledge', 'folder-open');
 
 -- 获取父权限ID
 SET @dashboard_id = (SELECT id FROM permissions WHERE code = 'dashboard');
+SET @organization_id = (SELECT id FROM permissions WHERE code = 'organization');
 SET @system_id = (SELECT id FROM permissions WHERE code = 'system');
-SET @user_id = (SELECT id FROM permissions WHERE code = 'user');
 SET @role_id = (SELECT id FROM permissions WHERE code = 'role');
 SET @agent_id = (SELECT id FROM permissions WHERE code = 'agent');
 SET @knowledge_id = (SELECT id FROM permissions WHERE code = 'knowledge');
+
+-- 二级菜单 - 组织管理
+INSERT INTO permissions (parent_id, name, code, type, path, icon)
+VALUES 
+(@organization_id, '部门管理', 'department', 1, '/organization/department', 'apartment'),
+(@organization_id, '员工管理', 'employee', 1, '/organization/employee', 'user');
 
 -- 二级菜单 - 系统管理
 INSERT INTO permissions (parent_id, name, code, type, path, icon)
 VALUES 
 (@system_id, '系统设置', 'system:setting', 1, '/system/setting', 'tool'),
 (@system_id, '系统监控', 'system:monitor', 1, '/system/monitor', 'monitor');
-
--- 二级菜单 - 用户管理
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
-VALUES 
-(@user_id, '用户列表', 'user:list', 1, '/user/list', 'list');
 
 -- 二级菜单 - 角色权限
 INSERT INTO permissions (parent_id, name, code, type, path, icon)
@@ -162,18 +187,27 @@ VALUES
 
 -- 插入按钮/接口级权限
 -- 获取一些二级菜单的ID
-SET @user_list_id = (SELECT id FROM permissions WHERE code = 'user:list');
+SET @department_id = (SELECT id FROM permissions WHERE code = 'department');
+SET @employee_id = (SELECT id FROM permissions WHERE code = 'employee');
 SET @role_list_id = (SELECT id FROM permissions WHERE code = 'role:list');
 
--- 用户管理相关按钮权限
+-- 部门管理相关按钮权限
 INSERT INTO permissions (parent_id, name, code, type, path)
 VALUES 
-(@user_list_id, '用户查询', 'user:query', 3, '/api/v1/users'),
-(@user_list_id, '用户创建', 'user:create', 3, '/api/v1/users'),
-(@user_list_id, '用户编辑', 'user:update', 3, '/api/v1/users/:id'),
-(@user_list_id, '用户删除', 'user:delete', 3, '/api/v1/users/:id'),
-(@user_list_id, '用户重置密码', 'user:reset_password', 3, '/api/v1/users/:id/reset-password'),
-(@user_list_id, '用户启用/禁用', 'user:toggle_status', 3, '/api/v1/users/:id/status');
+(@department_id, '部门查询', 'department:query', 3, '/api/v1/departments'),
+(@department_id, '部门创建', 'department:create', 3, '/api/v1/departments'),
+(@department_id, '部门编辑', 'department:update', 3, '/api/v1/departments/:id'),
+(@department_id, '部门删除', 'department:delete', 3, '/api/v1/departments/:id');
+
+-- 员工管理相关按钮权限
+INSERT INTO permissions (parent_id, name, code, type, path)
+VALUES 
+(@employee_id, '员工查询', 'employee:query', 3, '/api/v1/employees'),
+(@employee_id, '员工创建', 'employee:create', 3, '/api/v1/employees'),
+(@employee_id, '员工编辑', 'employee:update', 3, '/api/v1/employees/:id'),
+(@employee_id, '员工删除', 'employee:delete', 3, '/api/v1/employees/:id'),
+(@employee_id, '员工重置密码', 'employee:reset_password', 3, '/api/v1/employees/:id/reset-password'),
+(@employee_id, '员工启用/禁用', 'employee:toggle_status', 3, '/api/v1/employees/:id/status');
 
 -- 角色管理相关按钮权限
 INSERT INTO permissions (parent_id, name, code, type, path)
@@ -197,9 +231,11 @@ INSERT INTO role_permissions (role_id, permission_id)
 SELECT @system_admin_role_id, id FROM permissions 
 WHERE code IN (
     'dashboard', 
+    'organization', 'department', 'employee',
+    'department:query', 'department:create', 'department:update', 'department:delete',
+    'employee:query', 'employee:create', 'employee:update', 'employee:delete', 
+    'employee:reset_password', 'employee:toggle_status',
     'system', 'system:setting', 'system:monitor',
-    'user', 'user:list',
-    'user:query', 'user:create', 'user:update', 'user:delete', 'user:reset_password', 'user:toggle_status',
     'role', 'role:list', 'role:permission',
     'role:query', 'role:create', 'role:update', 'role:delete', 'role:assign_permission',
     'agent', 'agent:list', 'agent:config', 'agent:conversation',

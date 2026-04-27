@@ -27,6 +27,13 @@ from app.schemas.permission import (
     PermissionResponse,
     PermissionTreeResponse,
 )
+from app.schemas.department import (
+    DepartmentBase,
+    DepartmentCreate,
+    DepartmentUpdate,
+    DepartmentResponse,
+    DepartmentTreeResponse,
+)
 
 __all__ = [
     "UserBase",
@@ -52,4 +59,9 @@ __all__ = [
     "PermissionUpdate",
     "PermissionResponse",
     "PermissionTreeResponse",
+    "DepartmentBase",
+    "DepartmentCreate",
+    "DepartmentUpdate",
+    "DepartmentResponse",
+    "DepartmentTreeResponse",
 ]

@@ -8,6 +8,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="用户ID")
+    department_id = Column(BigInteger, comment="所属部门ID")
     login_name = Column(String(50), nullable=False, unique=True, comment="登录账号（唯一，用于登录）")
     phone = Column(String(20), unique=True, comment="手机号（可选，可用于登录）")
     email = Column(String(100), unique=True, comment="邮箱")
@@ -26,6 +27,7 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
     __table_args__ = (
+        Index("idx_department_id", "department_id"),
         Index("idx_login_name", "login_name"),
         Index("idx_phone", "phone"),
         Index("idx_hermes_profile", "hermes_profile"),
@@ -38,6 +40,7 @@ class User(Base):
     def to_dict(self):
         return {
             "id": self.id,
+            "department_id": self.department_id,
             "login_name": self.login_name,
             "phone": self.phone,
             "email": self.email,

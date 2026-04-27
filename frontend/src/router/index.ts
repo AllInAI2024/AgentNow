@@ -31,6 +31,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '工作台', requiresAuth: true },
   },
   {
+    path: '/organization/department',
+    name: 'DepartmentManage',
+    component: () => import('@/views/DepartmentManage.vue'),
+    meta: { title: '部门管理', requiresAuth: true },
+  },
+  {
+    path: '/organization/employee',
+    name: 'EmployeeManage',
+    component: () => import('@/views/EmployeeManage.vue'),
+    meta: { title: '员工管理', requiresAuth: true },
+  },
+  {
     path: '/permission/manage',
     name: 'PermissionManage',
     component: () => import('@/views/PermissionManage.vue'),

@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.models import Base, engine, SessionLocal
-from app.routers import auth_router, permission_router
+from app.routers import auth_router, permission_router, department_router, employee_router
 
 
 @asynccontextmanager
@@ -15,7 +15,6 @@ async def lifespan(app: FastAPI):
     
     yield
     
-
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -36,6 +35,8 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix=settings.API_PREFIX)
 app.include_router(permission_router, prefix=settings.API_PREFIX)
+app.include_router(department_router, prefix=settings.API_PREFIX)
+app.include_router(employee_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/")
