@@ -17,9 +17,37 @@
         <div class="header-center">
           <div class="nav-menu">
             <a-dropdown :trigger="['hover']" placement="bottom">
-              <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/permission') }">
+              <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/organization') }">
+                <TeamOutlined class="nav-icon" />
+                <span>组织管理</span>
+                <DownOutlined class="nav-arrow" />
+              </div>
+              <template #overlay>
+                <a-menu class="nav-submenu">
+                  <a-menu-item 
+                    key="/organization/department" 
+                    @click="handleNavigate('/organization/department')"
+                    :class="{ 'ant-menu-item-selected': isActiveRoute('/organization/department') }"
+                  >
+                    <ApartmentOutlined class="submenu-icon" />
+                    <span>部门管理</span>
+                  </a-menu-item>
+                  <a-menu-item 
+                    key="/organization/employee" 
+                    @click="handleNavigate('/organization/employee')"
+                    :class="{ 'ant-menu-item-selected': isActiveRoute('/organization/employee') }"
+                  >
+                    <UserOutlined class="submenu-icon" />
+                    <span>员工管理</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+
+            <a-dropdown :trigger="['hover']" placement="bottom">
+              <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/role') }">
                 <SafetyCertificateOutlined class="nav-icon" />
-                <span>权限管理</span>
+                <span>角色权限</span>
                 <DownOutlined class="nav-arrow" />
               </div>
               <template #overlay>
@@ -136,6 +164,8 @@ import {
   QuestionCircleOutlined,
   SettingOutlined,
   SafetyCertificateOutlined,
+  TeamOutlined,
+  ApartmentOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
