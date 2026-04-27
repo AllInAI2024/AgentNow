@@ -3,7 +3,6 @@
     <div class="page-background">
       <div class="bg-gradient bg-gradient-1"></div>
       <div class="bg-gradient bg-gradient-2"></div>
-      <div class="bg-pattern"></div>
     </div>
 
     <div class="page-content">
@@ -17,24 +16,14 @@
 
         <div class="main-card">
           <div class="card-header">
-            <div class="warning-icon-wrapper">
-              <div class="warning-icon-inner">
-                <WarningOutlined class="warning-icon" />
-              </div>
+            <div class="header-icon">
+              <WarningOutlined class="icon" />
             </div>
             <div class="header-text">
               <h1 class="header-title">修改密码</h1>
-              <p class="header-subtitle">您正在使用默认密码，请立即修改以确保账户安全</p>
+              <p class="header-subtitle">检测到默认密码，请立即修改以确保账户安全</p>
             </div>
           </div>
-
-          <a-alert
-            message="安全提醒"
-            description="检测到您正在使用系统默认密码，为了账户安全，请修改为新密码后再继续使用。"
-            type="warning"
-            show-icon
-            class="warning-alert"
-          />
 
           <a-form
             ref="formRef"
@@ -45,47 +34,30 @@
             class="password-form"
           >
             <a-form-item class="form-item" name="oldPassword" label="当前默认密码">
-              <div class="input-field-wrapper">
-                <a-input-password
-                  v-model:value="formState.oldPassword"
-                  size="large"
-                  placeholder="请输入当前默认密码"
-                  class="custom-input"
-                >
-                  <template #prefix>
-                    <LockOutlined class="input-prefix-icon" />
-                  </template>
-                </a-input-password>
-              </div>
+              <a-input-password
+                v-model:value="formState.oldPassword"
+                size="large"
+                placeholder="请输入当前默认密码"
+                class="custom-input"
+              >
+                <template #prefix>
+                  <LockOutlined class="input-icon" />
+                </template>
+              </a-input-password>
             </a-form-item>
 
-            <div class="form-divider">
-              <div class="divider-line"></div>
-              <span class="divider-text">设置新密码</span>
-              <div class="divider-line"></div>
-            </div>
-
             <a-form-item class="form-item" name="newPassword" label="新密码">
-              <div class="input-field-wrapper">
-                <a-input-password
-                  v-model:value="formState.newPassword"
-                  size="large"
-                  placeholder="请输入新密码（至少6位）"
-                  class="custom-input"
-                >
-                  <template #prefix>
-                    <SafetyCertificateOutlined class="input-prefix-icon" />
-                  </template>
-                </a-input-password>
-              </div>
-              <div class="password-hint">
-                <div class="hint-icon">
-                  <InfoCircleOutlined />
-                </div>
-                <span>密码长度至少6位，建议包含字母、数字和特殊字符</span>
-              </div>
+              <a-input-password
+                v-model:value="formState.newPassword"
+                size="large"
+                placeholder="请输入新密码（至少6位）"
+                class="custom-input"
+              >
+                <template #prefix>
+                  <SafetyCertificateOutlined class="input-icon" />
+                </template>
+              </a-input-password>
               <div class="password-strength" v-if="formState.newPassword.length > 0">
-                <span class="strength-label">密码强度：</span>
                 <div class="strength-indicator">
                   <div
                     class="strength-bar"
@@ -106,32 +78,33 @@
                 </div>
                 <span class="strength-text">{{ getPasswordStrengthText() }}</span>
               </div>
+              <div class="password-hint" v-else>
+                <span>密码长度至少6位，建议包含字母、数字和特殊字符</span>
+              </div>
             </a-form-item>
 
             <a-form-item class="form-item" name="confirmPassword" label="确认新密码">
-              <div class="input-field-wrapper">
-                <a-input-password
-                  v-model:value="formState.confirmPassword"
-                  size="large"
-                  placeholder="请再次输入新密码"
-                  class="custom-input"
-                >
-                  <template #prefix>
-                    <SafetyCertificateOutlined class="input-prefix-icon" />
-                  </template>
-                </a-input-password>
-              </div>
+              <a-input-password
+                v-model:value="formState.confirmPassword"
+                size="large"
+                placeholder="请再次输入新密码"
+                class="custom-input"
+              >
+                <template #prefix>
+                  <SafetyCertificateOutlined class="input-icon" />
+                </template>
+              </a-input-password>
               <div class="password-match-hint" v-if="formState.confirmPassword.length > 0">
                 <CheckCircleOutlined
-                  v-if="formState.newPassword === formState.confirmPassword && formState.newPassword.length > 0"
+                  v-if="formState.newPassword === formState.confirmPassword"
                   class="match-icon match-success"
                 />
                 <CloseCircleOutlined
-                  v-else-if="formState.confirmPassword.length > 0"
+                  v-else
                   class="match-icon match-error"
                 />
-                <span :class="formState.newPassword === formState.confirmPassword && formState.newPassword.length > 0 ? 'match-success' : 'match-error'">
-                  {{ formState.newPassword === formState.confirmPassword && formState.newPassword.length > 0 ? '两次密码一致' : '两次密码不一致' }}
+                <span :class="formState.newPassword === formState.confirmPassword ? 'match-success' : 'match-error'">
+                  {{ formState.newPassword === formState.confirmPassword ? '两次密码一致' : '两次密码不一致' }}
                 </span>
               </div>
             </a-form-item>
@@ -143,19 +116,14 @@
                 class="submit-btn"
                 :loading="loading"
               >
-                <template #icon v-if="!loading">
-                  <SafetyCertificateOutlined />
-                </template>
-                {{ loading ? '提交中...' : '确认修改密码' }}
+                确认修改密码
               </a-button>
             </div>
           </a-form>
 
           <div class="card-footer">
-            <div class="security-info">
-              <SafetyCertificateOutlined class="security-icon" />
-              <span>您的密码将通过加密存储，保护您的账户安全</span>
-            </div>
+            <SafetyCertificateOutlined class="security-icon" />
+            <span>密码将通过加密存储，保护您的账户安全</span>
           </div>
         </div>
 
@@ -176,7 +144,6 @@ import {
   WarningOutlined,
   LockOutlined,
   SafetyCertificateOutlined,
-  InfoCircleOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   LeftOutlined,
@@ -326,18 +293,6 @@ const handleGoBack = () => {
   animation: float 15s ease-in-out infinite reverse;
 }
 
-.bg-pattern {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 40px 40px;
-  background-position: center center;
-  mask-image: radial-gradient(circle at center, black 0%, transparent 80%);
-  -webkit-mask-image: radial-gradient(circle at center, black 0%, transparent 80%);
-}
-
 @keyframes float {
   0%, 100% {
     transform: translateY(0);
@@ -355,26 +310,26 @@ const handleGoBack = () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 20px;
 }
 
 .content-wrapper {
   width: 100%;
-  max-width: 520px;
+  max-width: 480px;
 }
 
 .page-header {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .header-back {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 6px 10px;
   border-radius: 8px;
   color: rgba(255, 255, 255, 0.6);
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -385,15 +340,15 @@ const handleGoBack = () => {
 }
 
 .back-icon {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .main-card {
   background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-radius: 20px;
-  padding: 40px;
+  border-radius: 16px;
+  padding: 28px;
   box-shadow:
     0 24px 48px rgba(0, 0, 0, 0.2),
     0 0 0 1px rgba(255, 255, 255, 0.1) inset;
@@ -402,69 +357,44 @@ const handleGoBack = () => {
 
 .card-header {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
+  align-items: flex-start;
+  gap: 12px;
   margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f2f3f5;
 }
 
-.warning-icon-wrapper {
-  margin-bottom: 20px;
-}
-
-.warning-icon-inner {
-  width: 72px;
-  height: 72px;
+.header-icon {
+  width: 40px;
+  height: 40px;
   background: linear-gradient(135deg, #FFF7E8 0%, #FFE8C8 100%);
-  border-radius: 50%;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 16px rgba(255, 125, 0, 0.2);
+  flex-shrink: 0;
 }
 
-.warning-icon {
-  font-size: 36px;
+.header-icon .icon {
+  font-size: 20px;
   color: #FF7D00;
 }
 
 .header-text {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex: 1;
 }
 
 .header-title {
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
   color: #1d2129;
-  margin: 0 0 8px 0;
+  margin: 0 0 4px 0;
 }
 
 .header-subtitle {
-  font-size: 14px;
+  font-size: 13px;
   color: #86909c;
   margin: 0;
-  max-width: 380px;
-}
-
-.warning-alert {
-  margin-bottom: 32px;
-  border-radius: 12px;
-  border: none;
-  background: linear-gradient(135deg, #FFF7E8 0%, #FFECC8 100%);
-}
-
-:deep(.warning-alert .ant-alert-message) {
-  font-weight: 600;
-  color: #FF7D00;
-  font-size: 14px;
-}
-
-:deep(.warning-alert .ant-alert-description) {
-  color: #E46B00;
-  font-size: 13px;
-  line-height: 1.6;
 }
 
 .password-form {
@@ -472,30 +402,27 @@ const handleGoBack = () => {
 }
 
 .form-item {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 :deep(.form-item .ant-form-item-label > label) {
   font-weight: 500;
   color: #4e5969;
-  font-size: 14px;
+  font-size: 13px;
+  height: 22px;
 }
 
-.input-field-wrapper {
-  position: relative;
-}
-
-.input-prefix-icon {
+.input-icon {
   color: #86909c;
   font-size: 16px;
 }
 
 :deep(.custom-input .ant-input-affix-wrapper) {
-  border-radius: 12px !important;
+  border-radius: 10px !important;
   border: 1px solid #e5e6eb;
   background: #ffffff;
-  padding: 10px 14px;
-  font-size: 15px;
+  padding: 8px 12px;
+  font-size: 14px;
   transition: all 0.2s ease;
 }
 
@@ -514,36 +441,20 @@ const handleGoBack = () => {
 }
 
 .password-hint {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.hint-icon {
-  color: #86909c;
-  font-size: 14px;
-  margin-top: 1px;
+  margin-top: 6px;
 }
 
 .password-hint span {
-  font-size: 12px;
+  font-size: 11px;
   color: #86909c;
-  line-height: 1.5;
 }
 
 .password-strength {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 8px;
   flex-wrap: wrap;
-}
-
-.strength-label {
-  font-size: 12px;
-  color: #86909c;
-  font-weight: 500;
 }
 
 .strength-indicator {
@@ -552,8 +463,8 @@ const handleGoBack = () => {
 }
 
 .strength-bar {
-  width: 32px;
-  height: 6px;
+  width: 28px;
+  height: 5px;
   border-radius: 3px;
   background: #f2f3f5;
   transition: all 0.3s ease;
@@ -576,24 +487,19 @@ const handleGoBack = () => {
 }
 
 .strength-text {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 500;
 }
-
-.strength-text:has(+ .weak) { color: #F53F3F; }
-.strength-text:has(+ .medium) { color: #FF7D00; }
-.strength-text:has(+ .strong) { color: #165DFF; }
-.strength-text:has(+ .excellent) { color: #00B42A; }
 
 .password-match-hint {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .match-icon {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .match-success {
@@ -605,91 +511,64 @@ const handleGoBack = () => {
 }
 
 .password-match-hint span {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
 }
 
-.form-divider {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 28px 0;
-}
-
-.divider-line {
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #e5e6eb, transparent);
-}
-
-.divider-text {
-  font-size: 12px;
-  font-weight: 600;
-  color: #86909c;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
 .form-actions {
-  margin-top: 32px;
+  margin-top: 20px;
 }
 
 .submit-btn {
   width: 100%;
-  height: 48px;
-  font-size: 16px;
-  font-weight: 600;
-  border-radius: 12px;
-  letter-spacing: 1px;
+  height: 44px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 10px;
   background: linear-gradient(135deg, #165DFF 0%, #0E42D2 100%);
   border: none;
-  box-shadow: 0 4px 16px rgba(22, 93, 255, 0.35);
+  box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3);
   transition: all 0.25s ease;
 }
 
 .submit-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(22, 93, 255, 0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(22, 93, 255, 0.4);
   background: linear-gradient(135deg, #4080FF 0%, #165DFF 100%);
 }
 
 .submit-btn:active:not(:disabled) {
   transform: translateY(0);
-  box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3);
+  box-shadow: 0 4px 8px rgba(22, 93, 255, 0.25);
 }
 
 .card-footer {
-  margin-top: 28px;
-}
-
-.security-info {
+  margin-top: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 12px;
-  background: rgba(0, 180, 42, 0.04);
-  border-radius: 10px;
-  border: 1px solid rgba(0, 180, 42, 0.1);
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid #f2f3f5;
 }
 
 .security-icon {
   color: #00B42A;
-  font-size: 16px;
+  font-size: 14px;
 }
 
-.security-info span {
-  font-size: 12px;
+.card-footer span {
+  font-size: 11px;
   color: #86909c;
 }
 
 .page-copyright {
-  margin-top: 24px;
+  margin-top: 16px;
   text-align: center;
 }
 
 .page-copyright p {
-  font-size: 12px;
+  font-size: 11px;
   color: rgba(255, 255, 255, 0.4);
   margin: 0;
 }
@@ -701,7 +580,7 @@ const handleGoBack = () => {
 @keyframes slideUp {
   from {
     opacity: 0;
-    transform: translateY(30px);
+    transform: translateY(20px);
   }
   to {
     opacity: 1;
@@ -724,30 +603,21 @@ const handleGoBack = () => {
   }
 
   .main-card {
-    padding: 28px 24px;
-    border-radius: 16px;
+    padding: 20px;
+    border-radius: 12px;
   }
 
   .header-title {
-    font-size: 20px;
-  }
-
-  .warning-icon-inner {
-    width: 60px;
-    height: 60px;
-  }
-
-  .warning-icon {
-    font-size: 28px;
+    font-size: 16px;
   }
 
   .submit-btn {
-    height: 44px;
-    font-size: 15px;
+    height: 42px;
+    font-size: 14px;
   }
 
   .strength-bar {
-    width: 28px;
+    width: 24px;
   }
 }
 </style>

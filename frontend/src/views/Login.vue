@@ -4,12 +4,6 @@
       <div class="bg-gradient bg-gradient-1"></div>
       <div class="bg-gradient bg-gradient-2"></div>
       <div class="bg-pattern"></div>
-      <div class="bg-floating-shapes">
-        <div class="shape shape-1"></div>
-        <div class="shape shape-2"></div>
-        <div class="shape shape-3"></div>
-        <div class="shape shape-4"></div>
-      </div>
     </div>
 
     <div class="login-content">
@@ -262,61 +256,12 @@ const handleLogin = async () => {
   -webkit-mask-image: radial-gradient(circle at center, black 0%, transparent 80%);
 }
 
-.bg-floating-shapes {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.shape {
-  position: absolute;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 20px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
-}
-
-.shape-1 {
-  width: 200px;
-  height: 200px;
-  top: 15%;
-  left: 10%;
-  transform: rotate(15deg);
-  animation: float 18s ease-in-out infinite;
-}
-
-.shape-2 {
-  width: 120px;
-  height: 120px;
-  top: 60%;
-  left: 5%;
-  transform: rotate(-10deg);
-  animation: float 20s ease-in-out infinite reverse;
-}
-
-.shape-3 {
-  width: 160px;
-  height: 160px;
-  bottom: 20%;
-  right: 8%;
-  transform: rotate(25deg);
-  animation: float 16s ease-in-out infinite;
-}
-
-.shape-4 {
-  width: 100px;
-  height: 100px;
-  top: 25%;
-  right: 15%;
-  transform: rotate(-20deg);
-  animation: float 22s ease-in-out infinite reverse;
-}
-
 @keyframes float {
   0%, 100% {
-    transform: translateY(0) rotate(var(--rotate, 0deg));
+    transform: translateY(0);
   }
   50% {
-    transform: translateY(-20px) rotate(calc(var(--rotate, 0deg) + 5deg));
+    transform: translateY(-20px);
   }
 }
 
