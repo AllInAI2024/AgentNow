@@ -76,7 +76,7 @@ DATABASE_URL=mysql+pymysql://root:你的密码@localhost:3306/agentnow
 JWT_SECRET_KEY=your_random_secret_key_here
 
 # 默认管理员配置
-DEFAULT_ADMIN_PHONE=admin
+DEFAULT_ADMIN_PHONE=13651165117
 DEFAULT_ADMIN_PASSWORD=123456
 ```
 
@@ -97,8 +97,8 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5116
 
 ### 6. 访问 API 文档
 
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- Swagger UI: http://localhost:5116/docs
+- ReDoc: http://localhost:5116/redoc
 
 ## API 接口
 
@@ -122,7 +122,7 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5116
 
 应用启动时会自动初始化默认管理员账号：
 
-- **手机号**: `admin`
+- **手机号**: `13651165117`
 - **默认密码**: `123456`
 - **角色**: `admin`
 
@@ -133,9 +133,9 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5116
 ### 1. 登录
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/auth/login \
+curl -X POST http://localhost:5116/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"phone":"admin","password":"123456"}'
+  -d '{"phone":"13651165117","password":"123456"}'
 ```
 
 响应：
@@ -145,7 +145,7 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
   "token_type": "bearer",
   "user": {
     "id": 1,
-    "phone": "admin",
+    "phone": "13651165117",
     "username": "系统管理员",
     "role": "admin",
     "is_active": true,
