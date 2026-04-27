@@ -246,7 +246,7 @@ VALUES (
     'admin',
     '13651165117',
     NULL,
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/XewdhYfU/xBBbq/2K',
+    '$2b$12$kRHVDsTios01SXRdfW.HSOAHSKH84lJXUkTQf/PeGZKMlPpkucdi2',
     '系统管理员',
     NULL,
     NULL,
