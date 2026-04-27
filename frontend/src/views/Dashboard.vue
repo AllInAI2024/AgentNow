@@ -3,13 +3,13 @@
     <a-layout class="layout-container">
       <a-layout-header class="layout-header">
         <div class="header-left">
-          <div class="logo-wrapper" @click="handleGoHome" style="cursor: pointer;">
+          <div class="logo-wrapper" @click="handleGoHome">
             <div class="logo-icon">
               <RobotOutlined class="logo-robot" />
             </div>
             <div class="logo-text">
-              <span class="logo-primary">AgentNow</span>
-              <span class="logo-secondary">智现</span>
+              <span class="logo-name">AgentNow</span>
+              <span class="logo-tag">智现</span>
             </div>
           </div>
         </div>
@@ -454,6 +454,7 @@ const handleAgents = () => {
   display: flex;
   align-items: center;
   gap: 12px;
+  cursor: pointer;
   padding: 6px 12px;
   border-radius: 10px;
   transition: all 0.2s ease;
@@ -472,31 +473,22 @@ const handleAgents = () => {
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3);
-  position: relative;
-}
-
-.logo-icon::after {
-  content: '';
-  position: absolute;
-  inset: 1px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 50%);
+  flex-shrink: 0;
 }
 
 .logo-robot {
   font-size: 22px;
   color: white;
-  position: relative;
-  z-index: 1;
 }
 
 .logo-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  white-space: nowrap;
 }
 
-.logo-primary {
+.logo-name {
   font-size: 18px;
   font-weight: 700;
   background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
@@ -504,16 +496,17 @@ const handleAgents = () => {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   letter-spacing: -0.5px;
+  line-height: 1.2;
 }
 
-.logo-secondary {
+.logo-tag {
   font-size: 11px;
   font-weight: 500;
   color: #86909c;
   padding: 2px 6px;
   background: rgba(22, 93, 255, 0.06);
   border-radius: 4px;
-  width: fit-content;
+  line-height: 1.2;
 }
 
 .header-right {
