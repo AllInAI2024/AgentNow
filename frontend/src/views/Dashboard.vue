@@ -7,9 +7,9 @@
             <div class="logo-icon">
               <RobotOutlined class="logo-robot" />
             </div>
-            <div class="logo-text">
-              <span class="logo-name">AgentNow</span>
-              <span class="logo-tag">智现</span>
+            <div class="logo-brand">
+              <span class="logo-chinese">智现</span>
+              <span class="logo-english">AgentNow</span>
             </div>
           </div>
         </div>
@@ -453,59 +453,75 @@ const handleAgents = () => {
 .logo-wrapper {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   cursor: pointer;
-  padding: 6px 12px;
-  border-radius: 10px;
-  transition: all 0.2s ease;
+  padding: 8px 16px;
+  border-radius: 12px;
+  transition: all 0.3s ease;
 }
 
 .logo-wrapper:hover {
-  background: rgba(22, 93, 255, 0.05);
+  background: rgba(22, 93, 255, 0.06);
 }
 
 .logo-icon {
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
-  border-radius: 12px;
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #165DFF 0%, #4080FF 50%, #722ED1 100%);
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3);
+  box-shadow: 
+    0 8px 24px rgba(22, 93, 255, 0.35),
+    0 2px 8px rgba(22, 93, 255, 0.2);
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.logo-icon::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, transparent 100%);
+  border-radius: 14px 14px 0 0;
 }
 
 .logo-robot {
-  font-size: 22px;
+  font-size: 26px;
   color: white;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
 }
 
-.logo-text {
+.logo-brand {
   display: flex;
   flex-direction: column;
   gap: 2px;
   white-space: nowrap;
 }
 
-.logo-name {
-  font-size: 18px;
+.logo-chinese {
+  font-size: 20px;
   font-weight: 700;
+  color: #1d2129;
+  letter-spacing: 2px;
+  line-height: 1.2;
+}
+
+.logo-english {
+  font-size: 13px;
+  font-weight: 600;
   background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  letter-spacing: -0.5px;
-  line-height: 1.2;
-}
-
-.logo-tag {
-  font-size: 11px;
-  font-weight: 500;
-  color: #86909c;
-  padding: 2px 6px;
-  background: rgba(22, 93, 255, 0.06);
-  border-radius: 4px;
+  letter-spacing: 1px;
   line-height: 1.2;
 }
 
