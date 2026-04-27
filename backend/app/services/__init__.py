@@ -5,7 +5,6 @@ from app.services.auth_service import (
     decode_access_token,
     get_db,
     get_current_user,
-    init_default_admin,
 )
 
 __all__ = [
@@ -15,5 +14,4 @@ __all__ = [
     "decode_access_token",
     "get_db",
     "get_current_user",
-    "init_default_admin",
 ]

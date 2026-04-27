@@ -213,10 +213,56 @@ WHERE code IN (
 );
 
 -- ============================================
+-- 七、初始化默认管理员用户
+-- ============================================
+-- 默认管理员账号：
+-- 手机号: 13651165117
+-- 密码: 123456 (bcrypt哈希值)
+-- 注意: 首次登录后必须修改密码
+
+INSERT INTO users (
+    phone, 
+    email, 
+    password_hash, 
+    username, 
+    avatar_url, 
+    hermes_profile, 
+    hermes_profile_config, 
+    is_active, 
+    is_default_password, 
+    is_super_admin, 
+    last_login_at, 
+    last_login_ip, 
+    password_changed_at
+)
+VALUES (
+    '13651165117',
+    NULL,
+    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/XewdhYfU/xBBbq/2K',
+    '系统管理员',
+    NULL,
+    NULL,
+    NULL,
+    TRUE,
+    TRUE,
+    TRUE,
+    NULL,
+    NULL,
+    NULL
+);
+
+-- 为管理员用户分配超级管理员角色
+SET @admin_user_id = (SELECT id FROM users WHERE phone = '13651165117');
+SET @super_admin_role_id = (SELECT id FROM roles WHERE code = 'super_admin');
+
+INSERT INTO user_roles (user_id, role_id)
+VALUES (@admin_user_id, @super_admin_role_id);
+
+-- ============================================
 -- 完成提示
 -- ============================================
 -- 数据库初始化完成
--- 注意：超级管理员账号需要在应用启动时初始化
--- 默认超级管理员配置在 .env 文件中：
--- DEFAULT_ADMIN_PHONE=13651165117
--- DEFAULT_ADMIN_PASSWORD=123456
+-- 默认管理员账号:
+-- 手机号: 13651165117
+-- 密码: 123456
+-- 注意: 首次登录后必须修改密码

@@ -7,22 +7,14 @@ from sqlalchemy import text
 from app.config import settings
 from app.models import Base, engine, SessionLocal
 from app.routers import auth_router, permission_router
-from app.services.auth_service import init_default_admin
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     
-    db = SessionLocal()
-    try:
-        init_default_admin(db)
-    finally:
-        db.close()
-    
     yield
     
-    pass
 
 
 app = FastAPI(
