@@ -122,7 +122,7 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5116
 
 应用启动时会自动初始化默认管理员账号：
 
-- **手机号**: `13651165117`
+- **账号**: `13651165117`
 - **默认密码**: `123456`
 - **角色**: `admin`
 
@@ -180,7 +180,7 @@ curl http://localhost:8000/api/v1/auth/me \
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT | 主键，自增 |
-| phone | VARCHAR(20) | 手机号（登录账号），唯一 |
+| phone | VARCHAR(20) | 账号，唯一 |
 | password_hash | VARCHAR(255) | 密码哈希 |
 | username | VARCHAR(50) | 用户名 |
 | role | VARCHAR(20) | 角色：admin/user |

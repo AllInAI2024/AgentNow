@@ -36,10 +36,13 @@ service.interceptors.response.use(
     if (response) {
       switch (response.status) {
         case 401:
-          message.error('登录已过期，请重新登录')
+          const errorMsg = response.data?.detail || '登录已过期，请重新登录'
+          message.error(errorMsg)
           const userStore = useUserStore()
-          userStore.logout()
-          window.location.href = '/login'
+          if (userStore.isLoggedIn) {
+            userStore.logout()
+            window.location.href = '/login'
+          }
           break
         case 403:
           message.error('没有权限访问')

@@ -11,7 +11,7 @@ USE agentnow;
 -- 用户表
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '用户ID',
-    phone VARCHAR(20) NOT NULL UNIQUE COMMENT '手机号（登录账号）',
+    phone VARCHAR(20) NOT NULL UNIQUE COMMENT '账号',
     password_hash VARCHAR(255) NOT NULL COMMENT '密码哈希值',
     username VARCHAR(50) NOT NULL COMMENT '用户名',
     role VARCHAR(20) DEFAULT 'user' COMMENT '角色：admin-管理员，user-普通用户',
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 -- 初始化默认管理员账号
--- 默认手机号: 13651165117
+-- 默认账号: 13651165117
 -- 默认密码: 123456 (bcrypt加密后的值)
 -- 注意: 实际插入时需要使用Python的bcrypt库生成真实的哈希值
 -- 这里使用占位符，实际在应用启动时初始化

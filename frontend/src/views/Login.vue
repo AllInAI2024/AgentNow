@@ -20,7 +20,7 @@
           <a-input
             v-model:value="formState.phone"
             size="large"
-            placeholder="请输入手机号"
+            placeholder="请输入账号"
           >
             <template #prefix>
               <UserOutlined style="color: rgba(0, 0, 0, 0.45)" />
@@ -80,7 +80,7 @@ const formState = reactive({
 })
 
 const rules: Record<string, Rule[]> = {
-  phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }],
+  phone: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 

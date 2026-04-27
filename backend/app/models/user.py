@@ -9,7 +9,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="用户ID")
-    phone = Column(String(20), nullable=False, unique=True, comment="手机号（登录账号）")
+    phone = Column(String(20), nullable=False, unique=True, comment="账号")
     password_hash = Column(String(255), nullable=False, comment="密码哈希值")
     username = Column(String(50), nullable=False, comment="用户名")
     role = Column(String(20), default="user", comment="角色：admin-管理员，user-普通用户")

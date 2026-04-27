@@ -5,12 +5,12 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class UserBase(BaseModel):
-    phone: str = Field(..., min_length=1, max_length=20, description="手机号")
+    phone: str = Field(..., min_length=1, max_length=20, description="账号")
     username: str = Field(..., min_length=1, max_length=50, description="用户名")
 
 
 class UserLogin(BaseModel):
-    phone: str = Field(..., min_length=1, max_length=20, description="手机号")
+    phone: str = Field(..., min_length=1, max_length=20, description="账号")
     password: str = Field(..., min_length=6, max_length=100, description="密码")
 
 

@@ -111,14 +111,29 @@ def init_default_admin(db: Session) -> None:
     admin = db.query(User).filter(User.phone == settings.DEFAULT_ADMIN_PHONE).first()
     
     if admin is None:
-        default_admin = User(
-            phone=settings.DEFAULT_ADMIN_PHONE,
-            password_hash=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD),
-            username=settings.DEFAULT_ADMIN_USERNAME,
-            role="admin",
-            is_active=True,
-            is_default_password=True,
-        )
-        db.add(default_admin)
-        db.commit()
-        db.refresh(default_admin)
+        old_admin = db.query(User).filter(User.role == "admin").first()
+        
+        if old_admin is not None:
+            old_admin.phone = settings.DEFAULT_ADMIN_PHONE
+            old_admin.password_hash = get_password_hash(settings.DEFAULT_ADMIN_PASSWORD)
+            old_admin.username = settings.DEFAULT_ADMIN_USERNAME
+            old_admin.is_active = True
+            old_admin.is_default_password = True
+            db.commit()
+        else:
+            default_admin = User(
+                phone=settings.DEFAULT_ADMIN_PHONE,
+                password_hash=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD),
+                username=settings.DEFAULT_ADMIN_USERNAME,
+                role="admin",
+                is_active=True,
+                is_default_password=True,
+            )
+            db.add(default_admin)
+            db.commit()
+            db.refresh(default_admin)
+    else:
+        if not verify_password(settings.DEFAULT_ADMIN_PASSWORD, admin.password_hash):
+            admin.password_hash = get_password_hash(settings.DEFAULT_ADMIN_PASSWORD)
+            admin.is_default_password = True
+            db.commit()
