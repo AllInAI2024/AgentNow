@@ -1,6 +1,5 @@
-from datetime import datetime
-from sqlalchemy import Boolean, Column, DateTime, BigInteger, String, Index
-from sqlalchemy.orm import validates
+from datetime import datetime, date
+from sqlalchemy import Boolean, Column, DateTime, BigInteger, String, SmallInteger, Date, Text, Index, ForeignKey
 
 from app.models import Base
 
@@ -9,40 +8,58 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="用户ID")
-    phone = Column(String(20), nullable=False, unique=True, comment="账号")
+    enterprise_id = Column(BigInteger, ForeignKey("enterprises.id", ondelete="SET NULL"), comment="所属企业ID")
+    phone = Column(String(20), nullable=False, unique=True, comment="手机号/登录账号")
+    email = Column(String(100), unique=True, comment="邮箱")
     password_hash = Column(String(255), nullable=False, comment="密码哈希值")
-    username = Column(String(50), nullable=False, comment="用户名")
-    role = Column(String(20), default="user", comment="角色：admin-管理员，user-普通用户")
+    username = Column(String(50), nullable=False, comment="用户姓名/昵称")
+    avatar_url = Column(String(500), comment="头像URL")
+    department = Column(String(100), comment="部门")
+    position = Column(String(100), comment="职位")
+    employee_no = Column(String(50), comment="员工工号")
+    gender = Column(SmallInteger, default=0, comment="性别：0-未知，1-男，2-女")
+    birthday = Column(Date, comment="生日")
+    hermes_profile = Column(String(100), nullable=True, comment="对应的 Hermes Profile 名称")
+    hermes_profile_config = Column(Text, comment="Hermes Profile 配置(JSON)")
     is_active = Column(Boolean, default=True, comment="是否激活")
     is_default_password = Column(Boolean, default=True, comment="是否为默认密码（首次登录需修改）")
-    hermes_profile = Column(String(100), nullable=True, comment="对应的 Hermes Profile 名称")
+    is_super_admin = Column(Boolean, default=False, comment="是否为超级管理员（跨企业全局权限）")
+    last_login_at = Column(DateTime, comment="最后登录时间")
+    last_login_ip = Column(String(50), comment="最后登录IP")
+    password_changed_at = Column(DateTime, comment="密码修改时间")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
     __table_args__ = (
-        Index("idx_phone", "phone"),
-        Index("idx_role", "role"),
+        Index("idx_enterprise_id", "enterprise_id"),
         Index("idx_hermes_profile", "hermes_profile"),
+        Index("idx_is_active", "is_active"),
     )
 
-    @validates("role")
-    def validate_role(self, key, role):
-        if role not in ["admin", "user"]:
-            raise ValueError("角色必须是 admin 或 user")
-        return role
-
     def __repr__(self):
-        return f"<User(id={self.id}, phone={self.phone}, role={self.role})>"
+        return f"<User(id={self.id}, phone={self.phone}, username={self.username})>"
 
     def to_dict(self):
         return {
             "id": self.id,
+            "enterprise_id": self.enterprise_id,
             "phone": self.phone,
+            "email": self.email,
             "username": self.username,
-            "role": self.role,
+            "avatar_url": self.avatar_url,
+            "department": self.department,
+            "position": self.position,
+            "employee_no": self.employee_no,
+            "gender": self.gender,
+            "birthday": self.birthday.isoformat() if self.birthday else None,
+            "hermes_profile": self.hermes_profile,
+            "hermes_profile_config": self.hermes_profile_config,
             "is_active": self.is_active,
             "is_default_password": self.is_default_password,
-            "hermes_profile": self.hermes_profile,
+            "is_super_admin": self.is_super_admin,
+            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
+            "last_login_ip": self.last_login_ip,
+            "password_changed_at": self.password_changed_at.isoformat() if self.password_changed_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

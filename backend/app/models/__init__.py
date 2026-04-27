@@ -14,6 +14,21 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+from app.models.enterprise import Enterprise
 from app.models.user import User
+from app.models.role import Role
+from app.models.permission import Permission
+from app.models.user_role import UserRole
+from app.models.role_permission import RolePermission
 
-__all__ = ["Base", "engine", "SessionLocal", "User"]
+__all__ = [
+    "Base", 
+    "engine", 
+    "SessionLocal", 
+    "Enterprise", 
+    "User", 
+    "Role", 
+    "Permission", 
+    "UserRole", 
+    "RolePermission"
+]

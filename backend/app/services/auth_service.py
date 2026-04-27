@@ -1,14 +1,15 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 
 from app.config import settings
-from app.models import SessionLocal, User
+from app.models import SessionLocal, User, Role, Permission, UserRole, RolePermission, Enterprise
 
 security = HTTPBearer()
 
@@ -107,33 +108,137 @@ def get_current_active_user(current_user: User = Depends(get_current_user)) -> U
     return current_user
 
 
+def get_user_roles(db: Session, user_id: int) -> List[Role]:
+    roles = db.query(Role).join(
+        UserRole, UserRole.role_id == Role.id
+    ).filter(
+        UserRole.user_id == user_id,
+        Role.status == 1
+    ).all()
+    return roles
+
+
+def get_user_permissions(db: Session, user_id: int) -> List[Permission]:
+    permissions = db.query(Permission).distinct().join(
+        RolePermission, RolePermission.permission_id == Permission.id
+    ).join(
+        Role, Role.id == RolePermission.role_id
+    ).join(
+        UserRole, UserRole.role_id == Role.id
+    ).filter(
+        UserRole.user_id == user_id,
+        Role.status == 1,
+        Permission.status == 1
+    ).order_by(Permission.parent_id, Permission.sort).all()
+    return permissions
+
+
+def get_user_menu_permissions(db: Session, user_id: int) -> List[Permission]:
+    permissions = db.query(Permission).distinct().join(
+        RolePermission, RolePermission.permission_id == Permission.id
+    ).join(
+        Role, Role.id == RolePermission.role_id
+    ).join(
+        UserRole, UserRole.role_id == Role.id
+    ).filter(
+        UserRole.user_id == user_id,
+        Role.status == 1,
+        Permission.status == 1,
+        Permission.type.in_([1, 2]),
+        Permission.visible == True
+    ).order_by(Permission.parent_id, Permission.sort).all()
+    return permissions
+
+
+def check_user_permission(db: Session, user_id: int, permission_code: str) -> bool:
+    user = db.query(User).filter(User.id == user_id).first()
+    
+    if user and user.is_super_admin:
+        return True
+    
+    exists = db.query(Permission).join(
+        RolePermission, RolePermission.permission_id == Permission.id
+    ).join(
+        Role, Role.id == RolePermission.role_id
+    ).join(
+        UserRole, UserRole.role_id == Role.id
+    ).filter(
+        UserRole.user_id == user_id,
+        Role.status == 1,
+        Permission.status == 1,
+        Permission.code == permission_code
+    ).first() is not None
+    
+    return exists
+
+
+def require_permission(db: Session, user_id: int, permission_code: str):
+    if not check_user_permission(db, user_id, permission_code):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"没有权限: {permission_code}"
+        )
+
+
+def get_default_enterprise(db: Session) -> Optional[Enterprise]:
+    enterprise = db.query(Enterprise).filter(
+        Enterprise.name == "智现科技有限公司"
+    ).first()
+    return enterprise
+
+
+def get_super_admin_role(db: Session) -> Optional[Role]:
+    role = db.query(Role).filter(
+        Role.code == "super_admin",
+        Role.is_system == True
+    ).first()
+    return role
+
+
+def assign_role_to_user(db: Session, user_id: int, role_id: int, created_by: Optional[int] = None):
+    existing = db.query(UserRole).filter(
+        UserRole.user_id == user_id,
+        UserRole.role_id == role_id
+    ).first()
+    
+    if existing is None:
+        user_role = UserRole(
+            user_id=user_id,
+            role_id=role_id,
+            created_by=created_by
+        )
+        db.add(user_role)
+        db.commit()
+
+
 def init_default_admin(db: Session) -> None:
     admin = db.query(User).filter(User.phone == settings.DEFAULT_ADMIN_PHONE).first()
     
+    default_enterprise = get_default_enterprise(db)
+    super_admin_role = get_super_admin_role(db)
+    
     if admin is None:
-        old_admin = db.query(User).filter(User.role == "admin").first()
+        default_admin = User(
+            enterprise_id=default_enterprise.id if default_enterprise else None,
+            phone=settings.DEFAULT_ADMIN_PHONE,
+            email=None,
+            password_hash=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD),
+            username=settings.DEFAULT_ADMIN_USERNAME,
+            is_super_admin=True,
+            is_active=True,
+            is_default_password=True,
+        )
+        db.add(default_admin)
+        db.commit()
+        db.refresh(default_admin)
         
-        if old_admin is not None:
-            old_admin.phone = settings.DEFAULT_ADMIN_PHONE
-            old_admin.password_hash = get_password_hash(settings.DEFAULT_ADMIN_PASSWORD)
-            old_admin.username = settings.DEFAULT_ADMIN_USERNAME
-            old_admin.is_active = True
-            old_admin.is_default_password = True
-            db.commit()
-        else:
-            default_admin = User(
-                phone=settings.DEFAULT_ADMIN_PHONE,
-                password_hash=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD),
-                username=settings.DEFAULT_ADMIN_USERNAME,
-                role="admin",
-                is_active=True,
-                is_default_password=True,
-            )
-            db.add(default_admin)
-            db.commit()
-            db.refresh(default_admin)
+        if super_admin_role:
+            assign_role_to_user(db, default_admin.id, super_admin_role.id)
     else:
         if not verify_password(settings.DEFAULT_ADMIN_PASSWORD, admin.password_hash):
             admin.password_hash = get_password_hash(settings.DEFAULT_ADMIN_PASSWORD)
             admin.is_default_password = True
             db.commit()
+        
+        if super_admin_role:
+            assign_role_to_user(db, admin.id, super_admin_role.id)
