@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, Text, Integer, SmallInteger, Index
+from sqlalchemy import Column, BigInteger, String, DateTime, Text, Integer, SmallInteger, Index
 
 from app.models import Base
 
@@ -13,15 +13,7 @@ class Permission(Base):
     code = Column(String(100), nullable=False, comment="权限编码（英文标识，如user:list, user:create）")
     type = Column(SmallInteger, default=1, comment="类型：1-菜单，2-按钮，3-API接口")
     path = Column(String(255), comment="路由路径/接口路径")
-    component = Column(String(255), comment="前端组件路径")
     icon = Column(String(100), comment="菜单图标")
-    sort = Column(Integer, default=0, comment="排序号")
-    status = Column(SmallInteger, default=1, comment="状态：0-禁用，1-启用")
-    visible = Column(Boolean, default=True, comment="菜单是否显示")
-    keep_alive = Column(Boolean, default=False, comment="是否缓存路由")
-    redirect = Column(String(255), comment="重定向路径")
-    permission_level = Column(SmallInteger, default=1, comment="权限级别：1-普通，2-敏感，3-高危")
-    description = Column(Text, comment="权限描述")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
@@ -29,7 +21,6 @@ class Permission(Base):
         Index("idx_parent_id", "parent_id"),
         Index("idx_code", "code"),
         Index("idx_type", "type"),
-        Index("idx_status", "status"),
     )
 
     def __repr__(self):
@@ -43,15 +34,7 @@ class Permission(Base):
             "code": self.code,
             "type": self.type,
             "path": self.path,
-            "component": self.component,
             "icon": self.icon,
-            "sort": self.sort,
-            "status": self.status,
-            "visible": self.visible,
-            "keep_alive": self.keep_alive,
-            "redirect": self.redirect,
-            "permission_level": self.permission_level,
-            "description": self.description,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

@@ -1,5 +1,5 @@
-from datetime import datetime, date
-from sqlalchemy import Boolean, Column, DateTime, BigInteger, String, SmallInteger, Date, Text, Index, ForeignKey
+from datetime import datetime
+from sqlalchemy import Boolean, Column, DateTime, BigInteger, String, Text, Index
 
 from app.models import Base
 
@@ -8,17 +8,11 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="用户ID")
-    department_id = Column(BigInteger, ForeignKey("departments.id", ondelete="SET NULL"), comment="所属部门ID")
-    role_id = Column(BigInteger, ForeignKey("roles.id", ondelete="SET NULL"), comment="角色ID（一对一关系）")
     phone = Column(String(20), nullable=False, unique=True, comment="手机号/登录账号")
     email = Column(String(100), unique=True, comment="邮箱")
     password_hash = Column(String(255), nullable=False, comment="密码哈希值")
     username = Column(String(50), nullable=False, comment="用户姓名/昵称")
     avatar_url = Column(String(500), comment="头像URL")
-    position = Column(String(100), comment="职位")
-    employee_no = Column(String(50), comment="员工工号")
-    gender = Column(SmallInteger, default=0, comment="性别：0-未知，1-男，2-女")
-    birthday = Column(Date, comment="生日")
     hermes_profile = Column(String(100), nullable=True, comment="对应的 Hermes Profile 名称")
     hermes_profile_config = Column(Text, comment="Hermes Profile 配置(JSON)")
     is_active = Column(Boolean, default=True, comment="是否激活")
@@ -31,8 +25,6 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
     __table_args__ = (
-        Index("idx_department_id", "department_id"),
-        Index("idx_role_id", "role_id"),
         Index("idx_hermes_profile", "hermes_profile"),
         Index("idx_is_active", "is_active"),
     )
@@ -43,16 +35,10 @@ class User(Base):
     def to_dict(self):
         return {
             "id": self.id,
-            "department_id": self.department_id,
-            "role_id": self.role_id,
             "phone": self.phone,
             "email": self.email,
             "username": self.username,
             "avatar_url": self.avatar_url,
-            "position": self.position,
-            "employee_no": self.employee_no,
-            "gender": self.gender,
-            "birthday": self.birthday.isoformat() if self.birthday else None,
             "hermes_profile": self.hermes_profile,
             "hermes_profile_config": self.hermes_profile_config,
             "is_active": self.is_active,
