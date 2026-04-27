@@ -21,7 +21,7 @@ class PermissionBase(BaseModel):
 
 
 class PermissionCreate(PermissionBase):
-    enterprise_id: Optional[int] = Field(None, description="所属企业ID")
+    pass
 
 
 class PermissionUpdate(BaseModel):
@@ -43,7 +43,6 @@ class PermissionUpdate(BaseModel):
 
 class PermissionResponse(PermissionBase):
     id: int
-    enterprise_id: Optional[int] = None
     status: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

@@ -133,7 +133,6 @@ def create_permission(
     
     permission = Permission(
         parent_id=permission_data.parent_id,
-        enterprise_id=permission_data.enterprise_id,
         name=permission_data.name,
         code=permission_data.code,
         type=permission_data.type,

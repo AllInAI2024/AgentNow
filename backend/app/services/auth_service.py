@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from app.config import settings
-from app.models import SessionLocal, User, Role, Permission, UserRole, RolePermission, Enterprise
+from app.models import SessionLocal, User, Role, Permission, UserRole, RolePermission
 
 security = HTTPBearer()
 
@@ -180,13 +180,6 @@ def require_permission(db: Session, user_id: int, permission_code: str):
         )
 
 
-def get_default_enterprise(db: Session) -> Optional[Enterprise]:
-    enterprise = db.query(Enterprise).filter(
-        Enterprise.name == "智现科技有限公司"
-    ).first()
-    return enterprise
-
-
 def get_super_admin_role(db: Session) -> Optional[Role]:
     role = db.query(Role).filter(
         Role.code == "super_admin",
@@ -214,12 +207,10 @@ def assign_role_to_user(db: Session, user_id: int, role_id: int, created_by: Opt
 def init_default_admin(db: Session) -> None:
     admin = db.query(User).filter(User.phone == settings.DEFAULT_ADMIN_PHONE).first()
     
-    default_enterprise = get_default_enterprise(db)
     super_admin_role = get_super_admin_role(db)
     
     if admin is None:
         default_admin = User(
-            enterprise_id=default_enterprise.id if default_enterprise else None,
             phone=settings.DEFAULT_ADMIN_PHONE,
             email=None,
             password_hash=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD),

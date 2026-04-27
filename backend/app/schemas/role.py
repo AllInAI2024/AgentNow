@@ -12,7 +12,7 @@ class RoleBase(BaseModel):
 
 
 class RoleCreate(RoleBase):
-    enterprise_id: Optional[int] = Field(None, description="所属企业ID")
+    pass
 
 
 class RoleUpdate(BaseModel):
@@ -20,13 +20,14 @@ class RoleUpdate(BaseModel):
     description: Optional[str] = Field(None, description="角色描述")
     sort: Optional[int] = Field(None, description="排序号")
     status: Optional[int] = Field(None, description="状态：0-禁用，1-启用")
+    data_scope: Optional[int] = Field(None, description="数据权限范围")
 
 
 class RoleResponse(RoleBase):
     id: int
-    enterprise_id: Optional[int] = None
     status: int
     is_system: bool
+    data_scope: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

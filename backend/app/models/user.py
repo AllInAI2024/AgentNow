@@ -8,13 +8,13 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="用户ID")
-    enterprise_id = Column(BigInteger, ForeignKey("enterprises.id", ondelete="SET NULL"), comment="所属企业ID")
+    department_id = Column(BigInteger, ForeignKey("departments.id", ondelete="SET NULL"), comment="所属部门ID")
+    role_id = Column(BigInteger, ForeignKey("roles.id", ondelete="SET NULL"), comment="角色ID（一对一关系）")
     phone = Column(String(20), nullable=False, unique=True, comment="手机号/登录账号")
     email = Column(String(100), unique=True, comment="邮箱")
     password_hash = Column(String(255), nullable=False, comment="密码哈希值")
     username = Column(String(50), nullable=False, comment="用户姓名/昵称")
     avatar_url = Column(String(500), comment="头像URL")
-    department = Column(String(100), comment="部门")
     position = Column(String(100), comment="职位")
     employee_no = Column(String(50), comment="员工工号")
     gender = Column(SmallInteger, default=0, comment="性别：0-未知，1-男，2-女")
@@ -23,7 +23,7 @@ class User(Base):
     hermes_profile_config = Column(Text, comment="Hermes Profile 配置(JSON)")
     is_active = Column(Boolean, default=True, comment="是否激活")
     is_default_password = Column(Boolean, default=True, comment="是否为默认密码（首次登录需修改）")
-    is_super_admin = Column(Boolean, default=False, comment="是否为超级管理员（跨企业全局权限）")
+    is_super_admin = Column(Boolean, default=False, comment="是否为超级管理员（全局权限）")
     last_login_at = Column(DateTime, comment="最后登录时间")
     last_login_ip = Column(String(50), comment="最后登录IP")
     password_changed_at = Column(DateTime, comment="密码修改时间")
@@ -31,7 +31,8 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
     __table_args__ = (
-        Index("idx_enterprise_id", "enterprise_id"),
+        Index("idx_department_id", "department_id"),
+        Index("idx_role_id", "role_id"),
         Index("idx_hermes_profile", "hermes_profile"),
         Index("idx_is_active", "is_active"),
     )
@@ -42,12 +43,12 @@ class User(Base):
     def to_dict(self):
         return {
             "id": self.id,
-            "enterprise_id": self.enterprise_id,
+            "department_id": self.department_id,
+            "role_id": self.role_id,
             "phone": self.phone,
             "email": self.email,
             "username": self.username,
             "avatar_url": self.avatar_url,
-            "department": self.department,
             "position": self.position,
             "employee_no": self.employee_no,
             "gender": self.gender,
