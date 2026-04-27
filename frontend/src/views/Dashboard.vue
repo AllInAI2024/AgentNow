@@ -14,6 +14,30 @@
           </div>
         </div>
 
+        <div class="header-center">
+          <div class="nav-menu">
+            <a-dropdown :trigger="['hover']" placement="bottom">
+              <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/permission') }">
+                <SafetyCertificateOutlined class="nav-icon" />
+                <span>权限管理</span>
+                <DownOutlined class="nav-arrow" />
+              </div>
+              <template #overlay>
+                <a-menu class="nav-submenu">
+                  <a-menu-item 
+                    key="/permission/manage" 
+                    @click="handleNavigate('/permission/manage')"
+                    :class="{ 'ant-menu-item-selected': isActiveRoute('/permission/manage') }"
+                  >
+                    <UnorderedListOutlined class="submenu-icon" />
+                    <span>功能点管理</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </div>
+        </div>
+
         <div class="header-right">
           <div class="header-actions">
             <a-tooltip title="消息通知">
@@ -342,6 +366,8 @@ import {
   ArrowUpOutlined,
   RightOutlined,
   InboxOutlined,
+  SafetyCertificateOutlined,
+  UnorderedListOutlined,
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
 
@@ -377,6 +403,14 @@ const getCurrentDate = () => {
 
 const handleGoHome = () => {
   router.push({ name: 'Dashboard' })
+}
+
+const isActiveRoute = (path: string) => {
+  return router.currentRoute.value.path.startsWith(path)
+}
+
+const handleNavigate = (path: string) => {
+  router.push(path)
 }
 
 const handleProfile = () => {
@@ -523,6 +557,85 @@ const handleAgents = () => {
   background-clip: text;
   letter-spacing: 1px;
   line-height: 1.2;
+}
+
+.header-center {
+  flex: 1;
+  display: flex;
+  justify-content: flex-start;
+  padding-left: 40px;
+}
+
+.nav-menu {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #4e5969;
+}
+
+.nav-menu-item:hover {
+  background: rgba(22, 93, 255, 0.08);
+  color: #165DFF;
+}
+
+.nav-menu-item-active {
+  background: rgba(22, 93, 255, 0.1);
+  color: #165DFF;
+  font-weight: 500;
+}
+
+.nav-icon {
+  font-size: 16px;
+}
+
+.nav-arrow {
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.nav-menu-item:hover .nav-arrow {
+  transform: rotate(180deg);
+}
+
+:deep(.nav-submenu) {
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e5e6eb;
+  padding: 8px;
+  min-width: 160px;
+}
+
+:deep(.nav-submenu .ant-menu-item) {
+  border-radius: 8px;
+  margin: 4px 0;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:deep(.nav-submenu .ant-menu-item:hover) {
+  background: rgba(22, 93, 255, 0.06);
+}
+
+:deep(.nav-submenu .ant-menu-item-selected) {
+  background: rgba(22, 93, 255, 0.1);
+  color: #165DFF;
+}
+
+.submenu-icon {
+  font-size: 14px;
+  color: #86909c;
 }
 
 .header-right {
