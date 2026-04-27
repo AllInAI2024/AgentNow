@@ -29,8 +29,11 @@
             v-model:value="formState.oldPassword"
             size="large"
             placeholder="请输入原密码"
-            :prefix="LockOutlined"
-          />
+          >
+            <template #prefix>
+              <LockOutlined style="color: rgba(0, 0, 0, 0.45)" />
+            </template>
+          </a-input-password>
         </a-form-item>
 
         <a-form-item class="form-item" name="newPassword" label="新密码">
@@ -38,8 +41,11 @@
             v-model:value="formState.newPassword"
             size="large"
             placeholder="请输入新密码（至少6位）"
-            :prefix="SafetyCertificateOutlined"
-          />
+          >
+            <template #prefix>
+              <SafetyCertificateOutlined style="color: rgba(0, 0, 0, 0.45)" />
+            </template>
+          </a-input-password>
           <div class="password-hint">
             密码长度至少6位，建议包含字母、数字和特殊字符
           </div>
@@ -50,8 +56,11 @@
             v-model:value="formState.confirmPassword"
             size="large"
             placeholder="请再次输入新密码"
-            :prefix="SafetyCertificateOutlined"
-          />
+          >
+            <template #prefix>
+              <SafetyCertificateOutlined style="color: rgba(0, 0, 0, 0.45)" />
+            </template>
+          </a-input-password>
         </a-form-item>
 
         <a-form-item>

@@ -21,8 +21,11 @@
             v-model:value="formState.phone"
             size="large"
             placeholder="请输入手机号"
-            :prefix="UserOutlined"
-          />
+          >
+            <template #prefix>
+              <UserOutlined style="color: rgba(0, 0, 0, 0.45)" />
+            </template>
+          </a-input>
         </a-form-item>
 
         <a-form-item class="form-item" name="password" label="密码">
@@ -30,8 +33,11 @@
             v-model:value="formState.password"
             size="large"
             placeholder="请输入密码"
-            :prefix="LockOutlined"
-          />
+          >
+            <template #prefix>
+              <LockOutlined style="color: rgba(0, 0, 0, 0.45)" />
+            </template>
+          </a-input-password>
         </a-form-item>
 
         <a-form-item>
