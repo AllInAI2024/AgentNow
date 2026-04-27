@@ -372,16 +372,17 @@ const handleLogout = () => {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   border: 1px solid #e5e6eb;
   padding: 8px;
-  min-width: 220px;
+  min-width: 260px;
 }
 
 :deep(.nav-submenu .ant-menu-item) {
   border-radius: 8px;
   margin: 4px 0;
-  padding: 8px 12px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  transition: all 0.2s ease;
 }
 
 :deep(.nav-submenu .ant-menu-item:hover) {
@@ -394,8 +395,14 @@ const handleLogout = () => {
 }
 
 .submenu-icon {
-  font-size: 14px;
+  font-size: 16px;
   color: #86909c;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .header-right {

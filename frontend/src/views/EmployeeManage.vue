@@ -48,7 +48,7 @@
           :pagination="false"
         >
           <template #bodyCell="{ column, record }">
-            <template v-else-if="column.key === 'department'">
+            <template v-if="column.key === 'department'">
               {{ getDepartmentName(record.department_id) }}
             </template>
             <template v-else-if="column.key === 'is_active'">

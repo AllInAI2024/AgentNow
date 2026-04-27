@@ -176,7 +176,7 @@ const employeeOptions = ref<User[]>([])
 const formRef = ref<FormInstance>()
 
 const formData = reactive({
-  parent_id: 0,
+  parent_id: undefined as number | undefined,
   name: '',
   code: '',
   description: '',
@@ -256,7 +256,7 @@ const fetchEmployees = async () => {
 }
 
 const resetForm = () => {
-  formData.parent_id = 0
+  formData.parent_id = undefined
   formData.name = ''
   formData.code = ''
   formData.description = ''
@@ -284,7 +284,7 @@ const handleEdit = async (record: Department) => {
     ])
     if (deptRes.code === 200) {
       const data = deptRes.data
-      formData.parent_id = data.parent_id
+      formData.parent_id = data.parent_id === 0 ? undefined : data.parent_id
       formData.name = data.name
       formData.code = data.code || ''
       formData.description = data.description || ''
@@ -333,7 +333,7 @@ const handleSubmit = async () => {
     if (isEdit.value && editId.value) {
       const res = await departmentApi.update(editId.value, { 
         ...formData,
-        parent_id: formData.parent_id,
+        parent_id: formData.parent_id ?? 0,
       })
       if (res.code === 200) {
         message.success('更新成功')
@@ -343,7 +343,7 @@ const handleSubmit = async () => {
     } else {
       const res = await departmentApi.create({
         ...formData,
-        parent_id: formData.parent_id,
+        parent_id: formData.parent_id ?? 0,
       })
       if (res.code === 200) {
         message.success('创建成功')
