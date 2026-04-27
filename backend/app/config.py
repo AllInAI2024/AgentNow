@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     PROJECT_VERSION: str = "0.1.0"
     API_PREFIX: str = "/api/v1"
     
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 5116
+    
     DATABASE_URL: str = "mysql+pymysql://root:password@localhost:3306/agentnow"
     
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
