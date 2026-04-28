@@ -298,6 +298,8 @@ import {
   FileTextOutlined,
   MessageOutlined,
   AppstoreOutlined,
+  DatabaseOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons-vue'
 import type { PermissionTree } from '@/types'
 import { useUserStore } from '@/stores/user'
@@ -355,6 +357,41 @@ const getMenuDescription = (menu: PermissionTree): string => {
     'knowledge:setting': '知识库配置',
   }
   return descMap[menu.code] || `进入${menu.name}`
+}
+
+const getHermesMenuDescription = (menu: PermissionTree): string => {
+  const descMap: Record<string, string> = {
+    'hermes:overview': '查看 Hermes 系统运行状态',
+    'hermes:profiles': '管理智能体配置文件',
+    'hermes:conversations': '查看和管理所有对话日志',
+    'hermes:skills': '管理已安装的 Skill 组件',
+    'hermes:mcp': '管理 MCP 服务配置',
+    'hermes:tools': '查看和管理工具集',
+    'hermes:memory': '查看智能体记忆系统',
+    'hermes:config': '管理 Hermes 系统配置',
+    'hermes:knowledge': '管理知识库内容',
+    'hermes:audit': '查看系统操作审计日志',
+  }
+  return descMap[menu.code] || `进入${menu.name}`
+}
+
+const getHermesGroupItems = (menu: PermissionTree, groupIndex: number): PermissionTree[] => {
+  const children = menu.children || []
+  const groups: PermissionTree[][] = [[], [], [], []]
+  let currentGroup = 0
+  
+  for (const child of children) {
+    if (child.divider) {
+      if (groups[currentGroup].length > 0) {
+        currentGroup++
+        if (currentGroup >= 4) break
+      }
+    } else {
+      groups[currentGroup].push(child)
+    }
+  }
+  
+  return groups[groupIndex] || []
 }
 
 const isMenuActive = (menu: PermissionTree): boolean => {
@@ -592,6 +629,52 @@ const handleLogout = () => {
   min-width: 360px;
   backdrop-filter: blur(24px);
   background: rgba(255, 255, 255, 0.96);
+}
+
+.hermes-submenu {
+  border-radius: 16px;
+  box-shadow: 
+    0 24px 64px rgba(0, 0, 0, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(229, 230, 235, 0.9);
+  padding: 16px;
+  min-width: 720px;
+  backdrop-filter: blur(24px);
+  background: rgba(255, 255, 255, 0.96);
+  display: flex;
+  gap: 24px;
+}
+
+.hermes-submenu-column {
+  flex: 1;
+  min-width: 320px;
+}
+
+.hermes-submenu-group {
+  margin-bottom: 16px;
+}
+
+.hermes-submenu-group:last-child {
+  margin-bottom: 0;
+}
+
+.hermes-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 8px 16px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #165DFF;
+  background: linear-gradient(90deg, rgba(22, 93, 255, 0.06) 0%, transparent 100%);
+  border-radius: 8px;
+  letter-spacing: 0.5px;
+}
+
+.hermes-group-title .group-icon {
+  font-size: 14px;
+  color: #165DFF;
 }
 
 .submenu-divider {
