@@ -19,48 +19,63 @@
             <a-dropdown :trigger="['hover']" placement="bottom">
               <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/organization') }">
                 <TeamOutlined class="nav-icon" />
-                <span>组织管理</span>
+                <span class="nav-text">组织管理</span>
                 <DownOutlined class="nav-arrow" />
               </div>
               <template #overlay>
-                <a-menu class="nav-submenu">
-                  <a-menu-item 
-                    key="/organization/department" 
+                <div class="nav-submenu">
+                  <div 
+                    class="submenu-item" 
+                    :class="{ 'submenu-item-active': isActiveRoute('/organization/department') }"
                     @click="handleNavigate('/organization/department')"
-                    :class="{ 'ant-menu-item-selected': isActiveRoute('/organization/department') }"
                   >
-                    <ApartmentOutlined class="submenu-icon" />
-                    <span>部门管理</span>
-                  </a-menu-item>
-                  <a-menu-item 
-                    key="/organization/employee" 
+                    <div class="submenu-icon-wrapper">
+                      <ApartmentOutlined class="submenu-icon" />
+                    </div>
+                    <div class="submenu-content">
+                      <span class="submenu-title">部门管理</span>
+                      <span class="submenu-desc">管理组织架构与层级</span>
+                    </div>
+                  </div>
+                  <div 
+                    class="submenu-item" 
+                    :class="{ 'submenu-item-active': isActiveRoute('/organization/employee') }"
                     @click="handleNavigate('/organization/employee')"
-                    :class="{ 'ant-menu-item-selected': isActiveRoute('/organization/employee') }"
                   >
-                    <UserOutlined class="submenu-icon" />
-                    <span>员工管理</span>
-                  </a-menu-item>
-                </a-menu>
+                    <div class="submenu-icon-wrapper">
+                      <UserOutlined class="submenu-icon" />
+                    </div>
+                    <div class="submenu-content">
+                      <span class="submenu-title">员工管理</span>
+                      <span class="submenu-desc">管理员工账号与信息</span>
+                    </div>
+                  </div>
+                </div>
               </template>
             </a-dropdown>
 
             <a-dropdown :trigger="['hover']" placement="bottom">
-              <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/role') }">
+              <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/role') || isActiveRoute('/permission') }">
                 <SafetyCertificateOutlined class="nav-icon" />
-                <span>角色权限</span>
+                <span class="nav-text">角色权限</span>
                 <DownOutlined class="nav-arrow" />
               </div>
               <template #overlay>
-                <a-menu class="nav-submenu">
-                  <a-menu-item 
-                    key="/permission/manage" 
+                <div class="nav-submenu">
+                  <div 
+                    class="submenu-item" 
+                    :class="{ 'submenu-item-active': isActiveRoute('/permission/manage') }"
                     @click="handleNavigate('/permission/manage')"
-                    :class="{ 'ant-menu-item-selected': isActiveRoute('/permission/manage') }"
                   >
-                    <UnorderedListOutlined class="submenu-icon" />
-                    <span>功能点管理</span>
-                  </a-menu-item>
-                </a-menu>
+                    <div class="submenu-icon-wrapper">
+                      <UnorderedListOutlined class="submenu-icon" />
+                    </div>
+                    <div class="submenu-content">
+                      <span class="submenu-title">功能点管理</span>
+                      <span class="submenu-desc">配置系统功能与权限</span>
+                    </div>
+                  </div>
+                </div>
               </template>
             </a-dropdown>
           </div>
@@ -228,12 +243,12 @@ const handleLogout = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 32px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  height: 64px;
+  padding: 0 40px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(229, 230, 235, 0.8);
+  height: 68px;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -251,24 +266,25 @@ const handleLogout = () => {
   cursor: pointer;
   padding: 8px 16px;
   border-radius: 12px;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .logo-wrapper:hover {
   background: rgba(22, 93, 255, 0.06);
+  transform: translateY(-1px);
 }
 
 .logo-icon {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   background: linear-gradient(135deg, #165DFF 0%, #4080FF 50%, #722ED1 100%);
-  border-radius: 14px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 
-    0 8px 24px rgba(22, 93, 255, 0.35),
-    0 2px 8px rgba(22, 93, 255, 0.2);
+    0 6px 20px rgba(22, 93, 255, 0.3),
+    0 2px 6px rgba(22, 93, 255, 0.15);
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
@@ -281,16 +297,16 @@ const handleLogout = () => {
   left: 0;
   right: 0;
   height: 50%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, transparent 100%);
-  border-radius: 14px 14px 0 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.25) 0%, transparent 100%);
+  border-radius: 12px 12px 0 0;
 }
 
 .logo-robot {
-  font-size: 26px;
+  font-size: 22px;
   color: white;
   position: relative;
   z-index: 1;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.15));
 }
 
 .logo-brand {
@@ -301,21 +317,21 @@ const handleLogout = () => {
 }
 
 .logo-chinese {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: #1d2129;
-  letter-spacing: 2px;
+  letter-spacing: 1.5px;
   line-height: 1.2;
 }
 
 .logo-english {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   line-height: 1.2;
 }
 
@@ -323,24 +339,25 @@ const handleLogout = () => {
   flex: 1;
   display: flex;
   justify-content: flex-start;
-  padding-left: 40px;
+  padding-left: 48px;
 }
 
 .nav-menu {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .nav-menu-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  color: #4e5969;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  color: #646a73;
+  position: relative;
 }
 
 .nav-menu-item:hover {
@@ -349,104 +366,162 @@ const handleLogout = () => {
 }
 
 .nav-menu-item-active {
-  background: rgba(22, 93, 255, 0.1);
+  background: rgba(22, 93, 255, 0.12);
   color: #165DFF;
   font-weight: 500;
 }
 
+.nav-menu-item-active::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 3px;
+  background: linear-gradient(90deg, #165DFF 0%, #722ED1 100%);
+  border-radius: 2px;
+}
+
 .nav-icon {
-  font-size: 16px;
+  font-size: 18px;
+}
+
+.nav-text {
+  font-size: 14px;
+  letter-spacing: 0.3px;
 }
 
 .nav-arrow {
-  font-size: 12px;
-  transition: transform 0.2s ease;
+  font-size: 11px;
+  color: #86909c;
+  transition: all 0.25s ease;
+  margin-left: 2px;
 }
 
 .nav-menu-item:hover .nav-arrow {
   transform: rotate(180deg);
+  color: #165DFF;
 }
 
-:deep(.nav-submenu) {
+.nav-submenu {
   border-radius: 16px;
   box-shadow: 
-    0 20px 60px rgba(0, 0, 0, 0.15),
-    0 4px 16px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(229, 230, 235, 0.8);
-  padding: 12px;
-  min-width: 320px;
-  backdrop-filter: blur(20px);
-  background: rgba(255, 255, 255, 0.95);
+    0 24px 64px rgba(0, 0, 0, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(229, 230, 235, 0.9);
+  padding: 8px;
+  min-width: 360px;
+  backdrop-filter: blur(24px);
+  background: rgba(255, 255, 255, 0.96);
 }
 
-:deep(.nav-submenu .ant-menu-item) {
-  border-radius: 12px;
-  margin: 4px 0;
-  padding: 14px 20px;
+.submenu-item {
   display: flex;
   align-items: center;
   gap: 14px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 14px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+  margin: 2px 0;
 }
 
-:deep(.nav-submenu .ant-menu-item::before) {
+.submenu-item::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 0;
-  background: linear-gradient(135deg, #165DFF 0%, #722ED1 100%);
-  border-radius: 0 4px 4px 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: linear-gradient(180deg, #165DFF 0%, #722ED1 100%);
+  border-radius: 0 12px 12px 0;
   transition: all 0.3s ease;
+  opacity: 0.1;
 }
 
-:deep(.nav-submenu .ant-menu-item:hover) {
-  background: linear-gradient(135deg, rgba(22, 93, 255, 0.08) 0%, rgba(114, 46, 209, 0.04) 100%);
-  color: #165DFF;
-  transform: translateX(4px);
+.submenu-item:hover {
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.06) 0%, rgba(114, 46, 209, 0.03) 100%);
 }
 
-:deep(.nav-submenu .ant-menu-item:hover::before) {
-  height: 60%;
+.submenu-item:hover::before {
+  width: 3px;
+  opacity: 1;
 }
 
-:deep(.nav-submenu .ant-menu-item-selected) {
-  background: linear-gradient(135deg, rgba(22, 93, 255, 0.12) 0%, rgba(114, 46, 209, 0.06) 100%);
-  color: #165DFF;
-  font-weight: 500;
+.submenu-item-active {
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.1) 0%, rgba(114, 46, 209, 0.05) 100%);
 }
 
-:deep(.nav-submenu .ant-menu-item-selected::before) {
-  height: 60%;
+.submenu-item-active::before {
+  width: 3px;
+  opacity: 1;
 }
 
-.submenu-icon {
-  font-size: 18px;
-  color: #86909c;
-  width: 28px;
-  height: 28px;
+.submenu-icon-wrapper {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: linear-gradient(135deg, rgba(247, 248, 250, 0.9) 0%, rgba(242, 243, 245, 0.9) 100%);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
-  border-radius: 8px;
-  background: rgba(242, 243, 245, 0.6);
-  transition: all 0.3s ease;
 }
 
-:deep(.nav-submenu .ant-menu-item:hover) .submenu-icon {
-  background: linear-gradient(135deg, rgba(22, 93, 255, 0.15) 0%, rgba(114, 46, 209, 0.1) 100%);
-  color: #165DFF;
+.submenu-item:hover .submenu-icon-wrapper {
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.12) 0%, rgba(114, 46, 209, 0.08) 100%);
   transform: scale(1.05);
 }
 
-:deep(.nav-submenu .ant-menu-item-selected) .submenu-icon {
-  background: linear-gradient(135deg, rgba(22, 93, 255, 0.2) 0%, rgba(114, 46, 209, 0.12) 100%);
+.submenu-item-active .submenu-icon-wrapper {
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.15) 0%, rgba(114, 46, 209, 0.1) 100%);
+}
+
+.submenu-icon {
+  font-size: 20px;
+  color: #646a73;
+  transition: all 0.3s ease;
+}
+
+.submenu-item:hover .submenu-icon {
   color: #165DFF;
+}
+
+.submenu-item-active .submenu-icon {
+  color: #165DFF;
+}
+
+.submenu-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.submenu-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1d2129;
+  transition: all 0.3s ease;
+}
+
+.submenu-item:hover .submenu-title {
+  color: #165DFF;
+}
+
+.submenu-item-active .submenu-title {
+  color: #165DFF;
+  font-weight: 600;
+}
+
+.submenu-desc {
+  font-size: 12px;
+  color: #86909c;
+  line-height: 1.4;
 }
 
 .header-right {
