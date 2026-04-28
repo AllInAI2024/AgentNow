@@ -68,7 +68,7 @@
             <template v-else-if="column.key === 'action'">
               <a-space size="small">
                 <a-tooltip title="下载">
-                  <a-button type="text" size="small" @click="handleDownload(record)">
+                  <a-button type="text" size="middle" @click="handleDownload(record)">
                     <DownloadOutlined />
                   </a-button>
                 </a-tooltip>
@@ -76,7 +76,7 @@
                   <a-button
                     v-if="canEdit(record)"
                     type="text"
-                    size="small"
+                    size="middle"
                     @click="handleEdit(record)"
                   >
                     <EditOutlined />
@@ -90,7 +90,7 @@
                   @confirm="handleDelete(record)"
                 >
                   <a-tooltip title="删除">
-                    <a-button type="text" size="small" danger>
+                    <a-button type="text" size="middle" danger>
                       <DeleteOutlined />
                     </a-button>
                   </a-tooltip>

@@ -182,7 +182,7 @@ VALUES
 (0, '工作台', 'dashboard', 1, '/dashboard', 'dashboard', 1),
 (0, '智能体管理', 'agent', 1, '/agent', 'robot', 2),
 (0, '知识库管理', 'knowledge', 1, '/knowledge', 'folder-open', 3),
-(0, '系统管理', 'system', 1, '/system', 'setting', 4);
+(0, '系统管理', 'system', 1, '/system', 'team', 4);
 
 -- 获取父权限ID
 SET @dashboard_id = (SELECT id FROM permissions WHERE code = 'dashboard');
@@ -194,14 +194,14 @@ SET @system_id = (SELECT id FROM permissions WHERE code = 'system');
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
 (@agent_id, '智能体列表', 'agent:list', 1, '/agent/list', 'list', 1),
-(@agent_id, '智能体配置', 'agent:config', 1, '/agent/config', 'setting', 2),
+(@agent_id, '智能体配置', 'agent:config', 1, '/agent/config', 'appstore', 2),
 (@agent_id, '对话管理', 'agent:conversation', 1, '/agent/conversation', 'message', 3);
 
 -- 二级菜单 - 知识库管理
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
 (@knowledge_id, '文档列表', 'knowledge:document', 1, '/knowledge/document', 'file', 1),
-(@knowledge_id, '知识库设置', 'knowledge:setting', 1, '/knowledge/setting', 'tool', 2);
+(@knowledge_id, '知识库设置', 'knowledge:setting', 1, '/knowledge/setting', 'setting', 2);
 
 -- 二级菜单 - 系统管理
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)

@@ -32,19 +32,23 @@
               </a-tag>
             </template>
             <template v-else-if="column.key === 'action'">
-              <a-space>
-                <a-button type="link" size="small" @click="handleEdit(record)">
-                  编辑
-                </a-button>
+              <a-space size="small">
+                <a-tooltip title="编辑">
+                  <a-button type="text" size="middle" @click="handleEdit(record)">
+                    <EditOutlined />
+                  </a-button>
+                </a-tooltip>
                 <a-popconfirm
                   title="确定要删除吗？"
                   ok-text="确定"
                   cancel-text="取消"
                   @confirm="handleDelete(record)"
                 >
-                  <a-button type="link" size="small" danger>
-                    删除
-                  </a-button>
+                  <a-tooltip title="删除">
+                    <a-button type="text" size="middle" danger>
+                      <DeleteOutlined />
+                    </a-button>
+                  </a-tooltip>
                 </a-popconfirm>
               </a-space>
             </template>
@@ -142,6 +146,8 @@ import {
   PlusOutlined,
   FolderOutlined,
   FileOutlined,
+  EditOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons-vue'
 import { permissionApi, type Permission, type PermissionTree } from '@/api/permission'
 import MainLayout from '@/components/MainLayout.vue'

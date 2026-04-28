@@ -413,7 +413,7 @@ const handleLogout = () => {
   align-items: center;
   gap: 8px;
   padding: 6px 16px;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   color: #646a73;
@@ -422,11 +422,12 @@ const handleLogout = () => {
 
 .nav-menu-item:hover {
   background: rgba(22, 93, 255, 0.06);
+  transform: translateY(-1px);
   color: #165DFF;
 }
 
 .nav-menu-item-active {
-  background: rgba(22, 93, 255, 0.1);
+  background: rgba(22, 93, 255, 0.12);
   color: #165DFF;
   font-weight: 500;
 }
@@ -434,13 +435,13 @@ const handleLogout = () => {
 .nav-menu-item-active::after {
   content: '';
   position: absolute;
-  bottom: 0;
+  bottom: -6px;
   left: 50%;
   transform: translateX(-50%);
-  width: 20px;
-  height: 3px;
+  width: 16px;
+  height: 2px;
   background: linear-gradient(90deg, #165DFF 0%, #722ED1 100%);
-  border-radius: 2px;
+  border-radius: 1px;
 }
 
 .nav-icon {
