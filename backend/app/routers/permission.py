@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
-from app.models import Permission
+from app.models import Permission, Role, RolePermission
 from app.schemas.permission import (
     PermissionCreate,
     PermissionUpdate,
@@ -13,6 +13,7 @@ from app.schemas.user import APIResponse
 from app.services.auth_service import (
     get_db,
     get_current_user,
+    get_super_admin_role,
 )
 
 router = APIRouter(prefix="/permissions", tags=["权限管理"])
@@ -104,7 +105,7 @@ def get_permission(
     "",
     response_model=APIResponse[PermissionResponse],
     summary="创建权限",
-    description="创建新的功能点/权限"
+    description="创建新的功能点/权限。新创建的权限会自动分配给超级管理员角色"
 )
 def create_permission(
     permission_data: PermissionCreate,
@@ -138,6 +139,21 @@ def create_permission(
     db.add(permission)
     db.commit()
     db.refresh(permission)
+    
+    super_admin_role = get_super_admin_role(db)
+    if super_admin_role:
+        existing_rp = db.query(RolePermission).filter(
+            RolePermission.role_id == super_admin_role.id,
+            RolePermission.permission_id == permission.id
+        ).first()
+        
+        if not existing_rp:
+            role_permission = RolePermission(
+                role_id=super_admin_role.id,
+                permission_id=permission.id
+            )
+            db.add(role_permission)
+            db.commit()
     
     return APIResponse(
         code=200,

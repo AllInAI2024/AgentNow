@@ -3,15 +3,30 @@ from sqlalchemy.orm import Session
 
 from app.models import User
 from app.schemas.user import UserLogin, Token, UserResponse, ChangePassword, APIResponse
+from app.schemas.permission import PermissionTreeResponse
+from app.schemas.role import RoleResponse
 from app.services.auth_service import (
     verify_password,
     get_password_hash,
     create_access_token,
     get_db,
     get_current_user,
+    get_user_roles,
+    get_user_menu_permissions,
+    get_user_all_permission_codes,
 )
 
 router = APIRouter(prefix="/auth", tags=["认证"])
+
+
+def build_permission_tree(permissions, parent_id: int = 0):
+    tree = []
+    for permission in permissions:
+        if permission.parent_id == parent_id:
+            tree_node = PermissionTreeResponse.model_validate(permission)
+            tree_node.children = build_permission_tree(permissions, permission.id)
+            tree.append(tree_node)
+    return tree
 
 
 @router.post(
@@ -110,4 +125,62 @@ def logout():
         code=200,
         message="登出成功",
         data=None
+    )
+
+
+@router.get(
+    "/menu-permissions",
+    response_model=APIResponse[list],
+    summary="获取当前用户菜单权限",
+    description="获取当前登录用户的菜单权限树，用于前端动态生成菜单"
+)
+def get_user_menu_permissions_api(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    permissions = get_user_menu_permissions(db, current_user.id)
+    menu_tree = build_permission_tree(permissions)
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=menu_tree
+    )
+
+
+@router.get(
+    "/roles",
+    response_model=APIResponse[list],
+    summary="获取当前用户角色",
+    description="获取当前登录用户的角色列表"
+)
+def get_user_roles_api(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    roles = get_user_roles(db, current_user.id)
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=[RoleResponse.model_validate(r) for r in roles]
+    )
+
+
+@router.get(
+    "/permissions",
+    response_model=APIResponse[list],
+    summary="获取当前用户所有权限码",
+    description="获取当前登录用户的所有权限码列表，用于前端权限校验"
+)
+def get_user_permissions_api(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    permission_codes = get_user_all_permission_codes(db, current_user.id)
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=permission_codes
     )

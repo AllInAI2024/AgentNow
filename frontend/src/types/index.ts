@@ -99,3 +99,29 @@ export interface APIResponse<T = unknown> {
   message: string
   data: T
 }
+
+export interface Permission {
+  id: number
+  parent_id: number
+  name: string
+  code: string
+  type: number
+  path: string | null
+  icon: string | null
+  sort: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface PermissionTree extends Permission {
+  children: PermissionTree[]
+}
+
+export interface Role {
+  id: number
+  name: string
+  code: string
+  description: string | null
+  created_at: string | null
+  updated_at: string | null
+}

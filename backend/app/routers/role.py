@@ -17,9 +17,19 @@ from app.schemas.user import (
 from app.services.auth_service import (
     get_db,
     get_current_user,
+    get_super_admin_role,
 )
+from app.config import settings
 
 router = APIRouter(prefix="/roles", tags=["角色管理"])
+
+
+def is_super_admin_role(role: Role) -> bool:
+    return role.code == "super_admin"
+
+
+def is_super_admin_user(user: User) -> bool:
+    return user.is_super_admin
 
 
 @router.get(
@@ -148,7 +158,7 @@ def update_role(
     "/{role_id}",
     response_model=APIResponse[None],
     summary="删除角色",
-    description="删除角色，注意：已分配给用户的角色不能删除"
+    description="删除角色，注意：超级管理员角色不能删除，已分配给用户的角色不能删除"
 )
 def delete_role(
     role_id: int,
@@ -161,6 +171,12 @@ def delete_role(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="角色不存在"
+        )
+    
+    if is_super_admin_role(role):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="超级管理员角色不能删除"
         )
     
     user_roles = db.query(UserRole).filter(UserRole.role_id == role_id).first()
@@ -289,7 +305,7 @@ def get_user_roles(
     "/users/{user_id}",
     response_model=APIResponse[List[int]],
     summary="分配用户角色",
-    description="为用户分配角色，全量覆盖"
+    description="为用户分配角色，全量覆盖。超级管理员用户的超级管理员角色不可移除。"
 )
 def assign_user_roles(
     user_id: int,
@@ -313,9 +329,16 @@ def assign_user_roles(
                 detail=f"角色 ID '{rid}' 不存在"
             )
     
+    role_ids = request.role_ids.copy()
+    
+    if is_super_admin_user(user):
+        super_admin_role = get_super_admin_role(db)
+        if super_admin_role and super_admin_role.id not in role_ids:
+            role_ids.append(super_admin_role.id)
+    
     db.query(UserRole).filter(UserRole.user_id == user_id).delete()
     
-    for rid in request.role_ids:
+    for rid in role_ids:
         user_role = UserRole(user_id=user_id, role_id=rid)
         db.add(user_role)
     
@@ -324,5 +347,5 @@ def assign_user_roles(
     return APIResponse(
         code=200,
         message="角色分配成功",
-        data=request.role_ids
+        data=role_ids
     )

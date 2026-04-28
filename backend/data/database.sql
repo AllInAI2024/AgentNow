@@ -169,8 +169,8 @@ VALUES
 -- 二级菜单 - 角色权限
 INSERT INTO permissions (parent_id, name, code, type, path, icon)
 VALUES 
-(@role_id, '角色列表', 'role:list', 1, '/role/list', 'list'),
-(@role_id, '权限配置', 'role:permission', 1, '/role/permission', 'key');
+(@role_id, '角色管理', 'role:manage', 1, '/role/manage', 'list'),
+(@role_id, '功能点管理', 'permission:manage', 1, '/permission/manage', 'unordered-list');
 
 -- 二级菜单 - 智能体管理
 INSERT INTO permissions (parent_id, name, code, type, path, icon)
@@ -189,7 +189,7 @@ VALUES
 -- 获取一些二级菜单的ID
 SET @department_id = (SELECT id FROM permissions WHERE code = 'department');
 SET @employee_id = (SELECT id FROM permissions WHERE code = 'employee');
-SET @role_list_id = (SELECT id FROM permissions WHERE code = 'role:list');
+SET @role_manage_id = (SELECT id FROM permissions WHERE code = 'role:manage');
 
 -- 部门管理相关按钮权限
 INSERT INTO permissions (parent_id, name, code, type, path)
@@ -212,11 +212,11 @@ VALUES
 -- 角色管理相关按钮权限
 INSERT INTO permissions (parent_id, name, code, type, path)
 VALUES 
-(@role_list_id, '角色查询', 'role:query', 3, '/api/v1/roles'),
-(@role_list_id, '角色创建', 'role:create', 3, '/api/v1/roles'),
-(@role_list_id, '角色编辑', 'role:update', 3, '/api/v1/roles/:id'),
-(@role_list_id, '角色删除', 'role:delete', 3, '/api/v1/roles/:id'),
-(@role_list_id, '角色权限配置', 'role:assign_permission', 3, '/api/v1/roles/:id/permissions');
+(@role_manage_id, '角色查询', 'role:query', 3, '/api/v1/roles'),
+(@role_manage_id, '角色创建', 'role:create', 3, '/api/v1/roles'),
+(@role_manage_id, '角色编辑', 'role:update', 3, '/api/v1/roles/:id'),
+(@role_manage_id, '角色删除', 'role:delete', 3, '/api/v1/roles/:id'),
+(@role_manage_id, '角色权限配置', 'role:assign_permission', 3, '/api/v1/roles/:id/permissions');
 
 -- 为超级管理员角色分配所有权限
 SET @super_admin_role_id = (SELECT id FROM roles WHERE code = 'super_admin');
@@ -236,7 +236,7 @@ WHERE code IN (
     'employee:query', 'employee:create', 'employee:update', 'employee:delete', 
     'employee:reset_password', 'employee:toggle_status',
     'system', 'system:setting', 'system:monitor',
-    'role', 'role:list', 'role:permission',
+    'role', 'role:manage', 'permission:manage',
     'role:query', 'role:create', 'role:update', 'role:delete', 'role:assign_permission',
     'agent', 'agent:list', 'agent:config', 'agent:conversation',
     'knowledge', 'knowledge:document', 'knowledge:setting'

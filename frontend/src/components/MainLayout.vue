@@ -16,81 +16,52 @@
 
         <div class="header-center">
           <div class="nav-menu">
-            <a-dropdown :trigger="['hover']" placement="bottom">
-              <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/organization') }">
-                <TeamOutlined class="nav-icon" />
-                <span class="nav-text">组织管理</span>
-                <DownOutlined class="nav-arrow" />
-              </div>
-              <template #overlay>
-                <div class="nav-submenu">
-                  <div 
-                    class="submenu-item" 
-                    :class="{ 'submenu-item-active': isActiveRoute('/organization/department') }"
-                    @click="handleNavigate('/organization/department')"
-                  >
-                    <div class="submenu-icon-wrapper">
-                      <ApartmentOutlined class="submenu-icon" />
-                    </div>
-                    <div class="submenu-content">
-                      <span class="submenu-title">部门管理</span>
-                      <span class="submenu-desc">管理组织架构与层级</span>
-                    </div>
-                  </div>
-                  <div 
-                    class="submenu-item" 
-                    :class="{ 'submenu-item-active': isActiveRoute('/organization/employee') }"
-                    @click="handleNavigate('/organization/employee')"
-                  >
-                    <div class="submenu-icon-wrapper">
-                      <UserOutlined class="submenu-icon" />
-                    </div>
-                    <div class="submenu-content">
-                      <span class="submenu-title">员工管理</span>
-                      <span class="submenu-desc">管理员工账号与信息</span>
-                    </div>
-                  </div>
+            <div
+              v-for="menu in topLevelMenus"
+              :key="menu.id"
+            >
+              <template v-if="!menu.children || menu.children.length === 0">
+                <div
+                  class="nav-menu-item"
+                  :class="{ 'nav-menu-item-active': isActiveRoute(menu.path || '') }"
+                  @click="handleNavigate(menu.path || '/')"
+                >
+                  <component :is="getIconComponent(menu.icon || '')" class="nav-icon" />
+                  <span class="nav-text">{{ menu.name }}</span>
                 </div>
               </template>
-            </a-dropdown>
-
-            <a-dropdown :trigger="['hover']" placement="bottom">
-              <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/role') || isActiveRoute('/permission') }">
-                <SafetyCertificateOutlined class="nav-icon" />
-                <span class="nav-text">角色权限</span>
-                <DownOutlined class="nav-arrow" />
-              </div>
-              <template #overlay>
-                <div class="nav-submenu">
-                  <div 
-                    class="submenu-item" 
-                    :class="{ 'submenu-item-active': isActiveRoute('/role/manage') }"
-                    @click="handleNavigate('/role/manage')"
+              <template v-else>
+                <a-dropdown :trigger="['hover']" placement="bottom">
+                  <div
+                    class="nav-menu-item"
+                    :class="{ 'nav-menu-item-active': isMenuActive(menu) }"
                   >
-                    <div class="submenu-icon-wrapper">
-                      <SafetyCertificateOutlined class="submenu-icon" />
-                    </div>
-                    <div class="submenu-content">
-                      <span class="submenu-title">角色管理</span>
-                      <span class="submenu-desc">管理系统角色与权限分配</span>
-                    </div>
+                    <component :is="getIconComponent(menu.icon || '')" class="nav-icon" />
+                    <span class="nav-text">{{ menu.name }}</span>
+                    <DownOutlined class="nav-arrow" />
                   </div>
-                  <div 
-                    class="submenu-item" 
-                    :class="{ 'submenu-item-active': isActiveRoute('/permission/manage') }"
-                    @click="handleNavigate('/permission/manage')"
-                  >
-                    <div class="submenu-icon-wrapper">
-                      <UnorderedListOutlined class="submenu-icon" />
+                  <template #overlay>
+                    <div class="nav-submenu">
+                      <div
+                        v-for="child in menu.children"
+                        :key="child.id"
+                        class="submenu-item"
+                        :class="{ 'submenu-item-active': isActiveRoute(child.path || '') }"
+                        @click="handleNavigate(child.path || '/')"
+                      >
+                        <div class="submenu-icon-wrapper">
+                          <component :is="getIconComponent(child.icon || '')" class="submenu-icon" />
+                        </div>
+                        <div class="submenu-content">
+                          <span class="submenu-title">{{ child.name }}</span>
+                          <span class="submenu-desc">{{ getMenuDescription(child) }}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div class="submenu-content">
-                      <span class="submenu-title">功能点管理</span>
-                      <span class="submenu-desc">配置系统功能与权限</span>
-                    </div>
-                  </div>
-                </div>
+                  </template>
+                </a-dropdown>
               </template>
-            </a-dropdown>
+            </div>
           </div>
         </div>
 
@@ -180,6 +151,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -195,17 +167,77 @@ import {
   TeamOutlined,
   ApartmentOutlined,
   UnorderedListOutlined,
+  DashboardOutlined,
+  ToolOutlined,
+  MonitorOutlined,
+  OrderedListOutlined,
+  KeyOutlined,
+  FolderOpenOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons-vue'
+import type { PermissionTree } from '@/types'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const userStore = useUserStore()
+
+const iconMap: Record<string, unknown> = {
+  'dashboard': DashboardOutlined,
+  'team': TeamOutlined,
+  'setting': SettingOutlined,
+  'safety-certificate': SafetyCertificateOutlined,
+  'robot': RobotOutlined,
+  'folder-open': FolderOpenOutlined,
+  'apartment': ApartmentOutlined,
+  'user': UserOutlined,
+  'tool': ToolOutlined,
+  'monitor': MonitorOutlined,
+  'list': OrderedListOutlined,
+  'key': KeyOutlined,
+  'file': FileTextOutlined,
+  'unordered-list': UnorderedListOutlined,
+}
+
+const defaultIcon = QuestionCircleOutlined
+
+const getIconComponent = (iconName: string) => {
+  return iconMap[iconName] || defaultIcon
+}
+
+const topLevelMenus = computed<PermissionTree[]>(() => {
+  return userStore.menuPermissions || []
+})
+
+const getMenuDescription = (menu: PermissionTree): string => {
+  const descMap: Record<string, string> = {
+    'department': '管理组织架构与层级',
+    'employee': '管理员工账号与信息',
+    'role:manage': '管理系统角色',
+    'permission:manage': '配置系统功能与权限',
+    'system:setting': '系统参数配置',
+    'system:monitor': '系统运行监控',
+    'agent:list': '管理智能体列表',
+    'agent:config': '配置智能体参数',
+    'agent:conversation': '查看对话记录',
+    'knowledge:document': '管理知识库文档',
+    'knowledge:setting': '知识库配置',
+  }
+  return descMap[menu.code] || `进入${menu.name}`
+}
+
+const isMenuActive = (menu: PermissionTree): boolean => {
+  if (!menu.children || menu.children.length === 0) {
+    return isActiveRoute(menu.path || '')
+  }
+  return menu.children.some(child => isActiveRoute(child.path || ''))
+}
 
 const handleGoHome = () => {
   router.push({ name: 'Dashboard' })
 }
 
 const isActiveRoute = (path: string) => {
+  if (!path) return false
   return router.currentRoute.value.path.startsWith(path)
 }
 
