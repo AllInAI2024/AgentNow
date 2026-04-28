@@ -80,8 +80,6 @@
                       v-model:value="searchKeyword" 
                       placeholder="搜索工具名称、描述..." 
                       style="width: 280px;"
-                      @search="handleSearch"
-                      @clear="handleSearch"
                       allow-clear
                     />
                   </div>
@@ -368,10 +366,7 @@ const getCategoryDisplay = (category: string): string => {
 const fetchTools = async () => {
   loading.value = true
   try {
-    const res = await hermesApi.getTools({
-      category: selectedCategory.value || undefined,
-      search: searchKeyword.value || undefined,
-    })
+    const res = await hermesApi.getTools()
     if (res.code === 200) {
       toolList.value = res.data
     } else {
@@ -389,19 +384,11 @@ const handleRefresh = () => {
   fetchTools()
 }
 
-const handleSearch = () => {
-  fetchTools()
-}
-
 const handleViewTool = (tool: BuiltinTool) => {
   selectedTool.value = tool
   detailModalVisible.value = true
   activeTab.value = 'overview'
 }
-
-watch([selectedCategory, searchKeyword], () => {
-  fetchTools()
-})
 
 onMounted(() => {
   fetchTools()
