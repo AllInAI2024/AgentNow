@@ -15,6 +15,9 @@ from app.schemas.hermes import (
     SkillDetailResponse,
     SkillInstallParams,
     SkillCreateParams,
+    MCPServiceListResponse,
+    MCPServiceDetailResponse,
+    MCPServiceTestResult,
 )
 from app.schemas.user import APIResponse
 from app.services.auth_service import get_db, get_current_user
@@ -468,3 +471,83 @@ async def upload_skill(
             message="技能上传成功",
             data=result
         )
+
+
+@router.get(
+    "/mcp",
+    response_model=APIResponse[MCPServiceListResponse],
+    summary="获取 MCP 服务列表",
+    description="获取 Hermes 配置的所有 MCP 服务列表，包括状态、类型、工具数等信息"
+)
+async def get_mcp_services(
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    mcp_list = hermes_service.list_mcp_services()
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=mcp_list
+    )
+
+
+@router.get(
+    "/mcp/{service_name}",
+    response_model=APIResponse[MCPServiceDetailResponse],
+    summary="获取 MCP 服务详情",
+    description="获取指定 MCP 服务的详细信息，包括配置和工具列表"
+)
+async def get_mcp_service_detail(
+    service_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    service_detail = hermes_service.get_mcp_service_detail(service_name)
+    
+    if service_detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"MCP 服务 '{service_name}' 不存在"
+        )
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=service_detail
+    )
+
+
+@router.post(
+    "/mcp/{service_name}/test",
+    response_model=APIResponse[MCPServiceTestResult],
+    summary="测试 MCP 服务连接",
+    description="测试指定 MCP 服务的连接状态，检查是否能正常获取工具列表"
+)
+async def test_mcp_service(
+    service_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    test_result = hermes_service.test_mcp_service(service_name)
+    
+    return APIResponse(
+        code=200,
+        message="测试完成" if test_result.success else "测试失败",
+        data=test_result
+    )

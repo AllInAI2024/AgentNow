@@ -8,6 +8,9 @@ import type {
   SkillDetailResponse,
   SkillInstallParams,
   SkillCreateParams,
+  MCPServiceListResponse,
+  MCPServiceDetailResponse,
+  MCPServiceTestResult,
   APIResponse 
 } from '@/types'
 
@@ -75,5 +78,17 @@ export const hermesApi = {
         'Content-Type': 'multipart/form-data',
       },
     })
+  },
+
+  getMcpServices: (): Promise<APIResponse<MCPServiceListResponse>> => {
+    return http.get('/hermes/mcp')
+  },
+
+  getMcpServiceDetail: (serviceName: string): Promise<APIResponse<MCPServiceDetailResponse>> => {
+    return http.get(`/hermes/mcp/${encodeURIComponent(serviceName)}`)
+  },
+
+  testMcpService: (serviceName: string): Promise<APIResponse<MCPServiceTestResult>> => {
+    return http.post(`/hermes/mcp/${encodeURIComponent(serviceName)}/test`)
   },
 }

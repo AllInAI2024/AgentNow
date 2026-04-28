@@ -145,3 +145,44 @@ class SkillDetailResponse(BaseModel):
     skill: Skill = Field(..., description="技能详细信息")
     has_update: bool = Field(False, description="是否有更新")
     latest_version: Optional[str] = Field(None, description="最新版本")
+
+
+class MCPTool(BaseModel):
+    name: str = Field(..., description="工具名称")
+    description: str = Field(..., description="工具描述")
+    input_schema: Optional[dict] = Field(None, description="输入参数 schema")
+
+
+class MCPService(BaseModel):
+    name: str = Field(..., description="服务名称")
+    type: str = Field(..., description="服务类型: stdio 或 sse")
+    type_display: str = Field(..., description="类型显示名称")
+    status: HealthStatus = Field(..., description="服务状态")
+    command: Optional[str] = Field(None, description="启动命令（stdio 类型）")
+    args: Optional[List[str]] = Field(None, description="命令参数")
+    url: Optional[str] = Field(None, description="SSE 服务 URL（SSE 类型）")
+    tool_count: int = Field(0, description="提供的工具数量")
+    tools: List[MCPTool] = Field(default_factory=list, description="工具列表")
+    last_check: Optional[datetime] = Field(None, description="最后检查时间")
+    error_message: Optional[str] = Field(None, description="错误信息")
+    config_raw: Optional[str] = Field(None, description="原始配置（用于编辑）")
+
+
+class MCPServiceListResponse(BaseModel):
+    items: List[MCPService] = Field(default_factory=list, description="MCP 服务列表")
+    total: int = Field(0, description="总数量")
+    running_count: int = Field(0, description="运行中数量")
+    warning_count: int = Field(0, description="警告数量")
+    stopped_count: int = Field(0, description="已停止数量")
+
+
+class MCPServiceDetailResponse(BaseModel):
+    service: MCPService = Field(..., description="服务详细信息")
+
+
+class MCPServiceTestResult(BaseModel):
+    success: bool = Field(..., description="测试是否成功")
+    message: str = Field(..., description="测试结果消息")
+    tool_count: Optional[int] = Field(None, description="检测到的工具数量")
+    tools: List[MCPTool] = Field(default_factory=list, description="检测到的工具列表")
+    error: Optional[str] = Field(None, description="错误信息")

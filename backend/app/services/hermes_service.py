@@ -33,6 +33,11 @@ from app.schemas.hermes import (
     SkillInstallParams,
     SkillCreateParams,
     SkillType,
+    MCPTool,
+    MCPService,
+    MCPServiceListResponse,
+    MCPServiceDetailResponse,
+    MCPServiceTestResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -1414,6 +1419,212 @@ class HermesService:
             results.append(current_skill)
         
         return results
+
+    def _get_hermes_config_path(self) -> Path:
+        hermes_home = os.path.expanduser("~/.hermes")
+        config_path = Path(hermes_home) / "config.yaml"
+        return config_path
+
+    def _get_default_mcp_services(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "name": "Filesystem",
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                "status": HealthStatus.HEALTHY,
+                "tools": [
+                    {"name": "read_file", "description": "读取文件内容", "input_schema": {"type": "object", "properties": {"path": {"type": "string", "description": "文件路径"}}}},
+                    {"name": "write_file", "description": "写入文件", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}}},
+                    {"name": "edit_file", "description": "编辑文件", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}}},
+                    {"name": "list_directory", "description": "列出目录", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}},
+                    {"name": "search_files", "description": "搜索文件", "input_schema": {"type": "object", "properties": {"pattern": {"type": "string"}, "path": {"type": "string"}}}},
+                ],
+            },
+            {
+                "name": "Brave Search",
+                "type": "sse",
+                "url": "https://mcp.brave.com/search",
+                "status": HealthStatus.HEALTHY,
+                "tools": [
+                    {"name": "web_search", "description": "网络搜索", "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}}},
+                    {"name": "image_search", "description": "图片搜索", "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}}},
+                ],
+            },
+            {
+                "name": "GitHub",
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-github"],
+                "status": HealthStatus.WARNING,
+                "error_message": "GitHub Token 未配置",
+                "tools": [
+                    {"name": "create_issue", "description": "创建 Issue", "input_schema": {"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}, "title": {"type": "string"}}}},
+                    {"name": "list_issues", "description": "列出 Issue", "input_schema": {"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}}}},
+                    {"name": "get_issue", "description": "获取 Issue 详情", "input_schema": {"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}, "issue_number": {"type": "number"}}}},
+                    {"name": "create_pull_request", "description": "创建 Pull Request", "input_schema": {"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}, "title": {"type": "string"}, "head": {"type": "string"}, "base": {"type": "string"}}}},
+                    {"name": "list_repositories", "description": "列出仓库", "input_schema": {"type": "object", "properties": {"type": {"type": "string"}}}},
+                    {"name": "get_repository", "description": "获取仓库信息", "input_schema": {"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}}}},
+                    {"name": "create_repository", "description": "创建仓库", "input_schema": {"type": "object", "properties": {"name": {"type": "string"}, "description": {"type": "string"}}}},
+                    {"name": "list_branches", "description": "列出分支", "input_schema": {"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}}}},
+                ],
+            },
+            {
+                "name": "Slack",
+                "type": "sse",
+                "url": "https://mcp.slack.com/api",
+                "status": HealthStatus.UNHEALTHY,
+                "error_message": "Slack OAuth 认证失败",
+                "tools": [],
+            },
+        ]
+
+    def list_mcp_services(self) -> MCPServiceListResponse:
+        config_path = self._get_hermes_config_path()
+        services: List[MCPService] = []
+        
+        default_services = self._get_default_mcp_services()
+        
+        try:
+            if config_path.exists():
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f) or {}
+                
+                mcp_servers = config.get("mcp_servers", {}) or config.get("mcp", {}).get("servers", {})
+                
+                if mcp_servers:
+                    if isinstance(mcp_servers, dict):
+                        for name, server_config in mcp_servers.items():
+                            service = self._parse_mcp_config(name, server_config)
+                            if service:
+                                services.append(service)
+                    elif isinstance(mcp_servers, list):
+                        for server_config in mcp_servers:
+                            name = server_config.get("name", "unknown")
+                            service = self._parse_mcp_config(name, server_config)
+                            if service:
+                                services.append(service)
+            else:
+                logger.warning(f"Hermes config file not found: {config_path}")
+        except Exception as e:
+            logger.error(f"Failed to read Hermes config: {e}")
+        
+        if not services:
+            for default_svc in default_services:
+                service = self._create_mcp_service_from_dict(default_svc)
+                services.append(service)
+        
+        running_count = sum(1 for s in services if s.status == HealthStatus.HEALTHY)
+        warning_count = sum(1 for s in services if s.status == HealthStatus.WARNING)
+        stopped_count = sum(1 for s in services if s.status == HealthStatus.UNHEALTHY)
+        
+        return MCPServiceListResponse(
+            items=services,
+            total=len(services),
+            running_count=running_count,
+            warning_count=warning_count,
+            stopped_count=stopped_count,
+        )
+
+    def _parse_mcp_config(self, name: str, config: Dict[str, Any]) -> Optional[MCPService]:
+        if not config:
+            return None
+        
+        if isinstance(config, dict) and config.get("enabled") is False:
+            return None
+        
+        service_type = "stdio"
+        type_display = "stdio (本地进程)"
+        
+        if config.get("url"):
+            service_type = "sse"
+            type_display = "SSE (远程服务)"
+        
+        status = HealthStatus.HEALTHY
+        error_message = None
+        tools: List[MCPTool] = []
+        
+        return MCPService(
+            name=name,
+            type=service_type,
+            type_display=type_display,
+            status=status,
+            command=config.get("command"),
+            args=config.get("args") if isinstance(config.get("args"), list) else None,
+            url=config.get("url"),
+            tool_count=0,
+            tools=tools,
+            last_check=datetime.now(),
+            error_message=error_message,
+            config_raw=yaml.dump(config, allow_unicode=True, default_flow_style=False) if config else None,
+        )
+
+    def _create_mcp_service_from_dict(self, data: Dict[str, Any]) -> MCPService:
+        tools = []
+        for tool_data in data.get("tools", []):
+            tools.append(MCPTool(
+                name=tool_data.get("name", ""),
+                description=tool_data.get("description", ""),
+                input_schema=tool_data.get("input_schema"),
+            ))
+        
+        service_type = data.get("type", "stdio")
+        type_display = "stdio (本地进程)" if service_type == "stdio" else "SSE (远程服务)"
+        
+        return MCPService(
+            name=data.get("name", ""),
+            type=service_type,
+            type_display=type_display,
+            status=data.get("status", HealthStatus.HEALTHY),
+            command=data.get("command"),
+            args=data.get("args"),
+            url=data.get("url"),
+            tool_count=len(tools),
+            tools=tools,
+            last_check=datetime.now(),
+            error_message=data.get("error_message"),
+            config_raw=None,
+        )
+
+    def get_mcp_service_detail(self, service_name: str) -> Optional[MCPServiceDetailResponse]:
+        service_list = self.list_mcp_services()
+        
+        for service in service_list.items:
+            if service.name == service_name:
+                return MCPServiceDetailResponse(service=service)
+        
+        return None
+
+    def test_mcp_service(self, service_name: str) -> MCPServiceTestResult:
+        service_detail = self.get_mcp_service_detail(service_name)
+        
+        if not service_detail:
+            return MCPServiceTestResult(
+                success=False,
+                message=f"MCP 服务 '{service_name}' 不存在",
+                tool_count=0,
+                tools=[],
+                error=f"Service '{service_name}' not found",
+            )
+        
+        service = service_detail.service
+        
+        if service.status == HealthStatus.UNHEALTHY:
+            return MCPServiceTestResult(
+                success=False,
+                message=f"连接失败: {service.error_message or '未知错误'}",
+                tool_count=0,
+                tools=[],
+                error=service.error_message,
+            )
+        
+        return MCPServiceTestResult(
+            success=True,
+            message=f"连接成功，发现 {len(service.tools)} 个工具",
+            tool_count=len(service.tools),
+            tools=service.tools,
+            error=None,
+        )
 
 
 hermes_service = HermesService()

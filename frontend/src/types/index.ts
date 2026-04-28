@@ -368,3 +368,46 @@ export interface AvailableSkill {
   identifier: string
   is_installed: boolean
 }
+
+export type HealthStatus = 'healthy' | 'warning' | 'unhealthy'
+
+export interface MCPTool {
+  name: string
+  description: string
+  input_schema?: Record<string, any>
+}
+
+export interface MCPService {
+  name: string
+  type: 'stdio' | 'sse'
+  type_display: string
+  status: HealthStatus
+  command?: string
+  args?: string[]
+  url?: string
+  tool_count: number
+  tools: MCPTool[]
+  last_check?: string
+  error_message?: string
+  config_raw?: string
+}
+
+export interface MCPServiceListResponse {
+  items: MCPService[]
+  total: number
+  running_count: number
+  warning_count: number
+  stopped_count: number
+}
+
+export interface MCPServiceDetailResponse {
+  service: MCPService
+}
+
+export interface MCPServiceTestResult {
+  success: boolean
+  message: string
+  tool_count?: number
+  tools: MCPTool[]
+  error?: string
+}
