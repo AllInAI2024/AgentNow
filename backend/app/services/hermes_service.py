@@ -32,6 +32,7 @@ from app.schemas.hermes import (
     SkillDetailResponse,
     SkillInstallParams,
     SkillCreateParams,
+    SkillType,
 )
 
 logger = logging.getLogger(__name__)
@@ -938,6 +939,15 @@ class HermesService:
                 )
             ) if hermes_meta else None
 
+            skill_type = frontmatter.get("metadata", {}).get("hermes", {}).get("skill_type")
+            if not skill_type:
+                skill_type = SkillType.BUNDLED if is_bundled else SkillType.COMMUNITY
+            else:
+                try:
+                    skill_type = SkillType(skill_type)
+                except ValueError:
+                    skill_type = SkillType.BUNDLED if is_bundled else SkillType.COMMUNITY
+
             return Skill(
                 name=skill_name,
                 description=frontmatter.get("description"),
@@ -950,6 +960,7 @@ class HermesService:
                 path=str(skill_path),
                 is_bundled=is_bundled,
                 is_installed=True,
+                skill_type=skill_type,
                 created_at=datetime.fromtimestamp(stat.st_ctime),
                 updated_at=datetime.fromtimestamp(stat.st_mtime),
                 usage_count=0,
@@ -1149,6 +1160,7 @@ class HermesService:
                     "hermes": {
                         "tags": params.tags or [],
                         "related_skills": [],
+                        "skill_type": params.skill_type.value,
                     }
                 },
             }

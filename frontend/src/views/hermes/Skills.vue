@@ -13,6 +13,9 @@
           <a-button type="primary" @click="handleCreateSkill">
             <PlusOutlined /> 创建技能
           </a-button>
+          <a-button @click="handleBrowseCommunity">
+            <CloudOutlined /> 社区 Skill
+          </a-button>
           <a-button @click="handleRefresh" :loading="loading">
             <ReloadOutlined /> 刷新
           </a-button>
@@ -114,7 +117,9 @@
                       </div>
                     </div>
                     <div class="skill-badges">
-                      <a-tag v-if="skill.is_bundled" color="blue">内置</a-tag>
+                      <a-tag :color="getSkillTypeColor(skill.skill_type)">
+                        {{ getSkillTypeName(skill.skill_type) }}
+                      </a-tag>
                     </div>
                   </div>
                   <div class="skill-description">
@@ -171,8 +176,9 @@
           <div class="detail-header-info">
             <div class="detail-name">{{ selectedSkill.name }}</div>
             <div class="detail-meta">
-              <a-tag v-if="selectedSkill.is_bundled" color="blue">内置技能</a-tag>
-              <a-tag v-else color="green">自定义技能</a-tag>
+              <a-tag :color="getSkillTypeColor(selectedSkill.skill_type)">
+                {{ getSkillTypeName(selectedSkill.skill_type) }}
+              </a-tag>
               <span class="detail-version">v{{ selectedSkill.version }}</span>
               <span class="detail-author">{{ selectedSkill.author || 'Unknown' }}</span>
             </div>
@@ -367,13 +373,15 @@
             </a-form-item>
           </a-col>
         </a-row>
-        <a-form-item label="标签">
-          <a-select 
-            v-model:value="createForm.tags" 
-            mode="tags"
-            style="width: 100%"
-            placeholder="输入标签后按回车添加"
-          />
+        <a-form-item label="技能类型">
+          <a-select v-model:value="createForm.skill_type" placeholder="选择技能类型">
+            <a-select-option value="agent_created">
+              <TagOutlined /> Agent 自动创建
+            </a-select-option>
+            <a-select-option value="user_uploaded">
+              <UploadOutlined /> 用户上传
+            </a-select-option>
+          </a-select>
         </a-form-item>
         <a-form-item label="技能内容" required>
           <a-textarea 
@@ -394,7 +402,7 @@
 
     <a-modal
       v-model:open="availableModalVisible"
-      title="浏览可用技能"
+      title="社区技能"
       width="800px"
       :footer="null"
     >
@@ -472,6 +480,9 @@ import {
   DeleteOutlined,
   FolderOutlined,
   EditOutlined,
+  CloudOutlined,
+  TagOutlined,
+  UploadOutlined,
 } from '@ant-design/icons-vue'
 import type { 
   Skill, 
@@ -509,6 +520,7 @@ const createForm = ref<SkillCreateParams>({
   author: '',
   license: 'MIT',
   tags: [],
+  skill_type: 'agent_created',
 })
 
 const availableModalVisible = ref(false)
@@ -622,6 +634,7 @@ const handleCreateSkill = () => {
     author: '',
     license: 'MIT',
     tags: [],
+    skill_type: 'agent_created',
   }
   createModalVisible.value = true
 }
@@ -638,8 +651,34 @@ const handleEditSkill = () => {
     author: selectedSkill.value.author || '',
     license: selectedSkill.value.license || 'MIT',
     tags: selectedSkill.value.metadata?.hermes?.tags || [],
+    skill_type: selectedSkill.value.skill_type,
   }
   createModalVisible.value = true
+}
+
+const getSkillTypeName = (type: string | undefined): string => {
+  const names: Record<string, string> = {
+    bundled: '内置技能',
+    community: '社区技能',
+    agent_created: 'Agent 创建',
+    user_uploaded: '用户上传',
+  }
+  return names[type || 'bundled'] || '未知'
+}
+
+const getSkillTypeColor = (type: string | undefined): string => {
+  const colors: Record<string, string> = {
+    bundled: 'blue',
+    community: 'orange',
+    agent_created: 'green',
+    user_uploaded: 'purple',
+  }
+  return colors[type || 'bundled'] || 'default'
+}
+
+const handleBrowseCommunity = () => {
+  availableModalVisible.value = true
+  refreshAvailableSkills()
 }
 
 const handleSubmitCreate = async () => {

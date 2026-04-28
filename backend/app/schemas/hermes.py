@@ -10,6 +10,13 @@ class HealthStatus(str, Enum):
     WARNING = "warning"
 
 
+class SkillType(str, Enum):
+    BUNDLED = "bundled"
+    COMMUNITY = "community"
+    AGENT_CREATED = "agent_created"
+    USER_UPLOADED = "user_uploaded"
+
+
 class HermesSystemInfo(BaseModel):
     version: str = Field(..., description="Hermes 当前版本号")
     latest_version: Optional[str] = Field(None, description="最新可用版本号")
@@ -95,6 +102,7 @@ class Skill(BaseModel):
     path: Optional[str] = Field(None, description="技能文件路径")
     is_bundled: bool = Field(False, description="是否为内置技能")
     is_installed: bool = Field(True, description="是否已安装")
+    skill_type: SkillType = Field(SkillType.BUNDLED, description="技能类型：bundled/community/agent_created/user_uploaded")
     created_at: Optional[datetime] = Field(None, description="创建时间")
     updated_at: Optional[datetime] = Field(None, description="更新时间")
     usage_count: int = Field(0, description="使用次数统计")
@@ -130,6 +138,7 @@ class SkillCreateParams(BaseModel):
     tags: Optional[List[str]] = Field(default_factory=list, description="标签")
     content: str = Field(..., description="SKILL.md 内容（包含 frontmatter）")
     category: Optional[str] = Field("custom", description="分类目录")
+    skill_type: SkillType = Field(SkillType.AGENT_CREATED, description="技能类型：agent_created/user_uploaded")
 
 
 class SkillDetailResponse(BaseModel):

@@ -228,6 +228,8 @@ export interface StatisticsResponse {
 
 export type HealthStatus = 'healthy' | 'unhealthy' | 'warning'
 
+export type SkillType = 'bundled' | 'community' | 'agent_created' | 'user_uploaded'
+
 export interface HermesSystemInfo {
   version: string
   latest_version: string | null
@@ -314,6 +316,7 @@ export interface Skill {
   path: string
   is_bundled: boolean
   is_installed: boolean
+  skill_type: SkillType
   created_at: string | null
   updated_at: string | null
   usage_count: number
@@ -353,6 +356,7 @@ export interface SkillCreateParams {
   author?: string
   license?: string
   tags?: string[]
+  skill_type?: SkillType
 }
 
 export interface AvailableSkill {
