@@ -225,3 +225,69 @@ export interface StatisticsResponse {
   public_docs: number
   recent_uploads: number
 }
+
+export type HealthStatus = 'healthy' | 'unhealthy' | 'warning'
+
+export interface HermesSystemInfo {
+  version: string
+  latest_version: string | null
+  has_update: boolean
+  status: HealthStatus
+  uptime: string
+  start_time: string | null
+  api_server_port: number | null
+}
+
+export interface HermesStatistics {
+  total_profiles: number
+  running_profiles: number
+  stopped_profiles: number
+  total_users: number
+  today_conversations: number
+  total_conversations: number
+  total_skills: number
+  total_mcp_services: number
+  total_documents: number
+}
+
+export interface HealthCheckItem {
+  name: string
+  status: HealthStatus
+  message: string
+  value: string | null
+}
+
+export interface HermesHealthStatus {
+  overall: HealthStatus
+  items: HealthCheckItem[]
+  checked_at: string
+}
+
+export interface RecentActivity {
+  time: string
+  user_name: string
+  event: string
+  details: string | null
+}
+
+export interface HermesOverviewResponse {
+  system_info: HermesSystemInfo
+  statistics: HermesStatistics
+  health_status: HermesHealthStatus
+  recent_activities: RecentActivity[]
+}
+
+export interface VersionCheckResponse {
+  current_version: string
+  latest_version: string
+  has_update: boolean
+  changelog: string | null
+  release_url: string | null
+}
+
+export interface UpdateProgress {
+  status: 'checking' | 'downloading' | 'installing' | 'completed' | 'failed'
+  progress: number
+  message: string
+  error: string | null
+}
