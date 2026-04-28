@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.models import User
@@ -6,6 +7,10 @@ from app.schemas.hermes import (
     HermesOverviewResponse,
     VersionCheckResponse,
     UpdateProgress,
+    SkillListResponse,
+    SkillDetailResponse,
+    SkillInstallParams,
+    SkillCreateParams,
 )
 from app.schemas.user import APIResponse
 from app.services.auth_service import get_db, get_current_user
@@ -148,4 +153,209 @@ async def get_update_progress(
         code=200,
         message="获取成功",
         data=progress
+    )
+
+
+@router.get(
+    "/skills",
+    response_model=APIResponse[SkillListResponse],
+    summary="获取技能列表",
+    description="获取 Hermes 已安装的技能列表，支持分类和搜索筛选"
+)
+async def get_skills(
+    category: Optional[str] = Query(None, description="按分类筛选"),
+    search: Optional[str] = Query(None, description="搜索关键词（名称、描述、标签）"),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    skill_list = hermes_service.list_skills(category=category, search=search)
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=skill_list
+    )
+
+
+@router.get(
+    "/skills/{skill_name}",
+    response_model=APIResponse[SkillDetailResponse],
+    summary="获取技能详情",
+    description="获取指定技能的详细信息"
+)
+async def get_skill_detail(
+    skill_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    skill_detail = hermes_service.get_skill_detail(skill_name)
+    
+    if skill_detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"技能 '{skill_name}' 不存在"
+        )
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=skill_detail
+    )
+
+
+@router.post(
+    "/skills/install",
+    response_model=APIResponse[dict],
+    summary="安装技能",
+    description="从技能仓库安装新技能"
+)
+async def install_skill(
+    params: SkillInstallParams,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    result = hermes_service.install_skill(params)
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("message", "安装失败")
+        )
+    
+    return APIResponse(
+        code=200,
+        message="安装成功",
+        data=result
+    )
+
+
+@router.post(
+    "/skills/{skill_name}/uninstall",
+    response_model=APIResponse[dict],
+    summary="卸载技能",
+    description="卸载已安装的技能"
+)
+async def uninstall_skill(
+    skill_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    result = hermes_service.uninstall_skill(skill_name)
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("message", "卸载失败")
+        )
+    
+    return APIResponse(
+        code=200,
+        message="卸载成功",
+        data=result
+    )
+
+
+@router.post(
+    "/skills/create",
+    response_model=APIResponse[dict],
+    summary="创建新技能",
+    description="创建自定义技能"
+)
+async def create_skill(
+    params: SkillCreateParams,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    result = hermes_service.create_skill(params)
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("message", "创建失败")
+        )
+    
+    return APIResponse(
+        code=200,
+        message="创建成功",
+        data=result
+    )
+
+
+@router.post(
+    "/skills/{skill_name}/update",
+    response_model=APIResponse[dict],
+    summary="更新技能",
+    description="更新已安装的技能到最新版本"
+)
+async def update_skill(
+    skill_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    result = hermes_service.update_skill(skill_name)
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("message", "更新失败")
+        )
+    
+    return APIResponse(
+        code=200,
+        message="更新成功",
+        data=result
+    )
+
+
+@router.get(
+    "/skills/available/browse",
+    response_model=APIResponse[list],
+    summary="浏览可用技能",
+    description="浏览技能仓库中可用的技能"
+)
+async def browse_available_skills(
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    skills = hermes_service.search_available_skills()
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=skills
     )

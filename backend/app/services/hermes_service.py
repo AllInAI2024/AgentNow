@@ -6,11 +6,12 @@ import platform
 import sys
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pathlib import Path
 from sqlalchemy.orm import Session
 
 import httpx
+import yaml
 
 from app.models import User
 from app.schemas.hermes import (
@@ -23,6 +24,14 @@ from app.schemas.hermes import (
     HermesOverviewResponse,
     VersionCheckResponse,
     UpdateProgress,
+    Skill,
+    SkillMetadata,
+    HermesSkillMetadata,
+    SkillCategory,
+    SkillListResponse,
+    SkillDetailResponse,
+    SkillInstallParams,
+    SkillCreateParams,
 )
 
 logger = logging.getLogger(__name__)
@@ -850,6 +859,350 @@ class HermesService:
 
     def get_update_progress(self) -> Optional[UpdateProgress]:
         return _update_progress
+
+    def _get_skills_dir(self) -> Path:
+        hermes_home = os.path.expanduser("~/.hermes")
+        skills_dir = Path(hermes_home) / "skills"
+        return skills_dir
+
+    def _parse_skill_frontmatter(self, content: str) -> tuple[Dict[str, Any], str]:
+        if not content.startswith("---"):
+            return {}, content
+
+        lines = content.split("\n")
+        frontmatter_lines = []
+        content_lines = []
+        in_frontmatter = False
+        frontmatter_ended = False
+
+        for i, line in enumerate(lines):
+            if i == 0 and line.strip() == "---":
+                in_frontmatter = True
+                continue
+            if in_frontmatter and line.strip() == "---":
+                in_frontmatter = False
+                frontmatter_ended = True
+                continue
+            if in_frontmatter:
+                frontmatter_lines.append(line)
+            elif frontmatter_ended:
+                content_lines.append(line)
+
+        frontmatter = {}
+        if frontmatter_lines:
+            try:
+                frontmatter = yaml.safe_load("\n".join(frontmatter_lines)) or {}
+            except Exception as e:
+                logger.warning(f"Failed to parse skill frontmatter: {e}")
+                frontmatter = {}
+
+        actual_content = "\n".join(content_lines).strip()
+        return frontmatter, actual_content
+
+    def _get_bundled_skills(self) -> Dict[str, str]:
+        skills_dir = self._get_skills_dir()
+        bundled_manifest = skills_dir / ".bundled_manifest"
+        bundled = {}
+        if bundled_manifest.exists():
+            try:
+                with open(bundled_manifest, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and ":" in line:
+                            name, version = line.split(":", 1)
+                            bundled[name.strip()] = version.strip()
+            except Exception as e:
+                logger.warning(f"Failed to read bundled manifest: {e}")
+        return bundled
+
+    def _parse_skill_from_file(self, skill_path: Path, category: str, bundled_skills: Dict[str, str]) -> Optional[Skill]:
+        skill_md = skill_path / "SKILL.md"
+        if not skill_md.exists():
+            return None
+
+        try:
+            stat = skill_md.stat()
+            with open(skill_md, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            frontmatter, actual_content = self._parse_skill_frontmatter(content)
+
+            skill_name = frontmatter.get("name") or skill_path.name
+            is_bundled = skill_name in bundled_skills
+
+            hermes_meta = frontmatter.get("metadata", {}).get("hermes", {})
+            skill_metadata = SkillMetadata(
+                hermes=HermesSkillMetadata(
+                    tags=hermes_meta.get("tags", []),
+                    related_skills=hermes_meta.get("related_skills", []),
+                )
+            ) if hermes_meta else None
+
+            return Skill(
+                name=skill_name,
+                description=frontmatter.get("description"),
+                version=frontmatter.get("version") or bundled_skills.get(skill_name),
+                author=frontmatter.get("author"),
+                license=frontmatter.get("license"),
+                metadata=skill_metadata,
+                content=actual_content,
+                category=category,
+                path=str(skill_path),
+                is_bundled=is_bundled,
+                is_installed=True,
+                created_at=datetime.fromtimestamp(stat.st_ctime),
+                updated_at=datetime.fromtimestamp(stat.st_mtime),
+                usage_count=0,
+            )
+        except Exception as e:
+            logger.error(f"Failed to parse skill at {skill_path}: {e}")
+            return None
+
+    def _get_category_display_name(self, category: str) -> str:
+        display_names: Dict[str, str] = {
+            "apple": "Apple 生态",
+            "autonomous-ai-agents": "自主 AI 代理",
+            "creative": "创意设计",
+            "data-science": "数据科学",
+            "devops": "DevOps",
+            "diagramming": "图表绘制",
+            "dogfood": "测试 QA",
+            "domain": "领域知识",
+            "email": "邮件管理",
+            "feeds": "订阅源",
+            "gaming": "游戏",
+            "gifs": "GIF 动图",
+            "github": "GitHub",
+            "inference-sh": "推理脚本",
+            "leisure": "休闲生活",
+            "mcp": "MCP",
+            "media": "媒体处理",
+            "mlops": "MLOps",
+            "note-taking": "笔记",
+            "openclaw-imports": "OpenClaw 导入",
+            "productivity": "生产力",
+            "red-teaming": "红队测试",
+            "research": "学术研究",
+            "smart-home": "智能家居",
+            "social-media": "社交媒体",
+            "software-development": "软件开发",
+            "custom": "自定义",
+        }
+        return display_names.get(category, category.replace("-", " ").title())
+
+    def list_skills(self, category: Optional[str] = None, search: Optional[str] = None) -> SkillListResponse:
+        skills_dir = self._get_skills_dir()
+        bundled_skills = self._get_bundled_skills()
+
+        skills: List[Skill] = []
+        categories: Dict[str, SkillCategory] = {}
+
+        if not skills_dir.exists():
+            logger.warning(f"Skills directory does not exist: {skills_dir}")
+            return SkillListResponse(
+                items=[],
+                total=0,
+                categories=[],
+                bundled_count=0,
+                installed_count=0,
+            )
+
+        for item in skills_dir.iterdir():
+            if item.is_dir() and not item.name.startswith("."):
+                cat_name = item.name
+                if category and cat_name != category:
+                    continue
+
+                cat_skill_count = 0
+                description_md = item / "DESCRIPTION.md"
+                cat_description = None
+                if description_md.exists():
+                    try:
+                        with open(description_md, "r", encoding="utf-8") as f:
+                            cat_description = f.read().strip()
+                    except Exception:
+                        pass
+
+                for skill_dir in item.iterdir():
+                    if skill_dir.is_dir():
+                        skill = self._parse_skill_from_file(skill_dir, cat_name, bundled_skills)
+                        if skill:
+                            if search:
+                                search_lower = search.lower()
+                                if (
+                                    search_lower not in (skill.name or "").lower()
+                                    and search_lower not in (skill.description or "").lower()
+                                ):
+                                    if skill.metadata and skill.metadata.hermes:
+                                        tags = skill.metadata.hermes.tags or []
+                                        if not any(search_lower in tag.lower() for tag in tags):
+                                            continue
+                                    else:
+                                        continue
+
+                            skills.append(skill)
+                            cat_skill_count += 1
+
+                if cat_skill_count > 0:
+                    categories[cat_name] = SkillCategory(
+                        name=cat_name,
+                        display_name=self._get_category_display_name(cat_name),
+                        description=cat_description,
+                        skill_count=cat_skill_count,
+                    )
+
+        bundled_count = sum(1 for s in skills if s.is_bundled)
+        installed_count = sum(1 for s in skills if s.is_installed)
+
+        return SkillListResponse(
+            items=sorted(skills, key=lambda s: (s.category or "", s.name or "")),
+            total=len(skills),
+            categories=sorted(categories.values(), key=lambda c: c.name),
+            bundled_count=bundled_count,
+            installed_count=installed_count,
+        )
+
+    def get_skill_detail(self, skill_name: str) -> Optional[SkillDetailResponse]:
+        skills_dir = self._get_skills_dir()
+        bundled_skills = self._get_bundled_skills()
+
+        for category_dir in skills_dir.iterdir():
+            if category_dir.is_dir() and not category_dir.name.startswith("."):
+                skill_path = category_dir / skill_name
+                skill_md = skill_path / "SKILL.md"
+                if skill_md.exists():
+                    skill = self._parse_skill_from_file(skill_path, category_dir.name, bundled_skills)
+                    if skill:
+                        return SkillDetailResponse(
+                            skill=skill,
+                            has_update=False,
+                            latest_version=None,
+                        )
+
+        return None
+
+    def install_skill(self, params: SkillInstallParams) -> Dict[str, Any]:
+        cmd = [self._hermes_path, "skills", "install", params.identifier]
+
+        if params.name:
+            cmd.extend(["--name", params.name])
+        if params.category:
+            cmd.extend(["--category", params.category])
+        if params.force:
+            cmd.append("--force")
+        cmd.extend(["--yes"])
+
+        returncode, stdout, stderr = self._run_command(cmd, timeout=120)
+
+        success = returncode == 0
+
+        return {
+            "success": success,
+            "message": stdout if success else stderr,
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+
+    def uninstall_skill(self, skill_name: str) -> Dict[str, Any]:
+        cmd = [self._hermes_path, "skills", "uninstall", skill_name, "--yes"]
+
+        returncode, stdout, stderr = self._run_command(cmd, timeout=60)
+
+        success = returncode == 0
+
+        return {
+            "success": success,
+            "message": stdout if success else stderr,
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+
+    def create_skill(self, params: SkillCreateParams) -> Dict[str, Any]:
+        skills_dir = self._get_skills_dir()
+        category_dir = skills_dir / (params.category or "custom")
+        skill_dir = category_dir / params.name
+
+        try:
+            skill_dir.mkdir(parents=True, exist_ok=True)
+
+            frontmatter = {
+                "name": params.name,
+                "description": params.description,
+                "version": params.version,
+                "metadata": {
+                    "hermes": {
+                        "tags": params.tags or [],
+                        "related_skills": [],
+                    }
+                },
+            }
+
+            frontmatter_yaml = yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+            full_content = f"""---
+{frontmatter_yaml.strip()}
+---
+
+{params.content}
+"""
+
+            skill_md = skill_dir / "SKILL.md"
+            with open(skill_md, "w", encoding="utf-8") as f:
+                f.write(full_content)
+
+            return {
+                "success": True,
+                "message": f"Skill '{params.name}' created successfully",
+                "path": str(skill_dir),
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to create skill: {e}")
+            return {
+                "success": False,
+                "message": str(e),
+                "path": None,
+            }
+
+    def update_skill(self, skill_name: str) -> Dict[str, Any]:
+        cmd = [self._hermes_path, "skills", "update", skill_name]
+
+        returncode, stdout, stderr = self._run_command(cmd, timeout=120)
+
+        success = returncode == 0
+
+        return {
+            "success": success,
+            "message": stdout if success else stderr,
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+
+    def search_available_skills(self, query: Optional[str] = None) -> List[Dict[str, Any]]:
+        cmd = [self._hermes_path, "skills", "browse"]
+
+        returncode, stdout, stderr = self._run_command(cmd, timeout=60)
+
+        if returncode != 0:
+            logger.warning(f"Failed to browse skills: {stderr}")
+            return []
+
+        results: List[Dict[str, Any]] = []
+
+        lines = stdout.strip().split("\n")
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("=") or "skill" in line.lower():
+                continue
+
+            parts = line.split()
+            if len(parts) >= 2:
+                results.append({
+                    "name": parts[0],
+                    "description": " ".join(parts[1:]) if len(parts) > 1 else "",
+                })
+
+        return results
 
 
 hermes_service = HermesService()

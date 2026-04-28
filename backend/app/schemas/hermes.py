@@ -72,3 +72,66 @@ class UpdateProgress(BaseModel):
     progress: int = Field(0, description="进度百分比 0-100")
     message: str = Field(..., description="当前操作消息")
     error: Optional[str] = Field(None, description="错误信息")
+
+
+class HermesSkillMetadata(BaseModel):
+    tags: Optional[List[str]] = Field(default_factory=list, description="技能标签")
+    related_skills: Optional[List[str]] = Field(default_factory=list, description="相关技能列表")
+
+
+class SkillMetadata(BaseModel):
+    hermes: Optional[HermesSkillMetadata] = Field(default=None, description="Hermes 元数据")
+
+
+class Skill(BaseModel):
+    name: str = Field(..., description="技能名称")
+    description: Optional[str] = Field(None, description="技能描述")
+    version: Optional[str] = Field(None, description="技能版本")
+    author: Optional[str] = Field(None, description="作者")
+    license: Optional[str] = Field(None, description="许可证")
+    metadata: Optional[SkillMetadata] = Field(default=None, description="元数据")
+    content: Optional[str] = Field(None, description="SKILL.md 完整内容")
+    category: Optional[str] = Field(None, description="技能分类（目录名）")
+    path: Optional[str] = Field(None, description="技能文件路径")
+    is_bundled: bool = Field(False, description="是否为内置技能")
+    is_installed: bool = Field(True, description="是否已安装")
+    created_at: Optional[datetime] = Field(None, description="创建时间")
+    updated_at: Optional[datetime] = Field(None, description="更新时间")
+    usage_count: int = Field(0, description="使用次数统计")
+
+
+class SkillCategory(BaseModel):
+    name: str = Field(..., description="分类名称")
+    display_name: str = Field(..., description="显示名称")
+    description: Optional[str] = Field(None, description="分类描述")
+    skill_count: int = Field(0, description="该分类下的技能数量")
+
+
+class SkillListResponse(BaseModel):
+    items: List[Skill] = Field(default_factory=list, description="技能列表")
+    total: int = Field(0, description="总数量")
+    categories: List[SkillCategory] = Field(default_factory=list, description="所有分类")
+    bundled_count: int = Field(0, description="内置技能数量")
+    installed_count: int = Field(0, description="已安装技能数量")
+
+
+class SkillInstallParams(BaseModel):
+    identifier: str = Field(..., description="技能标识符（如 openai/skills/skill-creator）或 SKILL.md URL")
+    name: Optional[str] = Field(None, description="覆盖技能名称（从 URL 安装时使用）")
+    category: Optional[str] = Field(None, description="安装到的分类目录")
+    force: bool = Field(False, description="忽略扫描结果强制安装")
+
+
+class SkillCreateParams(BaseModel):
+    name: str = Field(..., description="技能名称")
+    description: str = Field(..., description="技能描述")
+    version: str = Field("1.0.0", description="技能版本")
+    tags: Optional[List[str]] = Field(default_factory=list, description="标签")
+    content: str = Field(..., description="SKILL.md 内容（包含 frontmatter）")
+    category: Optional[str] = Field("custom", description="分类目录")
+
+
+class SkillDetailResponse(BaseModel):
+    skill: Skill = Field(..., description="技能详细信息")
+    has_update: bool = Field(False, description="是否有更新")
+    latest_version: Optional[str] = Field(None, description="最新版本")

@@ -291,3 +291,72 @@ export interface UpdateProgress {
   message: string
   error: string | null
 }
+
+export interface HermesSkillMetadata {
+  tags: string[]
+  related_skills: string[]
+}
+
+export interface SkillMetadata {
+  hermes: HermesSkillMetadata
+}
+
+export interface Skill {
+  name: string
+  description: string
+  version: string
+  author: string
+  license: string
+  metadata: SkillMetadata
+  content: string
+  category: string
+  category_name: string
+  path: string
+  is_bundled: boolean
+  is_installed: boolean
+  created_at: string | null
+  updated_at: string | null
+  usage_count: number
+}
+
+export interface SkillCategory {
+  name: string
+  display_name: string
+  skill_count: number
+}
+
+export interface SkillListResponse {
+  total: number
+  categories: SkillCategory[]
+  skills: Skill[]
+}
+
+export interface SkillDetailResponse extends Skill {
+  description_html: string | null
+}
+
+export interface SkillInstallParams {
+  skill_name: string
+  category?: string
+  version?: string
+}
+
+export interface SkillCreateParams {
+  name: string
+  description: string
+  content: string
+  category?: string
+  version?: string
+  author?: string
+  license?: string
+  tags?: string[]
+}
+
+export interface AvailableSkill {
+  name: string
+  description: string
+  category: string
+  author: string
+  version: string
+  is_installed: boolean
+}
