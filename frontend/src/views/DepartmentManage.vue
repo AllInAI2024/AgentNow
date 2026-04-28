@@ -158,6 +158,7 @@ import { departmentApi } from '@/api/department'
 import { employeeApi } from '@/api/employee'
 import type { Department, DepartmentTree, User } from '@/types'
 import MainLayout from '@/components/MainLayout.vue'
+import { useUserStore } from '@/stores/user'
 
 interface DepartmentListItem extends Department {
   level: number
@@ -270,6 +271,11 @@ const fetchDepartments = async () => {
 }
 
 const fetchEmployees = async () => {
+  const userStore = useUserStore()
+  if (!userStore.hasPermission('employee:query')) {
+    return
+  }
+  
   try {
     const res = await employeeApi.getList({ is_active: true })
     if (res.code === 200) {
@@ -302,11 +308,13 @@ const handleEdit = async (record: Department) => {
   isEdit.value = true
   editId.value = record.id
   loading.value = true
+  
+  const userStore = useUserStore()
+  const hasEmployeeQueryPermission = userStore.hasPermission('employee:query')
+  
   try {
-    const [deptRes, empRes] = await Promise.all([
-      departmentApi.getById(record.id),
-      employeeApi.getList({ is_active: true }),
-    ])
+    const deptRes = await departmentApi.getById(record.id)
+    
     if (deptRes.code === 200) {
       const data = deptRes.data
       formData.parent_id = data.parent_id === 0 ? undefined : data.parent_id
@@ -317,9 +325,18 @@ const handleEdit = async (record: Department) => {
       formData.status = data.status
       formData.leader_id = data.leader_id || undefined
     }
-    if (empRes.code === 200) {
-      employeeOptions.value = empRes.data
+    
+    if (hasEmployeeQueryPermission) {
+      try {
+        const empRes = await employeeApi.getList({ is_active: true })
+        if (empRes.code === 200) {
+          employeeOptions.value = empRes.data
+        }
+      } catch (empError) {
+        console.error('获取员工列表失败:', empError)
+      }
     }
+    
     modalVisible.value = true
   } catch (error) {
     console.error('获取部门详情失败:', error)
