@@ -410,3 +410,105 @@ VALUES (@admin_user_id, @super_admin_role_id);
 --       - "@wirux/mcp-markdown-vault"
 --     env:
 --       VAULT_PATH: "/Users/yourname/.agentnow/knowledge/docs"
+
+-- ============================================
+-- 十一、Hermes 系统管理菜单权限
+-- ============================================
+
+-- 插入 Hermes 一级菜单
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(0, 'Hermes 系统管理', 'hermes', 1, '/hermes', 'robot', 5);
+
+-- 获取 Hermes 一级菜单 ID
+SET @hermes_id = (SELECT id FROM permissions WHERE code = 'hermes');
+
+-- 二级菜单 - 监控组
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(@hermes_id, '系统概览', 'hermes:overview', 1, '/hermes/overview', 'dashboard', 1),
+(@hermes_id, 'Profiles 管理', 'hermes:profiles', 1, '/hermes/profiles', 'apartment', 2),
+(@hermes_id, '对话日志管理', 'hermes:conversations', 1, '/hermes/conversations', 'message', 3);
+
+-- 分割线（监控组和能力组之间）
+INSERT INTO permissions (parent_id, name, code, type, sort, divider)
+VALUES 
+(@hermes_id, '---', 'hermes:divider:1', 1, 4, 1);
+
+-- 二级菜单 - 能力组
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(@hermes_id, '技能管理', 'hermes:skills', 1, '/hermes/skills', 'tool', 5),
+(@hermes_id, 'MCP 服务', 'hermes:mcp', 1, '/hermes/mcp', 'appstore', 6),
+(@hermes_id, '工具集', 'hermes:tools', 1, '/hermes/tools', 'list', 7);
+
+-- 分割线（能力组和深度信息之间）
+INSERT INTO permissions (parent_id, name, code, type, sort, divider)
+VALUES 
+(@hermes_id, '---', 'hermes:divider:2', 1, 8, 1);
+
+-- 二级菜单 - 深度信息
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(@hermes_id, '记忆系统', 'hermes:memory', 1, '/hermes/memory', 'folder-open', 9),
+(@hermes_id, '配置管理', 'hermes:config', 1, '/hermes/config', 'setting', 10),
+(@hermes_id, '知识库管理', 'hermes:knowledge', 1, '/hermes/knowledge', 'file', 11);
+
+-- 分割线（深度信息和审计之间）
+INSERT INTO permissions (parent_id, name, code, type, sort, divider)
+VALUES 
+(@hermes_id, '---', 'hermes:divider:3', 1, 12, 1);
+
+-- 二级菜单 - 审计
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(@hermes_id, '操作审计', 'hermes:audit', 1, '/hermes/audit', 'safety-certificate', 13);
+
+-- 为超级管理员角色分配 Hermes 权限
+SET @super_admin_role_id = (SELECT id FROM roles WHERE code = 'super_admin');
+
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT @super_admin_role_id, id FROM permissions 
+WHERE code LIKE 'hermes%';
+
+-- ============================================
+-- 菜单分组说明（前端双列展示）
+-- ============================================
+-- Hermes 系统管理菜单共 10 个二级菜单，建议前端采用双列布局：
+--
+-- 第一列（监控组 + 能力组 - 6 个）
+-- ├── 系统概览
+-- ├── Profiles 管理
+-- ├── 对话日志管理
+-- ├── ────────── (分割线)
+-- ├── 技能管理
+-- ├── MCP 服务
+-- └── 工具集
+--
+-- 第二列（深度信息 + 审计 - 4 个）
+-- ├── 记忆系统
+-- ├── 配置管理
+-- ├── 知识库管理
+-- ├── ────────── (分割线)
+-- └── 操作审计
+--
+-- 或者采用单列展示（带分组标题），效果如下：
+-- ┌─────────────────────────┐
+-- │ 📊 监控组               │
+-- │ ├── 系统概览            │
+-- │ ├── Profiles 管理       │
+-- │ └── 对话日志管理        │
+-- ├─────────────────────────┤
+-- │ ⚡ 能力组               │
+-- │ ├── 技能管理            │
+-- │ ├── MCP 服务            │
+-- │ └── 工具集              │
+-- ├─────────────────────────┤
+-- │ 📁 深度信息             │
+-- │ ├── 记忆系统            │
+│ ├── 配置管理            │
+│ └── 知识库管理          │
+├─────────────────────────┤
+│ 📋 审计                 │
+│ └── 操作审计            │
+└─────────────────────────┘

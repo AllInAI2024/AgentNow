@@ -41,28 +41,145 @@
                     <DownOutlined class="nav-arrow" />
                   </div>
                   <template #overlay>
-                    <div class="nav-submenu">
-                      <template v-for="child in menu.children" :key="child.id">
-                        <div
-                          v-if="child.divider"
-                          class="submenu-divider"
-                        />
-                        <div
-                          v-else
-                          class="submenu-item"
-                          :class="{ 'submenu-item-active': isActiveRoute(child.path || '') }"
-                          @click="handleNavigate(child.path || '/')"
-                        >
-                          <div class="submenu-icon-wrapper">
-                            <component :is="getIconComponent(child.icon || '')" class="submenu-icon" />
+                    <template v-if="menu.code === 'hermes'">
+                      <div class="hermes-submenu">
+                        <div class="hermes-submenu-column">
+                          <div class="hermes-submenu-group">
+                            <div class="hermes-group-title">
+                              <DashboardOutlined class="group-icon" />
+                              <span>监控组</span>
+                            </div>
+                            <template v-for="child in getHermesGroupItems(menu, 0)" :key="child.id">
+                              <div
+                                v-if="child.divider"
+                                class="submenu-divider"
+                              />
+                              <div
+                                v-else
+                                class="submenu-item"
+                                :class="{ 'submenu-item-active': isActiveRoute(child.path || '') }"
+                                @click="handleNavigate(child.path || '/')"
+                              >
+                                <div class="submenu-icon-wrapper">
+                                  <component :is="getIconComponent(child.icon || '')" class="submenu-icon" />
+                                </div>
+                                <div class="submenu-content">
+                                  <span class="submenu-title">{{ child.name }}</span>
+                                  <span class="submenu-desc">{{ getHermesMenuDescription(child) }}</span>
+                                </div>
+                              </div>
+                            </template>
                           </div>
-                          <div class="submenu-content">
-                            <span class="submenu-title">{{ child.name }}</span>
-                            <span class="submenu-desc">{{ getMenuDescription(child) }}</span>
+                          
+                          <div class="hermes-submenu-group">
+                            <div class="hermes-group-title">
+                              <ThunderboltOutlined class="group-icon" />
+                              <span>能力组</span>
+                            </div>
+                            <template v-for="child in getHermesGroupItems(menu, 1)" :key="child.id">
+                              <div
+                                v-if="child.divider"
+                                class="submenu-divider"
+                              />
+                              <div
+                                v-else
+                                class="submenu-item"
+                                :class="{ 'submenu-item-active': isActiveRoute(child.path || '') }"
+                                @click="handleNavigate(child.path || '/')"
+                              >
+                                <div class="submenu-icon-wrapper">
+                                  <component :is="getIconComponent(child.icon || '')" class="submenu-icon" />
+                                </div>
+                                <div class="submenu-content">
+                                  <span class="submenu-title">{{ child.name }}</span>
+                                  <span class="submenu-desc">{{ getHermesMenuDescription(child) }}</span>
+                                </div>
+                              </div>
+                            </template>
                           </div>
                         </div>
-                      </template>
-                    </div>
+                        
+                        <div class="hermes-submenu-column">
+                          <div class="hermes-submenu-group">
+                            <div class="hermes-group-title">
+                              <DatabaseOutlined class="group-icon" />
+                              <span>深度信息</span>
+                            </div>
+                            <template v-for="child in getHermesGroupItems(menu, 2)" :key="child.id">
+                              <div
+                                v-if="child.divider"
+                                class="submenu-divider"
+                              />
+                              <div
+                                v-else
+                                class="submenu-item"
+                                :class="{ 'submenu-item-active': isActiveRoute(child.path || '') }"
+                                @click="handleNavigate(child.path || '/')"
+                              >
+                                <div class="submenu-icon-wrapper">
+                                  <component :is="getIconComponent(child.icon || '')" class="submenu-icon" />
+                                </div>
+                                <div class="submenu-content">
+                                  <span class="submenu-title">{{ child.name }}</span>
+                                  <span class="submenu-desc">{{ getHermesMenuDescription(child) }}</span>
+                                </div>
+                              </div>
+                            </template>
+                          </div>
+                          
+                          <div class="hermes-submenu-group">
+                            <div class="hermes-group-title">
+                              <SafetyCertificateOutlined class="group-icon" />
+                              <span>审计</span>
+                            </div>
+                            <template v-for="child in getHermesGroupItems(menu, 3)" :key="child.id">
+                              <div
+                                v-if="child.divider"
+                                class="submenu-divider"
+                              />
+                              <div
+                                v-else
+                                class="submenu-item"
+                                :class="{ 'submenu-item-active': isActiveRoute(child.path || '') }"
+                                @click="handleNavigate(child.path || '/')"
+                              >
+                                <div class="submenu-icon-wrapper">
+                                  <component :is="getIconComponent(child.icon || '')" class="submenu-icon" />
+                                </div>
+                                <div class="submenu-content">
+                                  <span class="submenu-title">{{ child.name }}</span>
+                                  <span class="submenu-desc">{{ getHermesMenuDescription(child) }}</span>
+                                </div>
+                              </div>
+                            </template>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div class="nav-submenu">
+                        <template v-for="child in menu.children" :key="child.id">
+                          <div
+                            v-if="child.divider"
+                            class="submenu-divider"
+                          />
+                          <div
+                            v-else
+                            class="submenu-item"
+                            :class="{ 'submenu-item-active': isActiveRoute(child.path || '') }"
+                            @click="handleNavigate(child.path || '/')"
+                          >
+                            <div class="submenu-icon-wrapper">
+                              <component :is="getIconComponent(child.icon || '')" class="submenu-icon" />
+                            </div>
+                            <div class="submenu-content">
+                              <span class="submenu-title">{{ child.name }}</span>
+                              <span class="submenu-desc">{{ getMenuDescription(child) }}</span>
+                            </div>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
                   </template>
                 </a-dropdown>
               </template>
