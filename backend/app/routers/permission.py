@@ -23,7 +23,7 @@ router = APIRouter(prefix="/permissions", tags=["权限管理"])
 def build_permission_tree(permissions: List[Permission], parent_id: int = 0) -> List[PermissionTreeResponse]:
     tree = []
     for permission in permissions:
-        if permission.parent_id == parent_id:
+        if permission.parent_id == parent_id and not permission.divider:
             tree_node = PermissionTreeResponse.model_validate(permission)
             tree_node.children = build_permission_tree(permissions, permission.id)
             tree.append(tree_node)

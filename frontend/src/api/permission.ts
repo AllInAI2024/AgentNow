@@ -9,6 +9,8 @@ export interface Permission {
   type: number
   path: string | null
   icon: string | null
+  sort: number
+  divider: boolean
   created_at: string | null
   updated_at: string | null
 }
