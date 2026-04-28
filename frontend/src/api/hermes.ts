@@ -63,4 +63,17 @@ export const hermesApi = {
   browseAvailableSkills: (): Promise<APIResponse<unknown[]>> => {
     return http.get('/hermes/skills/available/browse')
   },
+
+  uploadSkill: (file: File, category?: string): Promise<APIResponse<Record<string, unknown>>> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (category) {
+      formData.append('category', category)
+    }
+    return http.post('/hermes/skills/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
 }

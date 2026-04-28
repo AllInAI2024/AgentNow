@@ -362,8 +362,7 @@ export interface SkillCreateParams {
 export interface AvailableSkill {
   name: string
   description: string
-  category: string
-  author: string
-  version: string
+  source: string
+  trust: string
   is_installed: boolean
 }

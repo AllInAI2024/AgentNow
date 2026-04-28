@@ -1,6 +1,10 @@
+import tempfile
+import zipfile
+import tarfile
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from pathlib import Path
 
 from app.models import User
 from app.schemas.hermes import (
@@ -359,3 +363,108 @@ async def browse_available_skills(
         message="获取成功",
         data=skills
     )
+
+
+def _extract_skill_from_archive(archive_path: Path, extract_dir: Path) -> Optional[Path]:
+    if archive_path.suffix == ".zip":
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            zf.extractall(extract_dir)
+    elif archive_path.suffix in [".tar", ".gz", ".tgz"]:
+        mode = "r:gz" if archive_path.suffix in [".gz", ".tgz"] else "r"
+        with tarfile.open(archive_path, mode) as tf:
+            tf.extractall(extract_dir)
+    else:
+        return None
+    
+    skill_dir: Optional[Path] = None
+    for item in extract_dir.iterdir():
+        if item.is_dir():
+            skill_md = item / "SKILL.md"
+            if skill_md.exists():
+                skill_dir = item
+                break
+    
+    if skill_dir is None:
+        skill_md = extract_dir / "SKILL.md"
+        if skill_md.exists():
+            skill_dir = extract_dir
+    
+    return skill_dir
+
+
+@router.post(
+    "/skills/upload",
+    response_model=APIResponse[dict],
+    summary="上传技能",
+    description="上传技能压缩包（.zip 或 .tar.gz）并安装"
+)
+async def upload_skill(
+    file: UploadFile = File(..., description="技能压缩包文件"),
+    category: Optional[str] = Form(None, description="安装到的分类目录"),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    allowed_types = [
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/gzip",
+        "application/x-gzip",
+        "application/x-tar",
+    ]
+    
+    file_ext = Path(file.filename or "").suffix.lower()
+    allowed_extensions = [".zip", ".tar", ".gz", ".tgz"]
+    
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的文件格式。支持的格式：{', '.join(allowed_extensions)}"
+        )
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        archive_path = temp_path / f"skill{file_ext}"
+        
+        content = await file.read()
+        with open(archive_path, "wb") as f:
+            f.write(content)
+        
+        extract_dir = temp_path / "extracted"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        
+        skill_dir = _extract_skill_from_archive(archive_path, extract_dir)
+        
+        if skill_dir is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="压缩包中未找到有效的技能目录（需要包含 SKILL.md 文件）"
+            )
+        
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.exists():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="技能目录中缺少 SKILL.md 文件"
+            )
+        
+        result = hermes_service.install_skill_from_directory(
+            skill_dir, 
+            category or "custom"
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("message", "安装失败")
+            )
+        
+        return APIResponse(
+            code=200,
+            message="技能上传成功",
+            data=result
+        )

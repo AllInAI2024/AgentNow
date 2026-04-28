@@ -1206,8 +1206,114 @@ class HermesService:
             "stderr": stderr,
         }
 
+    def _copy_directory(self, src: Path, dst: Path) -> None:
+        import shutil
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+
+    def install_skill_from_directory(self, src_dir: Path, category: str) -> Dict[str, Any]:
+        try:
+            skills_dir = self._get_skills_dir()
+            category_dir = skills_dir / category
+
+            skill_md = src_dir / "SKILL.md"
+            if not skill_md.exists():
+                return {
+                    "success": False,
+                    "message": "SKILL.md not found in the skill directory",
+                }
+
+            with open(skill_md, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            frontmatter, actual_content = self._parse_skill_frontmatter(content)
+            skill_name = frontmatter.get("name") or src_dir.name
+
+            existing_skill = self.get_skill_detail(skill_name)
+            if existing_skill:
+                return {
+                    "success": False,
+                    "message": f"Skill '{skill_name}' already exists",
+                }
+
+            dest_dir = category_dir / skill_name
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+            hermes_meta = frontmatter.get("metadata", {}).get("hermes", {})
+            current_skill_type = hermes_meta.get("skill_type")
+
+            if not current_skill_type:
+                hermes_meta["skill_type"] = SkillType.USER_UPLOADED.value
+
+                if "metadata" not in frontmatter:
+                    frontmatter["metadata"] = {}
+                if "hermes" not in frontmatter["metadata"]:
+                    frontmatter["metadata"]["hermes"] = {}
+                frontmatter["metadata"]["hermes"]["skill_type"] = SkillType.USER_UPLOADED.value
+
+                frontmatter_yaml = yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+                full_content = f"""---
+{frontmatter_yaml.strip()}
+---
+
+{actual_content}
+"""
+
+                with open(skill_md, "w", encoding="utf-8") as f:
+                    f.write(full_content)
+
+            self._copy_directory(src_dir, dest_dir)
+
+            return {
+                "success": True,
+                "message": f"Skill '{skill_name}' installed successfully",
+                "name": skill_name,
+                "path": str(dest_dir),
+                "category": category,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to install skill from directory: {e}")
+            return {
+                "success": False,
+                "message": str(e),
+            }
+
+    def _get_installed_skill_names(self) -> set:
+        cmd = [self._hermes_path, "skills", "list"]
+        returncode, stdout, stderr = self._run_command(cmd, timeout=30)
+        
+        installed = set()
+        if returncode != 0:
+            return installed
+        
+        lines = stdout.strip().split("\n")
+        in_table = False
+        
+        for line in lines:
+            if "Name" in line and "Category" in line:
+                in_table = True
+                continue
+            
+            if not in_table:
+                continue
+            
+            if line.startswith("└") or line.startswith("0 hub") or line.startswith("─"):
+                break
+            
+            if "│" in line:
+                parts = [p.strip() for p in line.split("│") if p.strip()]
+                if len(parts) >= 1 and parts[0] and not parts[0].startswith("#") and not parts[0].startswith("─"):
+                    name = parts[0]
+                    if name and not name.isdigit():
+                        installed.add(name)
+        
+        return installed
+
     def search_available_skills(self, query: Optional[str] = None) -> List[Dict[str, Any]]:
-        cmd = [self._hermes_path, "skills", "browse"]
+        cmd = [self._hermes_path, "skills", "browse", "--size", "50"]
 
         returncode, stdout, stderr = self._run_command(cmd, timeout=60)
 
@@ -1215,21 +1321,73 @@ class HermesService:
             logger.warning(f"Failed to browse skills: {stderr}")
             return []
 
+        installed_skills = self._get_installed_skill_names()
+        
         results: List[Dict[str, Any]] = []
-
         lines = stdout.strip().split("\n")
+        
+        in_table = False
+        current_skill: Optional[Dict[str, Any]] = None
+        col_positions = []
+        
         for line in lines:
-            line = line.strip()
-            if not line or line.startswith("=") or "skill" in line.lower():
+            if "Name" in line and "Description" in line and "│" in line:
+                in_table = True
+                col_positions = [i for i, c in enumerate(line) if c == "│"]
                 continue
-
-            parts = line.split()
+            
+            if not in_table:
+                continue
+            
+            if line.startswith("└") or line.startswith("Sources:") or line.startswith("Tip:"):
+                if current_skill:
+                    results.append(current_skill)
+                break
+            
+            if line.startswith("┡") or line.startswith("┏") or line.startswith("─"):
+                continue
+            
+            if "│" not in line:
+                continue
+            
+            parts = [p.strip() for p in line.split("│") if p.strip()]
+            
+            if not parts:
+                continue
+            
             if len(parts) >= 2:
-                results.append({
-                    "name": parts[0],
-                    "description": " ".join(parts[1:]) if len(parts) > 1 else "",
-                })
-
+                first_col = parts[0]
+                
+                if first_col.isdigit():
+                    if current_skill:
+                        results.append(current_skill)
+                    
+                    name = parts[1] if len(parts) > 1 else ""
+                    description = parts[2] if len(parts) > 2 else ""
+                    source = parts[3] if len(parts) > 3 else ""
+                    trust = parts[4] if len(parts) > 4 else ""
+                    
+                    is_installed = name in installed_skills
+                    
+                    current_skill = {
+                        "name": name,
+                        "description": description,
+                        "source": source,
+                        "trust": trust,
+                        "is_installed": is_installed,
+                    }
+                else:
+                    if current_skill and len(parts) >= 2:
+                        if parts[0] == "" or not parts[0].strip():
+                            if len(parts) >= 2:
+                                if "..." in parts[1]:
+                                    current_skill["description"] = current_skill.get("description", "") + " " + parts[1].rstrip(".")
+                                else:
+                                    current_skill["description"] = current_skill.get("description", "") + " " + parts[1]
+        
+        if current_skill and not any(r["name"] == current_skill["name"] for r in results):
+            results.append(current_skill)
+        
         return results
 
 

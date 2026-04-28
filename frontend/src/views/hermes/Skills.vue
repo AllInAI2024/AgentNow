@@ -10,8 +10,11 @@
           </div>
         </div>
         <div class="header-right">
-          <a-button type="primary" @click="handleCreateSkill">
-            <PlusOutlined /> 创建技能
+          <a-button type="primary" @click="handleAgentCreateSkill">
+            <RobotOutlined /> Agent 自动创建
+          </a-button>
+          <a-button @click="handleUploadSkill">
+            <UploadOutlined /> 上传技能
           </a-button>
           <a-button @click="handleBrowseCommunity">
             <CloudOutlined /> 社区 Skill
@@ -330,7 +333,7 @@
 
     <a-modal
       v-model:open="createModalVisible"
-      title="创建新技能"
+      title="Agent 自动创建技能"
       width="600px"
       :footer="null"
     >
@@ -373,16 +376,6 @@
             </a-form-item>
           </a-col>
         </a-row>
-        <a-form-item label="技能类型">
-          <a-select v-model:value="createForm.skill_type" placeholder="选择技能类型">
-            <a-select-option value="agent_created">
-              <TagOutlined /> Agent 自动创建
-            </a-select-option>
-            <a-select-option value="user_uploaded">
-              <UploadOutlined /> 用户上传
-            </a-select-option>
-          </a-select>
-        </a-form-item>
         <a-form-item label="技能内容" required>
           <a-textarea 
             v-model:value="createForm.content" 
@@ -396,6 +389,63 @@
         <div class="modal-footer">
           <a-button @click="createModalVisible = false">取消</a-button>
           <a-button type="primary" @click="handleSubmitCreate" :loading="createLoading">创建</a-button>
+        </div>
+      </template>
+    </a-modal>
+
+    <a-modal
+      v-model:open="uploadModalVisible"
+      title="上传技能"
+      width="600px"
+      :footer="null"
+    >
+      <div class="upload-content">
+        <div class="upload-info">
+          <p>支持上传以下格式的技能压缩包：</p>
+          <ul>
+            <li>.zip</li>
+            <li>.tar / .tar.gz / .tgz</li>
+          </ul>
+          <p class="upload-tip">压缩包需要包含 SKILL.md 文件，可以是直接在根目录，或者在一个子目录中。</p>
+        </div>
+
+        <a-form layout="vertical">
+          <a-form-item label="分类">
+            <a-select v-model:value="uploadCategory" placeholder="选择分类" allow-clear style="width: 100%">
+              <a-select-option v-for="cat in skillList?.categories || []" :key="cat.name" :value="cat.name">
+                {{ cat.display_name }}
+              </a-select-option>
+              <a-select-option value="custom">自定义</a-select-option>
+            </a-select>
+          </a-form-item>
+        </a-form>
+
+        <a-upload-dragger
+          v-model:file-list="uploadFileList"
+          :custom-request="handleUploadCustom"
+          :before-upload="beforeUpload"
+          :max-count="1"
+          accept=".zip,.tar,.tar.gz,.tgz"
+          :show-upload-list="true"
+        >
+          <p class="ant-upload-drag-icon">
+            <InboxOutlined />
+          </p>
+          <p class="ant-upload-text">点击或拖拽技能压缩包到此处上传</p>
+          <p class="ant-upload-hint">支持 .zip, .tar, .tar.gz, .tgz 格式</p>
+        </a-upload-dragger>
+      </div>
+      <template #footer>
+        <div class="modal-footer">
+          <a-button @click="uploadModalVisible = false">取消</a-button>
+          <a-button 
+            type="primary" 
+            @click="handleSubmitUpload" 
+            :loading="uploadLoading"
+            :disabled="uploadFileList.length === 0"
+          >
+            上传并安装
+          </a-button>
         </div>
       </template>
     </a-modal>
@@ -437,9 +487,10 @@
             <div class="available-skill-info">
               <div class="available-skill-name">{{ skill.name }}</div>
               <div class="available-skill-meta">
-                <span class="available-skill-version">v{{ skill.version }}</span>
-                <span class="available-skill-divider">•</span>
-                <span class="available-skill-author">{{ skill.author }}</span>
+                <a-tag :color="skill.source === 'official' ? 'blue' : 'orange'">
+                  {{ skill.source }}
+                </a-tag>
+                <span class="available-skill-trust">{{ skill.trust }}</span>
               </div>
             </div>
             <div class="available-skill-action">
@@ -455,10 +506,7 @@
             </div>
           </div>
           <div class="available-skill-description">
-            {{ skill.description }}
-          </div>
-          <div class="available-skill-category">
-            <FolderOutlined /> {{ skill.category }}
+            {{ skill.description || '暂无描述' }}
           </div>
         </a-card>
       </div>
@@ -483,6 +531,8 @@ import {
   CloudOutlined,
   TagOutlined,
   UploadOutlined,
+  RobotOutlined,
+  InboxOutlined,
 } from '@ant-design/icons-vue'
 import type { 
   Skill, 
@@ -526,6 +576,12 @@ const createForm = ref<SkillCreateParams>({
 const availableModalVisible = ref(false)
 const availableSearchKeyword = ref('')
 const availableSkills = ref<AvailableSkill[]>([])
+
+const uploadModalVisible = ref(false)
+const uploadLoading = ref(false)
+const uploadCategory = ref('')
+const uploadFileList = ref<any[]>([])
+const pendingUploadFile = ref<File | null>(null)
 
 const totalSkillsCount = computed(() => {
   if (!skillList.value?.categories) return 0
@@ -624,7 +680,7 @@ const handleSearch = () => {
   fetchSkills()
 }
 
-const handleCreateSkill = () => {
+const handleAgentCreateSkill = () => {
   createForm.value = {
     name: '',
     description: '',
@@ -637,6 +693,13 @@ const handleCreateSkill = () => {
     skill_type: 'agent_created',
   }
   createModalVisible.value = true
+}
+
+const handleUploadSkill = () => {
+  uploadCategory.value = selectedCategory.value || ''
+  uploadFileList.value = []
+  pendingUploadFile.value = null
+  uploadModalVisible.value = true
 }
 
 const handleEditSkill = () => {
@@ -679,6 +742,67 @@ const getSkillTypeColor = (type: string | undefined): string => {
 const handleBrowseCommunity = () => {
   availableModalVisible.value = true
   refreshAvailableSkills()
+}
+
+const beforeUpload = (file: File) => {
+  const allowedTypes = [
+    'application/zip',
+    'application/x-zip-compressed',
+    'application/gzip',
+    'application/x-gzip',
+    'application/x-tar',
+  ]
+  const allowedExtensions = ['.zip', '.tar', '.gz', '.tgz']
+  
+  const fileName = file.name.toLowerCase()
+  const isValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext))
+  
+  if (!isValidExtension) {
+    message.error('只能上传 .zip, .tar, .tar.gz, .tgz 格式的文件')
+    return false
+  }
+  
+  const isLt50M = file.size / 1024 / 1024 < 50
+  if (!isLt50M) {
+    message.error('文件大小不能超过 50MB')
+    return false
+  }
+  
+  pendingUploadFile.value = file
+  return false
+}
+
+const handleUploadCustom = (options: any) => {
+  const { file, onSuccess, onError } = options
+  pendingUploadFile.value = file
+  onSuccess?.(file)
+}
+
+const handleSubmitUpload = async () => {
+  if (!pendingUploadFile.value) {
+    message.warning('请先选择要上传的技能压缩包')
+    return
+  }
+  
+  uploadLoading.value = true
+  try {
+    const res = await hermesApi.uploadSkill(
+      pendingUploadFile.value,
+      uploadCategory.value || undefined
+    )
+    if (res.code === 200) {
+      message.success('技能上传成功')
+      uploadModalVisible.value = false
+      fetchSkills()
+    } else {
+      message.error(res.message || '上传失败')
+    }
+  } catch (error) {
+    console.error('Failed to upload skill:', error)
+    message.error('上传技能失败')
+  } finally {
+    uploadLoading.value = false
+  }
 }
 
 const handleSubmitCreate = async () => {
@@ -1491,5 +1615,46 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.upload-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.upload-info {
+  padding: 16px;
+  background: #f7f8fa;
+  border-radius: 8px;
+}
+
+.upload-info p {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #4e5969;
+}
+
+.upload-info ul {
+  margin: 0 0 8px 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: #86909c;
+}
+
+.upload-info li {
+  margin-bottom: 4px;
+}
+
+.upload-tip {
+  font-size: 12px !important;
+  color: #fa8c16 !important;
+  margin: 0 !important;
+}
+
+.available-skill-trust {
+  font-size: 12px;
+  color: #86909c;
+  margin-left: 8px;
 }
 </style>
