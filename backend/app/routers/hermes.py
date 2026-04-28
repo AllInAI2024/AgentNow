@@ -6,8 +6,8 @@ from app.schemas.hermes import (
     HermesOverviewResponse,
     VersionCheckResponse,
     UpdateProgress,
-    APIResponse,
 )
+from app.schemas.user import APIResponse
 from app.services.auth_service import get_db, get_current_user
 from app.services.hermes_service import hermes_service
 
