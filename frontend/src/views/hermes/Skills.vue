@@ -335,7 +335,6 @@
       v-model:open="createModalVisible"
       title="Agent 自动创建技能"
       width="600px"
-      :footer="null"
     >
       <a-form
         :model="createForm"
@@ -397,7 +396,6 @@
       v-model:open="uploadModalVisible"
       title="上传技能"
       width="600px"
-      :footer="null"
     >
       <div class="upload-content">
         <div class="upload-info">

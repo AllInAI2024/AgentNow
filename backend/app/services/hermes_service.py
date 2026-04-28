@@ -1350,40 +1350,42 @@ class HermesService:
             if "│" not in line:
                 continue
             
-            parts = [p.strip() for p in line.split("│") if p.strip()]
+            parts = [p.strip() for p in line.split("│")]
             
-            if not parts:
+            if len(parts) < 6:
                 continue
             
-            if len(parts) >= 2:
-                first_col = parts[0]
+            first_col = parts[1] if len(parts) > 1 else ""
+            name_col = parts[2] if len(parts) > 2 else ""
+            desc_col = parts[3] if len(parts) > 3 else ""
+            source_col = parts[4] if len(parts) > 4 else ""
+            trust_col = parts[5] if len(parts) > 5 else ""
+            
+            if first_col.isdigit():
+                if current_skill:
+                    results.append(current_skill)
                 
-                if first_col.isdigit():
-                    if current_skill:
-                        results.append(current_skill)
-                    
-                    name = parts[1] if len(parts) > 1 else ""
-                    description = parts[2] if len(parts) > 2 else ""
-                    source = parts[3] if len(parts) > 3 else ""
-                    trust = parts[4] if len(parts) > 4 else ""
-                    
-                    is_installed = name in installed_skills
-                    
-                    current_skill = {
-                        "name": name,
-                        "description": description,
-                        "source": source,
-                        "trust": trust,
-                        "is_installed": is_installed,
-                    }
-                else:
-                    if current_skill and len(parts) >= 2:
-                        if parts[0] == "" or not parts[0].strip():
-                            if len(parts) >= 2:
-                                if "..." in parts[1]:
-                                    current_skill["description"] = current_skill.get("description", "") + " " + parts[1].rstrip(".")
-                                else:
-                                    current_skill["description"] = current_skill.get("description", "") + " " + parts[1]
+                name = name_col
+                description = desc_col
+                source = source_col
+                trust = trust_col
+                
+                is_installed = name in installed_skills
+                
+                current_skill = {
+                    "name": name,
+                    "description": description,
+                    "source": source,
+                    "trust": trust,
+                    "is_installed": is_installed,
+                }
+            else:
+                if current_skill:
+                    if desc_col:
+                        if "..." in desc_col:
+                            current_skill["description"] = current_skill.get("description", "") + " " + desc_col.rstrip(".")
+                        else:
+                            current_skill["description"] = current_skill.get("description", "") + " " + desc_col
         
         if current_skill and not any(r["name"] == current_skill["name"] for r in results):
             results.append(current_skill)
