@@ -368,41 +368,85 @@ const handleLogout = () => {
 }
 
 :deep(.nav-submenu) {
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-  border: 1px solid #e5e6eb;
-  padding: 8px;
-  min-width: 260px;
+  border-radius: 16px;
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.15),
+    0 4px 16px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(229, 230, 235, 0.8);
+  padding: 12px;
+  min-width: 320px;
+  backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.95);
 }
 
 :deep(.nav-submenu .ant-menu-item) {
-  border-radius: 8px;
+  border-radius: 12px;
   margin: 4px 0;
-  padding: 12px 16px;
+  padding: 14px 20px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  transition: all 0.2s ease;
+  gap: 14px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+:deep(.nav-submenu .ant-menu-item::before) {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 0;
+  background: linear-gradient(135deg, #165DFF 0%, #722ED1 100%);
+  border-radius: 0 4px 4px 0;
+  transition: all 0.3s ease;
 }
 
 :deep(.nav-submenu .ant-menu-item:hover) {
-  background: rgba(22, 93, 255, 0.06);
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.08) 0%, rgba(114, 46, 209, 0.04) 100%);
+  color: #165DFF;
+  transform: translateX(4px);
+}
+
+:deep(.nav-submenu .ant-menu-item:hover::before) {
+  height: 60%;
 }
 
 :deep(.nav-submenu .ant-menu-item-selected) {
-  background: rgba(22, 93, 255, 0.1);
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.12) 0%, rgba(114, 46, 209, 0.06) 100%);
   color: #165DFF;
+  font-weight: 500;
+}
+
+:deep(.nav-submenu .ant-menu-item-selected::before) {
+  height: 60%;
 }
 
 .submenu-icon {
-  font-size: 16px;
+  font-size: 18px;
   color: #86909c;
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  border-radius: 8px;
+  background: rgba(242, 243, 245, 0.6);
+  transition: all 0.3s ease;
+}
+
+:deep(.nav-submenu .ant-menu-item:hover) .submenu-icon {
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.15) 0%, rgba(114, 46, 209, 0.1) 100%);
+  color: #165DFF;
+  transform: scale(1.05);
+}
+
+:deep(.nav-submenu .ant-menu-item-selected) .submenu-icon {
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.2) 0%, rgba(114, 46, 209, 0.12) 100%);
+  color: #165DFF;
 }
 
 .header-right {

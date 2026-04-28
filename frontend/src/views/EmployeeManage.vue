@@ -14,13 +14,12 @@
         <div class="search-bar">
           <a-form layout="inline" :model="searchForm">
             <a-form-item label="部门">
-              <a-tree-select
+              <a-select
                 v-model:value="searchForm.department_id"
-                :tree-data="departmentTree"
-                :replace-fields="{ children: 'children', title: 'name', key: 'id', value: 'id' }"
+                :options="departmentOptions"
                 placeholder="全部部门"
                 allow-clear
-                :tree-default-expand-all="true"
+                :field-names="{ label: 'name', value: 'id' }"
                 style="width: 200px"
                 @change="handleSearch"
               />
@@ -120,14 +119,19 @@
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item label="所属部门" name="department_id">
-                <a-tree-select
+                <a-select
                   v-model:value="formData.department_id"
-                  :tree-data="departmentTree"
-                  :replace-fields="{ children: 'children', title: 'name', key: 'id', value: 'id' }"
+                  :options="departmentOptions"
                   placeholder="请选择所属部门"
-                  :tree-default-expand-all="true"
+                  :field-names="{ label: 'name', value: 'id' }"
                   style="width: 100%"
-                />
+                >
+                  <template #notFoundContent>
+                    <div class="empty-tip">
+                      暂无部门数据，请先添加部门
+                    </div>
+                  </template>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -196,7 +200,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import type { FormInstance } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
@@ -263,6 +267,25 @@ const getDepartmentName = (deptId: number | null): string => {
   const dept = allDepts.find(d => d.id === deptId)
   return dept ? dept.name : '-'
 }
+
+const departmentOptions = computed(() => {
+  const flattenWithIndent = (items: DepartmentTree[], level: number = 0): Array<{ id: number; name: string }> => {
+    const result: Array<{ id: number; name: string }> = []
+    items.forEach(item => {
+      const indent = '　'.repeat(level * 2)
+      result.push({
+        id: item.id,
+        name: level > 0 ? `${indent}└ ${item.name}` : item.name,
+      })
+      if (item.children && item.children.length > 0) {
+        result.push(...flattenWithIndent(item.children, level + 1))
+      }
+    })
+    return result
+  }
+  
+  return flattenWithIndent(departmentTree.value)
+})
 
 const fetchEmployees = async () => {
   loading.value = true

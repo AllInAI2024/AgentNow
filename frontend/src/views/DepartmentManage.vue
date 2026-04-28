@@ -69,13 +69,12 @@
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item label="上级部门" name="parent_id">
-                <a-tree-select
+                <a-select
                   v-model:value="formData.parent_id"
-                  :tree-data="parentOptions"
-                  :replace-fields="{ children: 'children', title: 'name', key: 'id', value: 'id' }"
+                  :options="parentOptions"
                   placeholder="请选择上级部门（不选则为顶级部门）"
                   allow-clear
-                  :tree-default-expand-all="true"
+                  :field-names="{ label: 'name', value: 'id' }"
                   style="width: 100%"
                 />
               </a-form-item>
@@ -199,7 +198,8 @@ const columns = [
 ]
 
 const parentOptions = computed(() => {
-  const options = [...departmentTree.value]
+  let deptTree = [...departmentTree.value]
+  
   if (isEdit.value && editId.value) {
     const filterTree = (items: DepartmentTree[]): DepartmentTree[] => {
       return items
@@ -209,9 +209,25 @@ const parentOptions = computed(() => {
           children: item.children ? filterTree(item.children) : [],
         }))
     }
-    return filterTree(options)
+    deptTree = filterTree(deptTree)
   }
-  return options
+  
+  const flattenWithIndent = (items: DepartmentTree[], level: number = 0): Array<{ id: number; name: string }> => {
+    const result: Array<{ id: number; name: string }> = []
+    items.forEach(item => {
+      const indent = '　'.repeat(level * 2)
+      result.push({
+        id: item.id,
+        name: level > 0 ? `${indent}└ ${item.name}` : item.name,
+      })
+      if (item.children && item.children.length > 0) {
+        result.push(...flattenWithIndent(item.children, level + 1))
+      }
+    })
+    return result
+  }
+  
+  return flattenWithIndent(deptTree)
 })
 
 const flattenTree = (items: DepartmentTree[], level: number = 0): DepartmentListItem[] => {
