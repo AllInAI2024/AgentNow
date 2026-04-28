@@ -143,17 +143,43 @@ def get_user_menu_permissions(db: Session, user_id: int) -> List[Permission]:
             Permission.type.in_([1, 2])
         ).order_by(Permission.parent_id).all()
     
-    permissions = db.query(Permission).distinct().join(
+    all_permissions = db.query(Permission).distinct().join(
         RolePermission, RolePermission.permission_id == Permission.id
     ).join(
         Role, Role.id == RolePermission.role_id
     ).join(
         UserRole, UserRole.role_id == Role.id
     ).filter(
-        UserRole.user_id == user_id,
-        Permission.type.in_([1, 2])
+        UserRole.user_id == user_id
+    ).all()
+    
+    if not all_permissions:
+        return []
+    
+    menu_ids = set()
+    permission_map = {}
+    
+    all_db_permissions = db.query(Permission).all()
+    for p in all_db_permissions:
+        permission_map[p.id] = p
+    
+    for perm in all_permissions:
+        current_id = perm.id
+        while current_id > 0:
+            current_perm = permission_map.get(current_id)
+            if current_perm and current_perm.type in [1, 2]:
+                menu_ids.add(current_id)
+            if current_perm:
+                current_id = current_perm.parent_id
+            else:
+                break
+    
+    if not menu_ids:
+        return []
+    
+    return db.query(Permission).filter(
+        Permission.id.in_(menu_ids)
     ).order_by(Permission.parent_id).all()
-    return permissions
 
 
 def get_user_all_permission_codes(db: Session, user_id: int) -> List[str]:
