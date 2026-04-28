@@ -110,10 +110,7 @@ const formState = reactive({
 })
 
 const validateConfirmPassword = (_rule: Rule, value: string) => {
-  if (!value) {
-    return Promise.reject('请再次输入新密码')
-  }
-  if (value !== formState.newPassword) {
+  if (value && value !== formState.newPassword) {
     return Promise.reject('两次输入的密码不一致')
   }
   return Promise.resolve()
