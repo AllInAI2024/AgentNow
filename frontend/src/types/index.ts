@@ -323,12 +323,15 @@ export interface SkillCategory {
   name: string
   display_name: string
   skill_count: number
+  installed_count: number
 }
 
 export interface SkillListResponse {
   total: number
   categories: SkillCategory[]
-  skills: Skill[]
+  items: Skill[]
+  bundled_count: number
+  installed_count: number
 }
 
 export interface SkillDetailResponse extends Skill {

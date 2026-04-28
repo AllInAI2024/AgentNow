@@ -33,7 +33,11 @@
                   @click="selectedCategory = ''"
                 >
                   <span class="category-name">全部技能</span>
-                  <span class="category-count">{{ totalSkillsCount }}</span>
+                  <span class="category-counts">
+                    <span class="count-installed">{{ totalInstalledCount }}</span>
+                    <span class="count-divider">/</span>
+                    <span class="count-total">{{ totalSkillsCount }}</span>
+                  </span>
                 </div>
                 <div 
                   v-for="cat in skillList?.categories || []" 
@@ -42,7 +46,11 @@
                   @click="selectedCategory = cat.name"
                 >
                   <span class="category-name">{{ cat.display_name }}</span>
-                  <span class="category-count">{{ cat.skill_count }}</span>
+                  <span class="category-counts">
+                    <span class="count-installed">{{ cat.installed_count }}</span>
+                    <span class="count-divider">/</span>
+                    <span class="count-total">{{ cat.skill_count }}</span>
+                  </span>
                 </div>
               </div>
             </a-card>
@@ -66,9 +74,10 @@
                 <div class="card-header">
                   <div class="card-title-left">
                     <ThunderboltOutlined class="card-icon" />
-                    <span>技能列表</span>
+                    <span>{{ currentCategoryName }}</span>
                     <span class="skill-stats">
-                      (共 {{ filteredSkills.length }} 个，已安装 {{ installedCount }} 个)
+                      (共 <span class="stat-total">{{ currentCategoryTotal }}</span> 个，
+                      已安装 <span class="stat-installed">{{ currentCategoryInstalled }}</span> 个)
                     </span>
                   </div>
                   <div class="card-title-right">
@@ -77,6 +86,7 @@
                       placeholder="搜索技能名称、描述、标签..." 
                       style="width: 280px;"
                       @search="handleSearch"
+                      @clear="handleSearch"
                       allow-clear
                     />
                   </div>
@@ -88,8 +98,8 @@
               </div>
 
               <div v-else-if="filteredSkills.length === 0" class="empty-container">
-                <a-empty description="暂无技能">
-                  <a-button type="primary" @click="handleCreateSkill">创建新技能</a-button>
+                <a-empty :description="searchKeyword ? '未找到匹配的技能' : '该分类暂无技能'">
+                  <a-button v-if="!searchKeyword" type="primary" @click="handleCreateSkill">创建新技能</a-button>
                 </a-empty>
               </div>
 
@@ -444,6 +454,7 @@ import {
 import type { 
   Skill, 
   SkillListResponse,
+  SkillCategory,
   AvailableSkill,
   SkillCreateParams
 } from '@/types'
@@ -481,14 +492,33 @@ const totalSkillsCount = computed(() => {
   return skillList.value.categories.reduce((sum, cat) => sum + cat.skill_count, 0)
 })
 
+const totalInstalledCount = computed(() => {
+  if (!skillList.value?.categories) return 0
+  return skillList.value.categories.reduce((sum, cat) => sum + cat.installed_count, 0)
+})
+
+const currentCategoryName = computed(() => {
+  if (!selectedCategory.value) return '技能列表'
+  const cat = skillList.value?.categories?.find(c => c.name === selectedCategory.value)
+  return cat?.display_name || selectedCategory.value
+})
+
+const currentCategoryTotal = computed(() => {
+  if (!selectedCategory.value) return totalSkillsCount.value
+  const cat = skillList.value?.categories?.find(c => c.name === selectedCategory.value)
+  return cat?.skill_count || 0
+})
+
+const currentCategoryInstalled = computed(() => {
+  if (!selectedCategory.value) return totalInstalledCount.value
+  const cat = skillList.value?.categories?.find(c => c.name === selectedCategory.value)
+  return cat?.installed_count || 0
+})
+
 const filteredSkills = computed<Skill[]>(() => {
-  if (!skillList.value?.skills) return []
+  if (!skillList.value?.items) return []
   
-  let skills = [...skillList.value.skills]
-  
-  if (selectedCategory.value) {
-    skills = skills.filter(s => s.category === selectedCategory.value)
-  }
+  let skills = [...skillList.value.items]
   
   if (searchKeyword.value) {
     const keyword = searchKeyword.value.toLowerCase()
@@ -516,10 +546,6 @@ const filteredSkills = computed<Skill[]>(() => {
   })
   
   return skills
-})
-
-const installedCount = computed(() => {
-  return filteredSkills.value.filter(s => s.is_installed).length
 })
 
 const filteredAvailableSkills = computed(() => {
@@ -568,7 +594,7 @@ const handleCreateSkill = () => {
     name: '',
     description: '',
     content: '',
-    category: '',
+    category: selectedCategory.value || '',
     version: '1.0.0',
     author: '',
     license: 'MIT',
@@ -714,7 +740,7 @@ const handleInstallAvailableSkill = async (skill: AvailableSkill) => {
   }
 }
 
-watch(selectedCategory, () => {
+watch([selectedCategory, searchKeyword], () => {
   fetchSkills()
 })
 
@@ -835,17 +861,28 @@ onMounted(() => {
   color: inherit;
 }
 
-.category-count {
+.category-counts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   font-size: 12px;
-  color: #86909c;
-  background: #f2f3f5;
-  padding: 2px 8px;
-  border-radius: 10px;
 }
 
-.category-item.active .category-count {
-  background: rgba(22, 93, 255, 0.15);
-  color: #165DFF;
+.count-installed {
+  color: #00b42a;
+  font-weight: 600;
+}
+
+.category-item.active .count-installed {
+  color: #00b42a;
+}
+
+.count-divider {
+  color: #c9cdd4;
+}
+
+.count-total {
+  color: #86909c;
 }
 
 .action-list {
@@ -891,6 +928,15 @@ onMounted(() => {
   color: #86909c;
   font-weight: normal;
   margin-left: 8px;
+}
+
+.stat-total {
+  color: #86909c;
+}
+
+.stat-installed {
+  color: #00b42a;
+  font-weight: 600;
 }
 
 .card-title-right {

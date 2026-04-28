@@ -994,7 +994,8 @@ class HermesService:
         skills_dir = self._get_skills_dir()
         bundled_skills = self._get_bundled_skills()
 
-        skills: List[Skill] = []
+        all_skills: List[Skill] = []
+        filtered_skills: List[Skill] = []
         categories: Dict[str, SkillCategory] = {}
 
         if not skills_dir.exists():
@@ -1012,9 +1013,17 @@ class HermesService:
                 cat_name = item.name
                 
                 cat_total_skill_count = 0
+                cat_installed_count = 0
+                cat_skills: List[Skill] = []
+                
                 for skill_dir in item.iterdir():
                     if skill_dir.is_dir():
-                        cat_total_skill_count += 1
+                        skill = self._parse_skill_from_file(skill_dir, cat_name, bundled_skills)
+                        if skill:
+                            cat_skills.append(skill)
+                            cat_total_skill_count += 1
+                            if skill.is_installed:
+                                cat_installed_count += 1
                 
                 if cat_total_skill_count > 0:
                     description_md = item / "DESCRIPTION.md"
@@ -1031,36 +1040,39 @@ class HermesService:
                         display_name=self._get_category_display_name(cat_name),
                         description=cat_description,
                         skill_count=cat_total_skill_count,
+                        installed_count=cat_installed_count,
                     )
+                
+                all_skills.extend(cat_skills)
                 
                 if category and cat_name != category:
                     continue
                 
-                for skill_dir in item.iterdir():
-                    if skill_dir.is_dir():
-                        skill = self._parse_skill_from_file(skill_dir, cat_name, bundled_skills)
-                        if skill:
-                            if search:
-                                search_lower = search.lower()
-                                if (
-                                    search_lower not in (skill.name or "").lower()
-                                    and search_lower not in (skill.description or "").lower()
-                                ):
-                                    if skill.metadata and skill.metadata.hermes:
-                                        tags = skill.metadata.hermes.tags or []
-                                        if not any(search_lower in tag.lower() for tag in tags):
-                                            continue
-                                    else:
-                                        continue
-                            
-                            skills.append(skill)
+                for skill in cat_skills:
+                    if search:
+                        search_lower = search.lower()
+                        if (
+                            search_lower not in (skill.name or "").lower()
+                            and search_lower not in (skill.description or "").lower()
+                        ):
+                            if skill.metadata and skill.metadata.hermes:
+                                tags = skill.metadata.hermes.tags or []
+                                if not any(search_lower in tag.lower() for tag in tags):
+                                    continue
+                            else:
+                                continue
+                    
+                    filtered_skills.append(skill)
 
-        bundled_count = sum(1 for s in skills if s.is_bundled)
-        installed_count = sum(1 for s in skills if s.is_installed)
+        if not category and not search:
+            filtered_skills = all_skills
+
+        bundled_count = sum(1 for s in filtered_skills if s.is_bundled)
+        installed_count = sum(1 for s in filtered_skills if s.is_installed)
 
         return SkillListResponse(
-            items=sorted(skills, key=lambda s: (s.category or "", s.name or "")),
-            total=len(skills),
+            items=sorted(filtered_skills, key=lambda s: (0 if s.is_installed else 1, 0 if s.is_bundled else 1, s.name or "")),
+            total=len(filtered_skills),
             categories=sorted(categories.values(), key=lambda c: c.name),
             bundled_count=bundled_count,
             installed_count=installed_count,

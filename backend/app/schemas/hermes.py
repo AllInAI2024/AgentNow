@@ -104,7 +104,8 @@ class SkillCategory(BaseModel):
     name: str = Field(..., description="分类名称")
     display_name: str = Field(..., description="显示名称")
     description: Optional[str] = Field(None, description="分类描述")
-    skill_count: int = Field(0, description="该分类下的技能数量")
+    skill_count: int = Field(0, description="该分类下的技能总数")
+    installed_count: int = Field(0, description="该分类下已安装的技能数量")
 
 
 class SkillListResponse(BaseModel):
