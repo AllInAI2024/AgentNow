@@ -33,7 +33,7 @@
                   @click="selectedCategory = ''"
                 >
                   <span class="category-name">全部技能</span>
-                  <span class="category-count">{{ skillList?.total || 0 }}</span>
+                  <span class="category-count">{{ totalSkillsCount }}</span>
                 </div>
                 <div 
                   v-for="cat in skillList?.categories || []" 
@@ -66,17 +66,16 @@
                 <div class="card-header">
                   <div class="card-title-left">
                     <ThunderboltOutlined class="card-icon" />
-                    <span>{{ currentTab === 'installed' ? '已安装技能' : '可用技能' }}</span>
+                    <span>技能列表</span>
+                    <span class="skill-stats">
+                      (共 {{ filteredSkills.length }} 个，已安装 {{ installedCount }} 个)
+                    </span>
                   </div>
                   <div class="card-title-right">
-                    <a-tabs v-model:activeKey="currentTab" size="small" @change="handleTabChange">
-                      <a-tab-pane key="installed" tab="已安装" />
-                      <a-tab-pane key="available" tab="可用技能" />
-                    </a-tabs>
                     <a-input-search 
                       v-model:value="searchKeyword" 
                       placeholder="搜索技能名称、描述、标签..." 
-                      style="width: 280px; margin-left: 16px;"
+                      style="width: 280px;"
                       @search="handleSearch"
                       allow-clear
                     />
@@ -98,7 +97,7 @@
                 <div 
                   v-for="skill in filteredSkills" 
                   :key="skill.name"
-                  :class="['skill-card', { selected: selectedSkill?.name === skill.name }]"
+                  :class="['skill-card', { selected: selectedSkill?.name === skill.name, 'skill-installed': skill.is_installed }]"
                   @click="handleSelectSkill(skill)"
                 >
                   <div class="skill-header">
@@ -116,7 +115,7 @@
                     <div class="skill-badges">
                       <a-tag v-if="skill.is_bundled" color="blue">内置</a-tag>
                       <a-tag v-else-if="skill.is_installed" color="green">已安装</a-tag>
-                      <a-tag v-else color="orange">可安装</a-tag>
+                      <a-tag v-else color="orange">未安装</a-tag>
                     </div>
                   </div>
                   <div class="skill-description">
@@ -173,7 +172,7 @@
                   <div class="detail-meta">
                     <a-tag v-if="selectedSkill.is_bundled" color="blue">内置技能</a-tag>
                     <a-tag v-else-if="selectedSkill.is_installed" color="green">已安装</a-tag>
-                    <a-tag v-else color="orange">可安装</a-tag>
+                    <a-tag v-else color="orange">未安装</a-tag>
                     <span class="detail-version">v{{ selectedSkill.version }}</span>
                   </div>
                 </div>
@@ -459,7 +458,6 @@ const availableLoading = ref(false)
 const skillList = ref<SkillListResponse | null>(null)
 const selectedCategory = ref('')
 const searchKeyword = ref('')
-const currentTab = ref('installed')
 const selectedSkill = ref<Skill | null>(null)
 
 const createModalVisible = ref(false)
@@ -477,6 +475,11 @@ const createForm = ref<SkillCreateParams>({
 const availableModalVisible = ref(false)
 const availableSearchKeyword = ref('')
 const availableSkills = ref<AvailableSkill[]>([])
+
+const totalSkillsCount = computed(() => {
+  if (!skillList.value?.categories) return 0
+  return skillList.value.categories.reduce((sum, cat) => sum + cat.skill_count, 0)
+})
 
 const filteredSkills = computed<Skill[]>(() => {
   if (!skillList.value?.skills) return []
@@ -496,7 +499,27 @@ const filteredSkills = computed<Skill[]>(() => {
     )
   }
   
+  skills.sort((a, b) => {
+    const aInstalled = a.is_installed ? 0 : 1
+    const bInstalled = b.is_installed ? 0 : 1
+    if (aInstalled !== bInstalled) {
+      return aInstalled - bInstalled
+    }
+    
+    const aBundled = a.is_bundled ? 0 : 1
+    const bBundled = b.is_bundled ? 0 : 1
+    if (aBundled !== bBundled) {
+      return aBundled - bBundled
+    }
+    
+    return (a.name || '').localeCompare(b.name || '')
+  })
+  
   return skills
+})
+
+const installedCount = computed(() => {
+  return filteredSkills.value.filter(s => s.is_installed).length
 })
 
 const filteredAvailableSkills = computed(() => {
@@ -534,13 +557,6 @@ const handleRefresh = () => {
 
 const handleSelectSkill = (skill: Skill) => {
   selectedSkill.value = skill
-}
-
-const handleTabChange = (key: string) => {
-  currentTab.value = key
-  if (key === 'available') {
-    handleBrowseAvailable()
-  }
 }
 
 const handleSearch = () => {
@@ -676,7 +692,6 @@ const refreshAvailableSkills = async () => {
 }
 
 const searchAvailableSkills = () => {
-  // 前端过滤已在 computed 中处理
 }
 
 const handleInstallAvailableSkill = async (skill: AvailableSkill) => {
@@ -871,6 +886,13 @@ onMounted(() => {
   color: #165DFF;
 }
 
+.skill-stats {
+  font-size: 13px;
+  color: #86909c;
+  font-weight: normal;
+  margin-left: 8px;
+}
+
 .card-title-right {
   display: flex;
   align-items: center;
@@ -907,6 +929,10 @@ onMounted(() => {
 .skill-card.selected {
   border-color: #165DFF;
   background: linear-gradient(135deg, rgba(22, 93, 255, 0.03) 0%, rgba(114, 46, 209, 0.02) 100%);
+}
+
+.skill-card.skill-installed {
+  border-left: 3px solid #00b42a;
 }
 
 .skill-header {

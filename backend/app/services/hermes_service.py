@@ -1010,19 +1010,32 @@ class HermesService:
         for item in skills_dir.iterdir():
             if item.is_dir() and not item.name.startswith("."):
                 cat_name = item.name
+                
+                cat_total_skill_count = 0
+                for skill_dir in item.iterdir():
+                    if skill_dir.is_dir():
+                        cat_total_skill_count += 1
+                
+                if cat_total_skill_count > 0:
+                    description_md = item / "DESCRIPTION.md"
+                    cat_description = None
+                    if description_md.exists():
+                        try:
+                            with open(description_md, "r", encoding="utf-8") as f:
+                                cat_description = f.read().strip()
+                        except Exception:
+                            pass
+                    
+                    categories[cat_name] = SkillCategory(
+                        name=cat_name,
+                        display_name=self._get_category_display_name(cat_name),
+                        description=cat_description,
+                        skill_count=cat_total_skill_count,
+                    )
+                
                 if category and cat_name != category:
                     continue
-
-                cat_skill_count = 0
-                description_md = item / "DESCRIPTION.md"
-                cat_description = None
-                if description_md.exists():
-                    try:
-                        with open(description_md, "r", encoding="utf-8") as f:
-                            cat_description = f.read().strip()
-                    except Exception:
-                        pass
-
+                
                 for skill_dir in item.iterdir():
                     if skill_dir.is_dir():
                         skill = self._parse_skill_from_file(skill_dir, cat_name, bundled_skills)
@@ -1039,17 +1052,8 @@ class HermesService:
                                             continue
                                     else:
                                         continue
-
+                            
                             skills.append(skill)
-                            cat_skill_count += 1
-
-                if cat_skill_count > 0:
-                    categories[cat_name] = SkillCategory(
-                        name=cat_name,
-                        display_name=self._get_category_display_name(cat_name),
-                        description=cat_description,
-                        skill_count=cat_skill_count,
-                    )
 
         bundled_count = sum(1 for s in skills if s.is_bundled)
         installed_count = sum(1 for s in skills if s.is_installed)
