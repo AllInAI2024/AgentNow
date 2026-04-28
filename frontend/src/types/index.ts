@@ -411,3 +411,36 @@ export interface MCPServiceTestResult {
   tools: MCPTool[]
   error?: string
 }
+
+export interface BuiltinToolParameter {
+  name: string
+  type: string
+  description: string
+  required: boolean
+  default: string | null
+}
+
+export interface BuiltinTool {
+  name: string
+  display_name: string
+  description: string
+  category: string
+  parameters: BuiltinToolParameter[]
+  return_description: string | null
+  examples: string[]
+  notes: string | null
+}
+
+export interface BuiltinToolCategory {
+  name: string
+  display_name: string
+  icon: string
+  description: string
+  tool_count: number
+}
+
+export interface BuiltinToolListResponse {
+  categories: BuiltinToolCategory[]
+  tools: BuiltinTool[]
+  total_tools: number
+}

@@ -38,6 +38,10 @@ from app.schemas.hermes import (
     MCPServiceListResponse,
     MCPServiceDetailResponse,
     MCPServiceTestResult,
+    BuiltinTool,
+    BuiltinToolParameter,
+    BuiltinToolCategory,
+    BuiltinToolListResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -1624,6 +1628,614 @@ class HermesService:
             tool_count=len(service.tools),
             tools=service.tools,
             error=None,
+        )
+
+
+    def _get_builtin_tools(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "name": "terminal",
+                "display_name": "终端命令执行",
+                "description": "在沙箱环境中执行终端命令。Hermes 支持多种终端后端（local、docker、ssh、modal、daytona、singularity），决定命令实际执行位置。",
+                "category": "terminal",
+                "parameters": [
+                    {
+                        "name": "command",
+                        "type": "string",
+                        "description": "要执行的终端命令",
+                        "required": True,
+                        "default": None
+                    }
+                ],
+                "return_description": "返回命令执行的标准输出（stdout）和标准错误（stderr）",
+                "examples": [
+                    "terminal(command='ls -la') - 列出当前目录内容",
+                    "terminal(command='python3 script.py') - 执行 Python 脚本",
+                    "terminal(command='git status') - 检查 Git 状态"
+                ],
+                "notes": "命令执行受限于配置的终端后端。使用 docker 后端时，命令在隔离的容器中执行。"
+            },
+            {
+                "name": "Read",
+                "display_name": "读取文件",
+                "description": "读取文件的全部内容。支持通过 line_offset 和 limit 参数指定读取范围。",
+                "category": "filesystem",
+                "parameters": [
+                    {
+                        "name": "file_path",
+                        "type": "string",
+                        "description": "要读取的文件路径",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "line_offset",
+                        "type": "number",
+                        "description": "从第几行开始读取（从 1 开始）",
+                        "required": False,
+                        "default": "1"
+                    },
+                    {
+                        "name": "limit",
+                        "type": "number",
+                        "description": "读取的最大行数",
+                        "required": False,
+                        "default": "全部"
+                    }
+                ],
+                "return_description": "返回文件的内容",
+                "examples": [
+                    "Read(file_path='/home/user/project/src/main.py') - 读取完整文件",
+                    "Read(file_path='config.yaml', line_offset=1, limit=50) - 读取前 50 行"
+                ],
+                "notes": "大文件建议使用 limit 参数分批读取，避免超出上下文限制。"
+            },
+            {
+                "name": "Write",
+                "display_name": "写入文件",
+                "description": "将内容写入文件。如果文件不存在则创建，如果存在则覆盖。",
+                "category": "filesystem",
+                "parameters": [
+                    {
+                        "name": "file_path",
+                        "type": "string",
+                        "description": "目标文件路径",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "content",
+                        "type": "string",
+                        "description": "要写入的内容",
+                        "required": True,
+                        "default": None
+                    }
+                ],
+                "return_description": "返回写入结果确认",
+                "examples": [
+                    "Write(file_path='hello.py', content='print(\"Hello World!\")') - 创建新文件",
+                    "Write(file_path='config.json', content='{\"key\": \"value\"}') - 写入 JSON 配置"
+                ],
+                "notes": "此工具会完全覆盖现有文件内容。如需部分修改，请使用 Edit 工具。"
+            },
+            {
+                "name": "Edit",
+                "display_name": "编辑文件",
+                "description": "精确字符串替换编辑文件。必须提供完整、精确匹配的 old_text，替换为 new_text。",
+                "category": "filesystem",
+                "parameters": [
+                    {
+                        "name": "file_path",
+                        "type": "string",
+                        "description": "要编辑的文件路径",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "old_text",
+                        "type": "string",
+                        "description": "要替换的精确文本（必须完全匹配）",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "new_text",
+                        "type": "string",
+                        "description": "替换后的新文本",
+                        "required": True,
+                        "default": None
+                    }
+                ],
+                "return_description": "返回编辑结果确认",
+                "examples": [
+                    "Edit(file_path='main.py', old_text='def hello():\\n    pass', new_text='def hello():\\n    print(\"Hello\")') - 精确替换函数",
+                    "Edit(file_path='package.json', old_text='\"version\": \"1.0.0\"', new_text='\"version\": \"1.1.0\"') - 更新版本号"
+                ],
+                "notes": "old_text 必须与文件内容完全匹配，包括缩进和换行符。建议先用 Read 查看准确的文件内容。"
+            },
+            {
+                "name": "Glob",
+                "display_name": "搜索文件",
+                "description": "使用 glob 模式搜索匹配的文件路径。支持通配符模式如 *.py、**/*.ts 等。",
+                "category": "filesystem",
+                "parameters": [
+                    {
+                        "name": "pattern",
+                        "type": "string",
+                        "description": "搜索模式（支持通配符 *、**、?、[]）",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "path",
+                        "type": "string",
+                        "description": "搜索的根目录路径",
+                        "required": False,
+                        "default": "当前目录"
+                    }
+                ],
+                "return_description": "返回匹配的文件路径列表",
+                "examples": [
+                    "Glob(pattern='*.py') - 查找当前目录所有 .py 文件",
+                    "Glob(pattern='**/*.ts') - 递归查找所有 .ts 文件",
+                    "Glob(pattern='src/**/*.{js,jsx,ts,tsx}') - 查找 src 下所有 JS/TS 文件"
+                ],
+                "notes": "** 表示递归匹配所有子目录。结果数量过多时，建议使用更精确的模式。"
+            },
+            {
+                "name": "LS",
+                "display_name": "列出目录",
+                "description": "列出指定目录的内容，包括文件和子目录。",
+                "category": "filesystem",
+                "parameters": [
+                    {
+                        "name": "path",
+                        "type": "string",
+                        "description": "要列出的目录路径",
+                        "required": False,
+                        "default": "当前目录"
+                    }
+                ],
+                "return_description": "返回目录内容列表，区分文件和目录",
+                "examples": [
+                    "LS(path='.') - 列出当前目录",
+                    "LS(path='/home/user/project') - 列出指定目录"
+                ],
+                "notes": "结果会显示每个条目的类型（文件/目录）、大小和修改时间。"
+            },
+            {
+                "name": "web_search",
+                "display_name": "网络搜索",
+                "description": "在互联网上搜索信息。需要配置网络搜索提供商（如 Brave Search、Tavily 等）。",
+                "category": "web",
+                "parameters": [
+                    {
+                        "name": "query",
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "limit",
+                        "type": "number",
+                        "description": "返回结果数量限制",
+                        "required": False,
+                        "default": "10"
+                    }
+                ],
+                "return_description": "返回搜索结果，包括标题、URL、摘要等",
+                "examples": [
+                    "web_search(query='Python 3.12 新特性') - 搜索 Python 版本信息",
+                    "web_search(query='最新 AI 研究进展', limit=5) - 搜索最新技术动态"
+                ],
+                "notes": "需要在 Hermes 配置中设置搜索提供商的 API key。"
+            },
+            {
+                "name": "browser_navigate",
+                "display_name": "浏览器导航",
+                "description": "在浏览器中导航到指定 URL。这是 browser_* 系列工具之一，用于网页浏览自动化。",
+                "category": "web",
+                "parameters": [
+                    {
+                        "name": "url",
+                        "type": "string",
+                        "description": "要访问的网页 URL",
+                        "required": True,
+                        "default": None
+                    }
+                ],
+                "return_description": "返回页面导航结果",
+                "examples": [
+                    "browser_navigate(url='https://github.com') - 访问 GitHub",
+                    "browser_navigate(url='https://docs.python.org/3/') - 访问 Python 文档"
+                ],
+                "notes": "browser_* 工具系列用于网页自动化，包括点击、输入、截图等操作。"
+            },
+            {
+                "name": "browser_click",
+                "display_name": "浏览器点击",
+                "description": "在浏览器页面上点击指定的元素。",
+                "category": "web",
+                "parameters": [
+                    {
+                        "name": "selector",
+                        "type": "string",
+                        "description": "CSS 选择器或元素描述",
+                        "required": True,
+                        "default": None
+                    }
+                ],
+                "return_description": "返回点击操作结果",
+                "examples": [
+                    "browser_click(selector='button.submit') - 点击提交按钮",
+                    "browser_click(selector='text=登录') - 点击包含'登录'文本的元素"
+                ],
+                "notes": "选择器可以是 CSS 选择器、XPath 或语义化的文本描述。"
+            },
+            {
+                "name": "browser_type",
+                "display_name": "浏览器输入",
+                "description": "在浏览器输入框中输入文本。",
+                "category": "web",
+                "parameters": [
+                    {
+                        "name": "selector",
+                        "type": "string",
+                        "description": "输入框的 CSS 选择器",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "text",
+                        "type": "string",
+                        "description": "要输入的文本",
+                        "required": True,
+                        "default": None
+                    }
+                ],
+                "return_description": "返回输入操作结果",
+                "examples": [
+                    "browser_type(selector='input[name=username]', text='myuser') - 输入用户名",
+                    "browser_type(selector='#search', text='Python tutorial') - 在搜索框输入关键词"
+                ],
+                "notes": "输入前会自动清空输入框内容。"
+            },
+            {
+                "name": "browser_snapshot",
+                "display_name": "浏览器快照",
+                "description": "获取当前浏览器页面的快照（DOM 结构或截图）。",
+                "category": "web",
+                "parameters": [
+                    {
+                        "name": "type",
+                        "type": "string",
+                        "description": "快照类型：dom 或 screenshot",
+                        "required": False,
+                        "default": "dom"
+                    }
+                ],
+                "return_description": "返回页面快照内容",
+                "examples": [
+                    "browser_snapshot(type='dom') - 获取页面 DOM 结构",
+                    "browser_snapshot(type='screenshot') - 截取页面截图"
+                ],
+                "notes": "DOM 快照返回简化的页面结构，用于理解页面内容。截图返回 base64 编码的图片。"
+            },
+            {
+                "name": "memory",
+                "display_name": "记忆管理",
+                "description": "Hermes 自主管理的记忆系统。支持添加、替换、删除记忆条目。记忆分为两种：memory（Agent 个人笔记）和 user（用户画像）。",
+                "category": "memory",
+                "parameters": [
+                    {
+                        "name": "operation",
+                        "type": "string",
+                        "description": "操作类型：add、replace、remove",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "target",
+                        "type": "string",
+                        "description": "记忆目标：memory 或 user",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "content",
+                        "type": "string",
+                        "description": "记忆内容（add/replace 操作必需）",
+                        "required": False,
+                        "default": None
+                    },
+                    {
+                        "name": "old_content",
+                        "type": "string",
+                        "description": "要替换/删除的旧内容（replace/remove 操作必需）",
+                        "required": False,
+                        "default": None
+                    }
+                ],
+                "return_description": "返回记忆操作结果",
+                "examples": [
+                    "memory(operation='add', target='memory', content='用户项目使用 Axum + SQLx') - 添加新记忆",
+                    "memory(operation='add', target='user', content='用户偏好简洁回答') - 添加用户画像",
+                    "memory(operation='remove', target='memory', old_content='过时的信息') - 删除记忆条目"
+                ],
+                "notes": "记忆内容会在每次会话开始时自动注入到系统提示中。MEMORY.md 限制约 2200 字符，USER.md 限制约 1375 字符。"
+            },
+            {
+                "name": "skill_manage",
+                "display_name": "技能管理",
+                "description": "管理 Hermes 技能系统，包括查看、安装、更新、卸载技能。",
+                "category": "skill",
+                "parameters": [
+                    {
+                        "name": "action",
+                        "type": "string",
+                        "description": "操作类型：list、install、update、uninstall、search",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "skill_name",
+                        "type": "string",
+                        "description": "技能名称或标识符",
+                        "required": False,
+                        "default": None
+                    }
+                ],
+                "return_description": "返回技能操作结果",
+                "examples": [
+                    "skill_manage(action='list') - 列出已安装的技能",
+                    "skill_manage(action='install', skill_name='openai/skills/skill-creator') - 安装技能",
+                    "skill_manage(action='search', skill_name='code') - 搜索可用技能"
+                ],
+                "notes": "技能是 Hermes 核心的自学习能力，Agent 可以从经验中创建和改进技能。"
+            },
+            {
+                "name": "session_search",
+                "display_name": "会话搜索",
+                "description": "搜索历史对话会话。Hermes 所有 CLI 和消息平台会话存储在 SQLite 数据库中，具有全文搜索能力。",
+                "category": "session",
+                "parameters": [
+                    {
+                        "name": "query",
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "days",
+                        "type": "number",
+                        "description": "搜索范围（天数）",
+                        "required": False,
+                        "default": "无限制"
+                    }
+                ],
+                "return_description": "返回匹配的历史会话列表",
+                "examples": [
+                    "session_search(query='database migration') - 搜索数据库迁移相关对话",
+                    "session_search(query='Python 错误', days=7) - 搜索近 7 天的 Python 错误对话"
+                ],
+                "notes": "搜索结果会配合 Gemini Flash 进行摘要，帮助快速定位相关历史对话。"
+            },
+            {
+                "name": "image_analyze",
+                "display_name": "图像分析",
+                "description": "分析图像内容，理解图片中的信息。支持 URL 和 base64 编码的图片输入。",
+                "category": "vision",
+                "parameters": [
+                    {
+                        "name": "image_source",
+                        "type": "string",
+                        "description": "图像来源：url 或 base64",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "image_data",
+                        "type": "string",
+                        "description": "图像 URL 或 base64 数据",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "prompt",
+                        "type": "string",
+                        "description": "分析提示（可选，如'描述这张图片'）",
+                        "required": False,
+                        "default": "描述这张图片"
+                    }
+                ],
+                "return_description": "返回图像分析结果",
+                "examples": [
+                    "image_analyze(image_source='url', image_data='https://example.com/chart.png', prompt='描述这个图表') - 分析在线图片",
+                    "image_analyze(image_source='base64', image_data='data:image/jpeg;base64,...', prompt='识别图片中的文字') - 分析 base64 图片"
+                ],
+                "notes": "需要配置支持视觉能力的模型（如 Claude 3 Opus、GPT-4V 等）。"
+            },
+            {
+                "name": "tts",
+                "display_name": "语音合成",
+                "description": "将文本转换为语音（Text-to-Speech）。",
+                "category": "voice",
+                "parameters": [
+                    {
+                        "name": "text",
+                        "type": "string",
+                        "description": "要转换的文本",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "voice",
+                        "type": "string",
+                        "description": "语音类型/音色",
+                        "required": False,
+                        "default": "默认语音"
+                    },
+                    {
+                        "name": "speed",
+                        "type": "number",
+                        "description": "语速（0.5-2.0）",
+                        "required": False,
+                        "default": "1.0"
+                    }
+                ],
+                "return_description": "返回语音音频文件路径或数据",
+                "examples": [
+                    "tts(text='你好，欢迎使用 Hermes！') - 基础语音合成",
+                    "tts(text='Welcome', voice='alloy', speed=1.2) - 指定语音和语速"
+                ],
+                "notes": "需要配置 TTS 服务提供商（如 OpenAI TTS、ElevenLabs 等）。"
+            },
+            {
+                "name": "stt",
+                "display_name": "语音识别",
+                "description": "将语音转换为文本（Speech-to-Text）。",
+                "category": "voice",
+                "parameters": [
+                    {
+                        "name": "audio_source",
+                        "type": "string",
+                        "description": "音频来源：file 或 url",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "audio_data",
+                        "type": "string",
+                        "description": "音频文件路径或 URL",
+                        "required": True,
+                        "default": None
+                    },
+                    {
+                        "name": "language",
+                        "type": "string",
+                        "description": "语言代码（如 'zh'、'en'）",
+                        "required": False,
+                        "default": "自动检测"
+                    }
+                ],
+                "return_description": "返回识别的文本内容",
+                "examples": [
+                    "stt(audio_source='file', audio_data='/path/to/audio.mp3') - 识别本地音频",
+                    "stt(audio_source='url', audio_data='https://example.com/audio.wav', language='zh') - 识别中文音频"
+                ],
+                "notes": "需要配置 STT 服务提供商（如 OpenAI Whisper、AssemblyAI 等）。"
+            },
+        ]
+
+    def _get_builtin_tool_categories(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "name": "terminal",
+                "display_name": "终端工具",
+                "icon": "🖥️",
+                "description": "终端命令执行相关工具",
+                "tool_count": 1
+            },
+            {
+                "name": "filesystem",
+                "display_name": "文件系统工具",
+                "icon": "📁",
+                "description": "文件和目录操作相关工具",
+                "tool_count": 5
+            },
+            {
+                "name": "web",
+                "display_name": "网络工具",
+                "icon": "🌐",
+                "description": "网络搜索和浏览器自动化工具",
+                "tool_count": 5
+            },
+            {
+                "name": "memory",
+                "display_name": "记忆管理工具",
+                "icon": "🧠",
+                "description": "Hermes 自主记忆管理系统",
+                "tool_count": 1
+            },
+            {
+                "name": "skill",
+                "display_name": "技能管理工具",
+                "icon": "⚡",
+                "description": "技能安装、更新、卸载管理",
+                "tool_count": 1
+            },
+            {
+                "name": "session",
+                "display_name": "会话工具",
+                "icon": "💬",
+                "description": "历史会话搜索和管理",
+                "tool_count": 1
+            },
+            {
+                "name": "vision",
+                "display_name": "视觉工具",
+                "icon": "👁️",
+                "description": "图像分析和理解工具",
+                "tool_count": 1
+            },
+            {
+                "name": "voice",
+                "display_name": "语音工具",
+                "icon": "🎙️",
+                "description": "语音合成和识别工具",
+                "tool_count": 2
+            },
+        ]
+
+    def list_builtin_tools(self, category: Optional[str] = None, search: Optional[str] = None) -> BuiltinToolListResponse:
+        all_tools_data = self._get_builtin_tools()
+        categories_data = self._get_builtin_tool_categories()
+        
+        tools: List[BuiltinTool] = []
+        categories: List[BuiltinToolCategory] = []
+        
+        for cat_data in categories_data:
+            cat_tools = [t for t in all_tools_data if t["category"] == cat_data["name"]]
+            cat_data["tool_count"] = len(cat_tools)
+            categories.append(BuiltinToolCategory(**cat_data))
+        
+        filtered_tools_data = all_tools_data
+        if category:
+            filtered_tools_data = [t for t in filtered_tools_data if t["category"] == category]
+        
+        if search:
+            search_lower = search.lower()
+            filtered_tools_data = [
+                t for t in filtered_tools_data
+                if search_lower in t["name"].lower()
+                or search_lower in t["display_name"].lower()
+                or search_lower in t["description"].lower()
+            ]
+        
+        for tool_data in filtered_tools_data:
+            params = [
+                BuiltinToolParameter(**p)
+                for p in tool_data.get("parameters", [])
+            ]
+            tools.append(BuiltinTool(
+                name=tool_data["name"],
+                display_name=tool_data["display_name"],
+                description=tool_data["description"],
+                category=tool_data["category"],
+                parameters=params,
+                return_description=tool_data.get("return_description"),
+                examples=tool_data.get("examples", []),
+                notes=tool_data.get("notes")
+            ))
+        
+        tools = sorted(tools, key=lambda t: (t.category, t.name))
+        
+        return BuiltinToolListResponse(
+            categories=categories,
+            tools=tools,
+            total_tools=len(tools)
         )
 
 

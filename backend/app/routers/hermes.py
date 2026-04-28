@@ -18,6 +18,7 @@ from app.schemas.hermes import (
     MCPServiceListResponse,
     MCPServiceDetailResponse,
     MCPServiceTestResult,
+    BuiltinToolListResponse,
 )
 from app.schemas.user import APIResponse
 from app.services.auth_service import get_db, get_current_user
@@ -550,4 +551,30 @@ async def test_mcp_service(
         code=200,
         message="测试完成" if test_result.success else "测试失败",
         data=test_result
+    )
+
+
+@router.get(
+    "/tools",
+    response_model=APIResponse[BuiltinToolListResponse],
+    summary="获取内置工具列表",
+    description="获取 Hermes 所有内置工具列表，支持按分类和关键词筛选"
+)
+async def get_builtin_tools(
+    category: Optional[str] = Query(None, description="按工具分类筛选"),
+    search: Optional[str] = Query(None, description="搜索关键词（工具名称、显示名称、描述）"),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    tool_list = hermes_service.list_builtin_tools(category=category, search=search)
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=tool_list
     )

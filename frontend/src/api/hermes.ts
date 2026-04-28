@@ -11,6 +11,7 @@ import type {
   MCPServiceListResponse,
   MCPServiceDetailResponse,
   MCPServiceTestResult,
+  BuiltinToolListResponse,
   APIResponse 
 } from '@/types'
 
@@ -90,5 +91,13 @@ export const hermesApi = {
 
   testMcpService: (serviceName: string): Promise<APIResponse<MCPServiceTestResult>> => {
     return http.post(`/hermes/mcp/${encodeURIComponent(serviceName)}/test`)
+  },
+
+  getTools: (params?: { category?: string; search?: string }): Promise<APIResponse<BuiltinToolListResponse>> => {
+    const queryParams = new URLSearchParams()
+    if (params?.category) queryParams.append('category', params.category)
+    if (params?.search) queryParams.append('search', params.search)
+    const queryString = queryParams.toString()
+    return http.get(`/hermes/tools${queryString ? `?${queryString}` : ''}`)
   },
 }

@@ -186,3 +186,36 @@ class MCPServiceTestResult(BaseModel):
     tool_count: Optional[int] = Field(None, description="检测到的工具数量")
     tools: List[MCPTool] = Field(default_factory=list, description="检测到的工具列表")
     error: Optional[str] = Field(None, description="错误信息")
+
+
+class BuiltinToolParameter(BaseModel):
+    name: str = Field(..., description="参数名称")
+    type: str = Field(..., description="参数类型")
+    description: str = Field(..., description="参数描述")
+    required: bool = Field(True, description="是否必填")
+    default: Optional[str] = Field(None, description="默认值")
+
+
+class BuiltinTool(BaseModel):
+    name: str = Field(..., description="工具名称")
+    display_name: str = Field(..., description="显示名称")
+    description: str = Field(..., description="工具描述")
+    category: str = Field(..., description="工具分类")
+    parameters: List[BuiltinToolParameter] = Field(default_factory=list, description="参数列表")
+    return_description: Optional[str] = Field(None, description="返回值描述")
+    examples: List[str] = Field(default_factory=list, description="使用示例")
+    notes: Optional[str] = Field(None, description="使用注意事项")
+
+
+class BuiltinToolCategory(BaseModel):
+    name: str = Field(..., description="分类名称")
+    display_name: str = Field(..., description="显示名称")
+    icon: str = Field(..., description="图标")
+    description: str = Field(..., description="分类描述")
+    tool_count: int = Field(0, description="工具数量")
+
+
+class BuiltinToolListResponse(BaseModel):
+    categories: List[BuiltinToolCategory] = Field(default_factory=list, description="工具分类列表")
+    tools: List[BuiltinTool] = Field(default_factory=list, description="所有工具列表")
+    total_tools: int = Field(0, description="工具总数")
