@@ -229,6 +229,23 @@ def require_permission(db: Session, user_id: int, permission_code: str):
         )
 
 
+class PermissionChecker:
+    def __init__(self, permission_code: str):
+        self.permission_code = permission_code
+
+    def __call__(
+        self,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> User:
+        require_permission(db, current_user.id, self.permission_code)
+        return current_user
+
+
+def permission_required(permission_code: str):
+    return PermissionChecker(permission_code)
+
+
 def get_super_admin_role(db: Session) -> Optional[Role]:
     role = db.query(Role).filter(
         Role.code == "super_admin"

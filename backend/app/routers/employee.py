@@ -13,6 +13,7 @@ from app.services.auth_service import (
     get_db,
     get_current_user,
     get_password_hash,
+    permission_required,
 )
 
 router = APIRouter(prefix="/employees", tags=["员工管理"])
@@ -29,7 +30,7 @@ DEFAULT_PASSWORD = "123456"
 def get_employees(
     department_id: Optional[int] = Query(None, description="部门ID"),
     is_active: Optional[bool] = Query(None, description="是否激活"),
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("employee:query")),
     db: Session = Depends(get_db)
 ):
     query = db.query(User)
@@ -57,7 +58,7 @@ def get_employees(
 )
 def get_employee(
     employee_id: int,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("employee:query")),
     db: Session = Depends(get_db)
 ):
     employee = db.query(User).filter(User.id == employee_id).first()
@@ -83,7 +84,7 @@ def get_employee(
 )
 def create_employee(
     employee_data: UserCreate,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("employee:create")),
     db: Session = Depends(get_db)
 ):
     if not employee_data.department_id:
@@ -159,7 +160,7 @@ def create_employee(
 def update_employee(
     employee_id: int,
     employee_data: UserUpdate,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("employee:update")),
     db: Session = Depends(get_db)
 ):
     employee = db.query(User).filter(User.id == employee_id).first()
@@ -223,7 +224,7 @@ def update_employee(
 )
 def delete_employee(
     employee_id: int,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("employee:delete")),
     db: Session = Depends(get_db)
 ):
     employee = db.query(User).filter(User.id == employee_id).first()
@@ -258,7 +259,7 @@ def delete_employee(
 )
 def reset_employee_password(
     employee_id: int,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("employee:reset_password")),
     db: Session = Depends(get_db)
 ):
     employee = db.query(User).filter(User.id == employee_id).first()
@@ -290,7 +291,7 @@ def reset_employee_password(
 )
 def toggle_employee_status(
     employee_id: int,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("employee:toggle_status")),
     db: Session = Depends(get_db)
 ):
     employee = db.query(User).filter(User.id == employee_id).first()

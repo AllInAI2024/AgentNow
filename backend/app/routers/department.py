@@ -13,6 +13,7 @@ from app.schemas.user import APIResponse
 from app.services.auth_service import (
     get_db,
     get_current_user,
+    permission_required,
 )
 
 router = APIRouter(prefix="/departments", tags=["部门管理"])
@@ -45,7 +46,7 @@ def get_all_child_department_ids(db: Session, parent_id: int) -> List[int]:
 )
 def get_departments(
     status: Optional[int] = Query(None, description="状态：1-启用，0-禁用"),
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("department:query")),
     db: Session = Depends(get_db)
 ):
     query = db.query(Department)
@@ -69,7 +70,7 @@ def get_departments(
     description="获取树形结构的部门列表"
 )
 def get_department_tree(
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("department:query")),
     db: Session = Depends(get_db)
 ):
     departments = db.query(Department).order_by(Department.sort, Department.id).all()
@@ -91,7 +92,7 @@ def get_department_tree(
 )
 def get_department(
     department_id: int,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("department:query")),
     db: Session = Depends(get_db)
 ):
     department = db.query(Department).filter(Department.id == department_id).first()
@@ -117,7 +118,7 @@ def get_department(
 )
 def create_department(
     department_data: DepartmentCreate,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("department:create")),
     db: Session = Depends(get_db)
 ):
     if department_data.code:
@@ -166,7 +167,7 @@ def create_department(
 def update_department(
     department_id: int,
     department_data: DepartmentUpdate,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("department:update")),
     db: Session = Depends(get_db)
 ):
     department = db.query(Department).filter(Department.id == department_id).first()
@@ -232,7 +233,7 @@ def update_department(
 )
 def delete_department(
     department_id: int,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("department:delete")),
     db: Session = Depends(get_db)
 ):
     department = db.query(Department).filter(Department.id == department_id).first()

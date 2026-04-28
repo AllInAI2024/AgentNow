@@ -14,6 +14,7 @@ from app.services.auth_service import (
     get_db,
     get_current_user,
     get_super_admin_role,
+    permission_required,
 )
 
 router = APIRouter(prefix="/permissions", tags=["权限管理"])
@@ -37,7 +38,7 @@ def build_permission_tree(permissions: List[Permission], parent_id: int = 0) -> 
 )
 def get_permissions(
     type: Optional[int] = Query(None, description="权限类型：1-菜单，2-按钮，3-API接口"),
-    current_user = Depends(get_current_user),
+    current_user = Depends(permission_required("role:query")),
     db: Session = Depends(get_db)
 ):
     query = db.query(Permission)
@@ -61,7 +62,7 @@ def get_permissions(
     description="获取树形结构的权限列表，用于菜单展示"
 )
 def get_permission_tree(
-    current_user = Depends(get_current_user),
+    current_user = Depends(permission_required("role:query")),
     db: Session = Depends(get_db)
 ):
     permissions = db.query(Permission).order_by(Permission.parent_id, Permission.id).all()
@@ -83,7 +84,7 @@ def get_permission_tree(
 )
 def get_permission(
     permission_id: int,
-    current_user = Depends(get_current_user),
+    current_user = Depends(permission_required("role:query")),
     db: Session = Depends(get_db)
 ):
     permission = db.query(Permission).filter(Permission.id == permission_id).first()
@@ -109,7 +110,7 @@ def get_permission(
 )
 def create_permission(
     permission_data: PermissionCreate,
-    current_user = Depends(get_current_user),
+    current_user = Depends(permission_required("role:assign_permission")),
     db: Session = Depends(get_db)
 ):
     existing = db.query(Permission).filter(Permission.code == permission_data.code).first()
@@ -171,7 +172,7 @@ def create_permission(
 def update_permission(
     permission_id: int,
     permission_data: PermissionUpdate,
-    current_user = Depends(get_current_user),
+    current_user = Depends(permission_required("role:assign_permission")),
     db: Session = Depends(get_db)
 ):
     permission = db.query(Permission).filter(Permission.id == permission_id).first()
@@ -228,7 +229,7 @@ def update_permission(
 )
 def delete_permission(
     permission_id: int,
-    current_user = Depends(get_current_user),
+    current_user = Depends(permission_required("role:assign_permission")),
     db: Session = Depends(get_db)
 ):
     permission = db.query(Permission).filter(Permission.id == permission_id).first()

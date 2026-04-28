@@ -18,6 +18,7 @@ from app.services.auth_service import (
     get_db,
     get_current_user,
     get_super_admin_role,
+    permission_required,
 )
 from app.config import settings
 
@@ -39,7 +40,7 @@ def is_super_admin_user(user: User) -> bool:
     description="获取所有角色列表"
 )
 def get_roles(
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("role:query")),
     db: Session = Depends(get_db)
 ):
     roles = db.query(Role).order_by(Role.id).all()
@@ -59,7 +60,7 @@ def get_roles(
 )
 def get_role(
     role_id: int,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("role:query")),
     db: Session = Depends(get_db)
 ):
     role = db.query(Role).filter(Role.id == role_id).first()
@@ -93,7 +94,7 @@ def get_role(
 )
 def create_role(
     role_data: RoleCreate,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("role:create")),
     db: Session = Depends(get_db)
 ):
     existing = db.query(Role).filter(Role.code == role_data.code).first()
@@ -129,7 +130,7 @@ def create_role(
 def update_role(
     role_id: int,
     role_data: RoleUpdate,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("role:update")),
     db: Session = Depends(get_db)
 ):
     role = db.query(Role).filter(Role.id == role_id).first()
@@ -162,7 +163,7 @@ def update_role(
 )
 def delete_role(
     role_id: int,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("role:delete")),
     db: Session = Depends(get_db)
 ):
     role = db.query(Role).filter(Role.id == role_id).first()
@@ -206,7 +207,7 @@ def delete_role(
 )
 def get_role_permissions(
     role_id: int,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("role:query")),
     db: Session = Depends(get_db)
 ):
     role = db.query(Role).filter(Role.id == role_id).first()
@@ -238,7 +239,7 @@ def get_role_permissions(
 def assign_role_permissions(
     role_id: int,
     request: AssignPermissionsRequest,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("role:assign_permission")),
     db: Session = Depends(get_db)
 ):
     role = db.query(Role).filter(Role.id == role_id).first()
@@ -280,7 +281,7 @@ def assign_role_permissions(
 )
 def get_user_roles(
     user_id: int,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("role:query")),
     db: Session = Depends(get_db)
 ):
     user = db.query(User).filter(User.id == user_id).first()
@@ -310,7 +311,7 @@ def get_user_roles(
 def assign_user_roles(
     user_id: int,
     request: AssignRolesRequest,
-    current_user = Depends(get_current_user),
+    current_user: User = Depends(permission_required("role:assign_permission")),
     db: Session = Depends(get_db)
 ):
     user = db.query(User).filter(User.id == user_id).first()
