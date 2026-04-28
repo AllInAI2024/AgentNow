@@ -67,17 +67,21 @@
             </template>
             <template v-else-if="column.key === 'action'">
               <a-space size="small">
-                <a-button type="link" size="small" @click="handleDownload(record)">
-                  下载
-                </a-button>
-                <a-button
-                  v-if="canEdit(record)"
-                  type="link"
-                  size="small"
-                  @click="handleEdit(record)"
-                >
-                  编辑
-                </a-button>
+                <a-tooltip title="下载">
+                  <a-button type="text" size="small" @click="handleDownload(record)">
+                    <DownloadOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="编辑">
+                  <a-button
+                    v-if="canEdit(record)"
+                    type="text"
+                    size="small"
+                    @click="handleEdit(record)"
+                  >
+                    <EditOutlined />
+                  </a-button>
+                </a-tooltip>
                 <a-popconfirm
                   v-if="canDelete(record)"
                   title="确定要删除此文档吗？"
@@ -85,9 +89,11 @@
                   cancel-text="取消"
                   @confirm="handleDelete(record)"
                 >
-                  <a-button type="link" size="small" danger>
-                    删除
-                  </a-button>
+                  <a-tooltip title="删除">
+                    <a-button type="text" size="small" danger>
+                      <DeleteOutlined />
+                    </a-button>
+                  </a-tooltip>
                 </a-popconfirm>
               </a-space>
             </template>
@@ -256,6 +262,9 @@ import {
   PlusOutlined,
   FileOutlined,
   InboxOutlined,
+  DownloadOutlined,
+  EditOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons-vue'
 import { knowledgeApi } from '@/api/knowledge'
 import type { KnowledgeDoc, UpdateKnowledgeDocParams } from '@/types'
@@ -348,12 +357,12 @@ const columns = [
 
 const canEdit = (record: KnowledgeDoc) => {
   return userStore.hasPermission('knowledge:doc:update') && 
-    (userStore.isSuperAdmin || record.created_by === userStore.userInfo?.id)
+    (userStore.isAdmin || record.created_by === userStore.userInfo?.id)
 }
 
 const canDelete = (record: KnowledgeDoc) => {
   return userStore.hasPermission('knowledge:doc:delete') && 
-    (userStore.isSuperAdmin || record.created_by === userStore.userInfo?.id)
+    (userStore.isAdmin || record.created_by === userStore.userInfo?.id)
 }
 
 const formatFileSize = (bytes: number): string => {
@@ -400,7 +409,7 @@ const fetchCategories = async () => {
   try {
     const res = await knowledgeApi.getCategories()
     if (res.code === 200) {
-      categories.value = res.data
+      categories.value = res.data.categories
     }
   } catch (error) {
     console.error('获取分类列表失败:', error)
@@ -414,7 +423,7 @@ const beforeUpload = (file: File): boolean => {
   }
   selectedFile.value = file
   fileList.value = [{
-    uid: file.uid || String(Date.now()),
+    uid: String(Date.now()),
     name: file.name,
     status: 'done',
     size: file.size,
