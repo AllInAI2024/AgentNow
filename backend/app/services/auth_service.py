@@ -121,7 +121,7 @@ def get_user_permissions(db: Session, user_id: int) -> List[Permission]:
     user = db.query(User).filter(User.id == user_id).first()
     
     if user and user.is_super_admin:
-        return db.query(Permission).order_by(Permission.parent_id).all()
+        return db.query(Permission).order_by(Permission.sort, Permission.id).all()
     
     permissions = db.query(Permission).distinct().join(
         RolePermission, RolePermission.permission_id == Permission.id
@@ -131,7 +131,7 @@ def get_user_permissions(db: Session, user_id: int) -> List[Permission]:
         UserRole, UserRole.role_id == Role.id
     ).filter(
         UserRole.user_id == user_id
-    ).order_by(Permission.parent_id).all()
+    ).order_by(Permission.sort, Permission.id).all()
     return permissions
 
 
@@ -141,7 +141,7 @@ def get_user_menu_permissions(db: Session, user_id: int) -> List[Permission]:
     if user and user.is_super_admin:
         return db.query(Permission).filter(
             Permission.type.in_([1, 2])
-        ).order_by(Permission.parent_id).all()
+        ).order_by(Permission.sort, Permission.id).all()
     
     all_permissions = db.query(Permission).distinct().join(
         RolePermission, RolePermission.permission_id == Permission.id
@@ -179,7 +179,7 @@ def get_user_menu_permissions(db: Session, user_id: int) -> List[Permission]:
     
     return db.query(Permission).filter(
         Permission.id.in_(menu_ids)
-    ).order_by(Permission.parent_id).all()
+    ).order_by(Permission.sort, Permission.id).all()
 
 
 def get_user_all_permission_codes(db: Session, user_id: int) -> List[str]:

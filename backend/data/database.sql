@@ -87,11 +87,14 @@ CREATE TABLE IF NOT EXISTS permissions (
     type TINYINT DEFAULT 1 COMMENT '类型：1-菜单，2-按钮，3-API接口',
     path VARCHAR(255) COMMENT '路由路径/接口路径',
     icon VARCHAR(100) COMMENT '菜单图标',
+    sort INT DEFAULT 0 COMMENT '排序号',
+    divider TINYINT DEFAULT 0 COMMENT '是否是菜单分割线：0-否，1-是',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     INDEX idx_parent_id (parent_id),
     INDEX idx_code (code),
-    INDEX idx_type (type)
+    INDEX idx_type (type),
+    INDEX idx_sort (sort)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='权限表';
 
 -- ============================================
@@ -136,54 +139,61 @@ VALUES
 ('普通用户', 'user', '普通用户，拥有基本操作权限');
 
 -- 插入系统权限/功能点（菜单结构）
--- 一级菜单
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
+-- 一级菜单（按sort排序：1-工作台, 2-智能体管理, 3-知识库管理, 4-系统管理）
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
-(0, '工作台', 'dashboard', 1, '/dashboard', 'dashboard'),
-(0, '组织管理', 'organization', 1, '/organization', 'team'),
-(0, '系统管理', 'system', 1, '/system', 'setting'),
-(0, '角色权限', 'role', 1, '/role', 'safety-certificate'),
-(0, '智能体管理', 'agent', 1, '/agent', 'robot'),
-(0, '知识库管理', 'knowledge', 1, '/knowledge', 'folder-open');
+(0, '工作台', 'dashboard', 1, '/dashboard', 'dashboard', 1),
+(0, '智能体管理', 'agent', 1, '/agent', 'robot', 2),
+(0, '知识库管理', 'knowledge', 1, '/knowledge', 'folder-open', 3),
+(0, '系统管理', 'system', 1, '/system', 'setting', 4);
 
 -- 获取父权限ID
 SET @dashboard_id = (SELECT id FROM permissions WHERE code = 'dashboard');
-SET @organization_id = (SELECT id FROM permissions WHERE code = 'organization');
-SET @system_id = (SELECT id FROM permissions WHERE code = 'system');
-SET @role_id = (SELECT id FROM permissions WHERE code = 'role');
 SET @agent_id = (SELECT id FROM permissions WHERE code = 'agent');
 SET @knowledge_id = (SELECT id FROM permissions WHERE code = 'knowledge');
-
--- 二级菜单 - 组织管理
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
-VALUES 
-(@organization_id, '部门管理', 'department', 1, '/organization/department', 'apartment'),
-(@organization_id, '员工管理', 'employee', 1, '/organization/employee', 'user');
-
--- 二级菜单 - 系统管理
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
-VALUES 
-(@system_id, '系统设置', 'system:setting', 1, '/system/setting', 'tool'),
-(@system_id, '系统监控', 'system:monitor', 1, '/system/monitor', 'monitor');
-
--- 二级菜单 - 角色权限
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
-VALUES 
-(@role_id, '角色管理', 'role:manage', 1, '/role/manage', 'list'),
-(@role_id, '功能点管理', 'permission:manage', 1, '/permission/manage', 'unordered-list');
+SET @system_id = (SELECT id FROM permissions WHERE code = 'system');
 
 -- 二级菜单 - 智能体管理
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
-(@agent_id, '智能体列表', 'agent:list', 1, '/agent/list', 'list'),
-(@agent_id, '智能体配置', 'agent:config', 1, '/agent/config', 'setting'),
-(@agent_id, '对话管理', 'agent:conversation', 1, '/agent/conversation', 'message');
+(@agent_id, '智能体列表', 'agent:list', 1, '/agent/list', 'list', 1),
+(@agent_id, '智能体配置', 'agent:config', 1, '/agent/config', 'setting', 2),
+(@agent_id, '对话管理', 'agent:conversation', 1, '/agent/conversation', 'message', 3);
 
 -- 二级菜单 - 知识库管理
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
-(@knowledge_id, '文档列表', 'knowledge:document', 1, '/knowledge/document', 'file'),
-(@knowledge_id, '知识库设置', 'knowledge:setting', 1, '/knowledge/setting', 'setting');
+(@knowledge_id, '文档列表', 'knowledge:document', 1, '/knowledge/document', 'file', 1),
+(@knowledge_id, '知识库设置', 'knowledge:setting', 1, '/knowledge/setting', 'setting', 2);
+
+-- 二级菜单 - 系统管理（包含组织管理、角色权限、系统设置，用分割线分隔）
+-- 组织管理部分
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(@system_id, '部门管理', 'department', 1, '/organization/department', 'apartment', 1),
+(@system_id, '员工管理', 'employee', 1, '/organization/employee', 'user', 2);
+
+-- 分割线（组织管理和角色权限之间）
+INSERT INTO permissions (parent_id, name, code, type, sort, divider)
+VALUES 
+(@system_id, '---', 'divider:1', 1, 3, 1);
+
+-- 角色权限部分
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(@system_id, '角色管理', 'role:manage', 1, '/role/manage', 'list', 4),
+(@system_id, '功能点管理', 'permission:manage', 1, '/permission/manage', 'unordered-list', 5);
+
+-- 分割线（角色权限和系统设置之间）
+INSERT INTO permissions (parent_id, name, code, type, sort, divider)
+VALUES 
+(@system_id, '---', 'divider:2', 1, 6, 1);
+
+-- 系统设置部分
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(@system_id, '系统设置', 'system:setting', 1, '/system/setting', 'tool', 7),
+(@system_id, '系统监控', 'system:monitor', 1, '/system/monitor', 'monitor', 8);
 
 -- 插入按钮/接口级权限
 -- 获取一些二级菜单的ID
@@ -231,12 +241,12 @@ INSERT INTO role_permissions (role_id, permission_id)
 SELECT @system_admin_role_id, id FROM permissions 
 WHERE code IN (
     'dashboard', 
-    'organization', 'department', 'employee',
+    'system', 'department', 'employee',
     'department:query', 'department:create', 'department:update', 'department:delete',
     'employee:query', 'employee:create', 'employee:update', 'employee:delete', 
     'employee:reset_password', 'employee:toggle_status',
-    'system', 'system:setting', 'system:monitor',
-    'role', 'role:manage', 'permission:manage',
+    'system:setting', 'system:monitor',
+    'role:manage', 'permission:manage',
     'role:query', 'role:create', 'role:update', 'role:delete', 'role:assign_permission',
     'agent', 'agent:list', 'agent:config', 'agent:conversation',
     'knowledge', 'knowledge:document', 'knowledge:setting'

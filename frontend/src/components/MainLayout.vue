@@ -42,21 +42,26 @@
                   </div>
                   <template #overlay>
                     <div class="nav-submenu">
-                      <div
-                        v-for="child in menu.children"
-                        :key="child.id"
-                        class="submenu-item"
-                        :class="{ 'submenu-item-active': isActiveRoute(child.path || '') }"
-                        @click="handleNavigate(child.path || '/')"
-                      >
-                        <div class="submenu-icon-wrapper">
-                          <component :is="getIconComponent(child.icon || '')" class="submenu-icon" />
+                      <template v-for="child in menu.children" :key="child.id">
+                        <div
+                          v-if="child.divider"
+                          class="submenu-divider"
+                        />
+                        <div
+                          v-else
+                          class="submenu-item"
+                          :class="{ 'submenu-item-active': isActiveRoute(child.path || '') }"
+                          @click="handleNavigate(child.path || '/')"
+                        >
+                          <div class="submenu-icon-wrapper">
+                            <component :is="getIconComponent(child.icon || '')" class="submenu-icon" />
+                          </div>
+                          <div class="submenu-content">
+                            <span class="submenu-title">{{ child.name }}</span>
+                            <span class="submenu-desc">{{ getMenuDescription(child) }}</span>
+                          </div>
                         </div>
-                        <div class="submenu-content">
-                          <span class="submenu-title">{{ child.name }}</span>
-                          <span class="submenu-desc">{{ getMenuDescription(child) }}</span>
-                        </div>
-                      </div>
+                      </template>
                     </div>
                   </template>
                 </a-dropdown>
@@ -459,6 +464,12 @@ const handleLogout = () => {
   min-width: 360px;
   backdrop-filter: blur(24px);
   background: rgba(255, 255, 255, 0.96);
+}
+
+.submenu-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(229, 230, 235, 0.8) 20%, rgba(229, 230, 235, 0.8) 80%, transparent 100%);
+  margin: 8px 16px;
 }
 
 .submenu-item {

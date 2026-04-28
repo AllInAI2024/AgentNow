@@ -26,6 +26,7 @@ def build_permission_tree(permissions, parent_id: int = 0):
             tree_node = PermissionTreeResponse.model_validate(permission)
             tree_node.children = build_permission_tree(permissions, permission.id)
             tree.append(tree_node)
+    tree.sort(key=lambda x: x.sort if x.sort is not None else 0)
     return tree
 
 

@@ -27,6 +27,7 @@ def build_permission_tree(permissions: List[Permission], parent_id: int = 0) -> 
             tree_node = PermissionTreeResponse.model_validate(permission)
             tree_node.children = build_permission_tree(permissions, permission.id)
             tree.append(tree_node)
+    tree.sort(key=lambda x: x.sort if x.sort is not None else 0)
     return tree
 
 
@@ -46,7 +47,7 @@ def get_permissions(
     if type is not None:
         query = query.filter(Permission.type == type)
     
-    permissions = query.order_by(Permission.parent_id, Permission.id).all()
+    permissions = query.order_by(Permission.sort, Permission.id).all()
     
     return APIResponse(
         code=200,
@@ -65,7 +66,7 @@ def get_permission_tree(
     current_user = Depends(permission_required("role:query")),
     db: Session = Depends(get_db)
 ):
-    permissions = db.query(Permission).order_by(Permission.parent_id, Permission.id).all()
+    permissions = db.query(Permission).order_by(Permission.sort, Permission.id).all()
     
     tree = build_permission_tree(permissions, 0)
     

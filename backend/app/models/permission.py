@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, BigInteger, String, DateTime, Text, Integer, SmallInteger, Index
+from sqlalchemy import Column, BigInteger, String, DateTime, Text, Integer, SmallInteger, Boolean, Index
 
 from app.models import Base
 
@@ -14,6 +14,8 @@ class Permission(Base):
     type = Column(SmallInteger, default=1, comment="类型：1-菜单，2-按钮，3-API接口")
     path = Column(String(255), comment="路由路径/接口路径")
     icon = Column(String(100), comment="菜单图标")
+    sort = Column(Integer, default=0, comment="排序号")
+    divider = Column(Boolean, default=False, comment="是否是菜单分割线")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
@@ -21,6 +23,7 @@ class Permission(Base):
         Index("idx_parent_id", "parent_id"),
         Index("idx_code", "code"),
         Index("idx_type", "type"),
+        Index("idx_sort", "sort"),
     )
 
     def __repr__(self):
@@ -35,6 +38,8 @@ class Permission(Base):
             "type": self.type,
             "path": self.path,
             "icon": self.icon,
+            "sort": self.sort,
+            "divider": self.divider,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
