@@ -62,7 +62,7 @@
               <span v-else>-</span>
             </template>
             <template v-else-if="column.key === 'action'">
-              <a-space>
+              <div class="action-buttons">
                 <a-button type="link" size="small" @click="handleEdit(record)">
                   编辑
                 </a-button>
@@ -99,7 +99,7 @@
                     删除
                   </a-button>
                 </a-popconfirm>
-              </a-space>
+              </div>
             </template>
           </template>
         </a-table>
@@ -278,7 +278,7 @@ const columns = [
   { title: '邮箱', dataIndex: 'email', key: 'email', ellipsis: true },
   { title: '状态', dataIndex: 'is_active', key: 'is_active', width: 100 },
   { title: '密码状态', dataIndex: 'is_default_password', key: 'is_default_password', width: 100 },
-  { title: '操作', key: 'action', width: 300, fixed: 'right' as const },
+  { title: '操作', key: 'action', width: 420, fixed: 'right' as const },
 ]
 
 const getAllDepartments = (items: DepartmentTree[]): DepartmentTree[] => {
@@ -563,6 +563,17 @@ onMounted(() => {
 
 .search-bar {
   margin-bottom: 16px;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+.action-buttons .ant-btn-link {
+  white-space: nowrap;
+  padding: 4px 8px;
 }
 
 .role-select-container {

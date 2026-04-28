@@ -104,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, h } from 'vue'
 import { message } from 'ant-design-vue'
 import type { FormInstance } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
@@ -141,7 +141,15 @@ const columns = [
   { title: '角色名称', dataIndex: 'name', key: 'name', width: 150 },
   { title: '角色编码', dataIndex: 'code', key: 'code', width: 180 },
   { title: '角色描述', dataIndex: 'description', key: 'description', ellipsis: true },
-  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
+  { 
+    title: '创建时间', 
+    dataIndex: 'created_at', 
+    key: 'created_at', 
+    width: 200,
+    customRender: ({ text }: { text: string | null }) => {
+      return h('span', { style: { whiteSpace: 'nowrap' } }, text || '-')
+    }
+  },
   { title: '操作', key: 'action', width: 220, fixed: 'right' as const },
 ]
 
@@ -330,6 +338,10 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 600;
   color: #1d2129;
+}
+
+.created-at-cell {
+  white-space: nowrap;
 }
 
 .permission-config {
