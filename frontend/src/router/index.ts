@@ -15,6 +15,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '修改密码', requiresAuth: true, requiresChangePassword: true },
   },
   {
+    path: '/settings/password',
+    name: 'PasswordSettings',
+    component: () => import('@/views/PasswordSettings.vue'),
+    meta: { title: '修改密码', requiresAuth: true },
+  },
+  {
     path: '/',
     redirect: '/dashboard',
   },

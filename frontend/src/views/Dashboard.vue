@@ -20,6 +20,11 @@
                 <UserOutlined />
                 <span>个人中心</span>
               </a-menu-item>
+              <a-menu-item key="changePassword" @click="handleChangePassword">
+                <LockOutlined />
+                <span>修改密码</span>
+              </a-menu-item>
+              <a-menu-divider />
               <a-menu-item key="logout" @click="handleLogout">
                 <LogoutOutlined />
                 <span>退出登录</span>
@@ -153,6 +158,7 @@ import {
   RobotOutlined,
   DownOutlined,
   UserOutlined,
+  LockOutlined,
   LogoutOutlined,
   RocketOutlined,
   MessageOutlined,
@@ -178,6 +184,10 @@ const handleDropdownVisibleChange = (_visible: boolean) => {}
 
 const handleProfile = () => {
   message.info('个人中心功能开发中...')
+}
+
+const handleChangePassword = () => {
+  router.push({ name: 'PasswordSettings' })
 }
 
 const handleLogout = () => {
