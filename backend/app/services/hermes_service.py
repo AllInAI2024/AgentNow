@@ -42,6 +42,12 @@ from app.schemas.hermes import (
     BuiltinToolParameter,
     BuiltinToolCategory,
     BuiltinToolListResponse,
+    MemoryType,
+    MemoryItem,
+    MemoryFile,
+    MemoryResponse,
+    ProfileMemoryListItem,
+    ProfileMemoryListResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -2236,6 +2242,224 @@ class HermesService:
             categories=categories,
             tools=tools,
             total_tools=len(tools)
+        )
+
+    def _get_memory_dir(self, profile_name: Optional[str] = None) -> Path:
+        if profile_name and profile_name != "default":
+            hermes_profiles_dir = Path.home() / ".hermes-profiles" / profile_name
+            memory_dir = hermes_profiles_dir / "memories"
+            if memory_dir.exists():
+                return memory_dir
+            hermes_dir = hermes_profiles_dir
+        else:
+            hermes_dir = Path.home() / ".hermes"
+        
+        memory_dir = hermes_dir / "memories"
+        if memory_dir.exists():
+            return memory_dir
+        
+        return hermes_dir
+
+    def _parse_memory_items(self, content: str) -> List[MemoryItem]:
+        if not content or not content.strip():
+            return []
+        
+        items: List[MemoryItem] = []
+        lines = content.split("\n")
+        
+        current_item_lines: List[str] = []
+        item_index = 0
+        line_number = 0
+        
+        for i, line in enumerate(lines):
+            line_number = i + 1
+            
+            if line.startswith("§") or "§" in line:
+                if current_item_lines:
+                    item_index += 1
+                    raw_text = " ".join(current_item_lines).strip()
+                    item_type = self._extract_memory_type(raw_text)
+                    items.append(MemoryItem(
+                        id=item_index,
+                        type=item_type,
+                        content=raw_text,
+                        raw=raw_text,
+                        line_number=line_number - len(current_item_lines)
+                    ))
+                    current_item_lines = []
+                
+                clean_line = line.replace("§", "").strip()
+                if clean_line:
+                    current_item_lines.append(clean_line)
+            elif line.strip():
+                current_item_lines.append(line.strip())
+        
+        if current_item_lines:
+            item_index += 1
+            raw_text = " ".join(current_item_lines).strip()
+            item_type = self._extract_memory_type(raw_text)
+            items.append(MemoryItem(
+                id=item_index,
+                type=item_type,
+                content=raw_text,
+                raw=raw_text,
+                line_number=line_number - len(current_item_lines) + 1 if current_item_lines else line_number
+            ))
+        
+        return items
+
+    def _extract_memory_type(self, text: str) -> str:
+        type_indicators = [
+            ("项目约定", ["项目", "约定", "配置", "设置", "规范"]),
+            ("用户偏好", ["用户", "偏好", "喜欢", "希望", "期望"]),
+            ("环境事实", ["环境", "事实", "系统", "版本", "路径"]),
+            ("技术约定", ["技术", "架构", "框架", "库", "依赖"]),
+            ("业务规则", ["业务", "规则", "流程", "逻辑"]),
+        ]
+        
+        text_lower = text.lower()
+        for type_name, keywords in type_indicators:
+            for kw in keywords:
+                if kw in text or kw.lower() in text_lower:
+                    return type_name
+        
+        return "其他"
+
+    def _read_memory_file(self, profile_name: str, memory_type: MemoryType) -> MemoryFile:
+        memory_dir = self._get_memory_dir(profile_name)
+        
+        if memory_type == MemoryType.MEMORY:
+            file_name = "MEMORY.md"
+            display_name = "Agent 笔记 (MEMORY.md)"
+            description = "Agent 个人笔记，记录环境事实、项目约定、学到的知识等"
+            char_limit = 2200
+        else:
+            file_name = "USER.md"
+            display_name = "用户画像 (USER.md)"
+            description = "用户画像，记录用户偏好、沟通风格、期望等"
+            char_limit = 1375
+        
+        file_path = memory_dir / file_name
+        exists = file_path.exists()
+        
+        raw_content = None
+        current_chars = 0
+        progress = 0.0
+        item_count = 0
+        last_updated = None
+        items: List[MemoryItem] = []
+        
+        if exists:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    raw_content = f.read()
+                
+                stat = file_path.stat()
+                last_updated = datetime.fromtimestamp(stat.st_mtime)
+                
+                current_chars = len(raw_content)
+                progress = min(100.0, (current_chars / char_limit) * 100) if char_limit > 0 else 0.0
+                
+                items = self._parse_memory_items(raw_content)
+                item_count = len(items)
+                
+            except Exception as e:
+                logger.error(f"Failed to read memory file {file_path}: {e}")
+                raw_content = None
+        
+        return MemoryFile(
+            type=memory_type,
+            name=file_name,
+            display_name=display_name,
+            description=description,
+            char_limit=char_limit,
+            current_chars=current_chars,
+            progress=progress,
+            item_count=item_count,
+            last_updated=last_updated,
+            exists=exists,
+            raw_content=raw_content,
+            items=items
+        )
+
+    def get_memory(self, profile_name: str) -> MemoryResponse:
+        memory_file = self._read_memory_file(profile_name, MemoryType.MEMORY)
+        user_file = self._read_memory_file(profile_name, MemoryType.USER)
+        
+        return MemoryResponse(
+            profile_name=profile_name,
+            memory_file=memory_file,
+            user_file=user_file
+        )
+
+    def list_profile_memories(self, db: Optional[Session] = None) -> ProfileMemoryListResponse:
+        profiles = self.get_profile_list()
+        
+        if not profiles:
+            profiles = ["default"]
+        
+        items: List[ProfileMemoryListItem] = []
+        
+        for profile_name in profiles:
+            memory_dir = self._get_memory_dir(profile_name)
+            
+            memory_file = memory_dir / "MEMORY.md"
+            user_file = memory_dir / "USER.md"
+            
+            memory_exists = memory_file.exists()
+            user_exists = user_file.exists()
+            
+            memory_chars = 0
+            user_chars = 0
+            
+            try:
+                if memory_exists:
+                    with open(memory_file, "r", encoding="utf-8") as f:
+                        memory_chars = len(f.read())
+                if user_exists:
+                    with open(user_file, "r", encoding="utf-8") as f:
+                        user_chars = len(f.read())
+            except Exception as e:
+                logger.error(f"Failed to read memory files for {profile_name}: {e}")
+            
+            display_name = profile_name
+            user_id = None
+            user_name = None
+            
+            if db:
+                try:
+                    from app.models import HermesProfile
+                    profile = db.query(HermesProfile).filter(
+                        HermesProfile.profile_name == profile_name
+                    ).first()
+                    
+                    if profile:
+                        display_name = profile.display_name or profile_name
+                        user_id = profile.user_id
+                        
+                        if user_id:
+                            user = db.query(User).filter(User.id == user_id).first()
+                            if user:
+                                user_name = user.username
+                except Exception as e:
+                    logger.error(f"Failed to get profile info for {profile_name}: {e}")
+            
+            items.append(ProfileMemoryListItem(
+                profile_name=profile_name,
+                display_name=display_name,
+                user_id=user_id,
+                user_name=user_name,
+                memory_exists=memory_exists,
+                user_exists=user_exists,
+                memory_chars=memory_chars,
+                user_chars=user_chars,
+                memory_limit=2200,
+                user_limit=1375
+            ))
+        
+        return ProfileMemoryListResponse(
+            items=items,
+            total=len(items)
         )
 
 

@@ -19,6 +19,8 @@ from app.schemas.hermes import (
     MCPServiceDetailResponse,
     MCPServiceTestResult,
     BuiltinToolListResponse,
+    MemoryResponse,
+    ProfileMemoryListResponse,
 )
 from app.schemas.user import APIResponse
 from app.services.auth_service import get_db, get_current_user
@@ -577,4 +579,54 @@ async def get_builtin_tools(
         code=200,
         message="获取成功",
         data=tool_list
+    )
+
+
+@router.get(
+    "/memory/list",
+    response_model=APIResponse[ProfileMemoryListResponse],
+    summary="获取所有 Profile 的记忆列表",
+    description="获取所有 Profile 的记忆文件状态概览，包括 MEMORY.md 和 USER.md 的使用情况"
+)
+async def get_memory_list(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    memory_list = hermes_service.list_profile_memories(db)
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=memory_list
+    )
+
+
+@router.get(
+    "/profiles/{profile_name}/memory",
+    response_model=APIResponse[MemoryResponse],
+    summary="获取指定 Profile 的记忆详情",
+    description="获取指定 Profile 的 MEMORY.md 和 USER.md 的完整内容和解析后的记忆条目"
+)
+async def get_profile_memory(
+    profile_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    memory = hermes_service.get_memory(profile_name)
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=memory
     )

@@ -444,3 +444,52 @@ export interface BuiltinToolListResponse {
   tools: BuiltinTool[]
   total_tools: number
 }
+
+export type MemoryType = 'memory' | 'user'
+
+export interface MemoryItem {
+  id: number
+  type: string
+  content: string
+  raw: string
+  line_number: number
+}
+
+export interface MemoryFile {
+  type: MemoryType
+  name: string
+  display_name: string
+  description: string
+  char_limit: number
+  current_chars: number
+  progress: number
+  item_count: number
+  last_updated: string | null
+  exists: boolean
+  raw_content: string | null
+  items: MemoryItem[]
+}
+
+export interface MemoryResponse {
+  profile_name: string
+  memory_file: MemoryFile
+  user_file: MemoryFile
+}
+
+export interface ProfileMemoryListItem {
+  profile_name: string
+  display_name: string
+  user_id: number | null
+  user_name: string | null
+  memory_exists: boolean
+  user_exists: boolean
+  memory_chars: number
+  user_chars: number
+  memory_limit: number
+  user_limit: number
+}
+
+export interface ProfileMemoryListResponse {
+  items: ProfileMemoryListItem[]
+  total: number
+}

@@ -12,6 +12,8 @@ import type {
   MCPServiceDetailResponse,
   MCPServiceTestResult,
   BuiltinToolListResponse,
+  MemoryResponse,
+  ProfileMemoryListResponse,
   APIResponse 
 } from '@/types'
 
@@ -99,5 +101,13 @@ export const hermesApi = {
     if (params?.search) queryParams.append('search', params.search)
     const queryString = queryParams.toString()
     return http.get(`/hermes/tools${queryString ? `?${queryString}` : ''}`)
+  },
+
+  getMemoryList: (): Promise<APIResponse<ProfileMemoryListResponse>> => {
+    return http.get('/hermes/memory/list')
+  },
+
+  getProfileMemory: (profileName: string): Promise<APIResponse<MemoryResponse>> => {
+    return http.get(`/hermes/profiles/${encodeURIComponent(profileName)}/memory`)
   },
 }

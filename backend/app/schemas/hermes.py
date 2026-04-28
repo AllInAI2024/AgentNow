@@ -219,3 +219,55 @@ class BuiltinToolListResponse(BaseModel):
     categories: List[BuiltinToolCategory] = Field(default_factory=list, description="工具分类列表")
     tools: List[BuiltinTool] = Field(default_factory=list, description="所有工具列表")
     total_tools: int = Field(0, description="工具总数")
+
+
+class MemoryType(str, Enum):
+    MEMORY = "memory"
+    USER = "user"
+
+
+class MemoryItem(BaseModel):
+    id: int = Field(..., description="条目索引")
+    type: str = Field(..., description="条目类型：环境事实、用户偏好、项目约定等")
+    content: str = Field(..., description="条目内容")
+    raw: str = Field(..., description="原始文本行")
+    line_number: int = Field(..., description="在文件中的行号")
+
+
+class MemoryFile(BaseModel):
+    type: MemoryType = Field(..., description="记忆文件类型")
+    name: str = Field(..., description="文件名：MEMORY.md 或 USER.md")
+    display_name: str = Field(..., description="显示名称")
+    description: str = Field(..., description="文件用途描述")
+    char_limit: int = Field(..., description="字符限制")
+    current_chars: int = Field(0, description="当前字符数")
+    progress: float = Field(0.0, description="使用进度百分比 (0-100)")
+    item_count: int = Field(0, description="条目数量")
+    last_updated: Optional[datetime] = Field(None, description="最后更新时间")
+    exists: bool = Field(False, description="文件是否存在")
+    raw_content: Optional[str] = Field(None, description="原始文件内容")
+    items: List[MemoryItem] = Field(default_factory=list, description="解析后的记忆条目列表")
+
+
+class MemoryResponse(BaseModel):
+    profile_name: str = Field(..., description="Profile 名称")
+    memory_file: MemoryFile = Field(..., description="MEMORY.md (Agent 笔记)")
+    user_file: MemoryFile = Field(..., description="USER.md (用户画像)")
+
+
+class ProfileMemoryListItem(BaseModel):
+    profile_name: str = Field(..., description="Profile 名称")
+    display_name: str = Field(..., description="显示名称（如用户名）")
+    user_id: Optional[int] = Field(None, description="关联用户ID")
+    user_name: Optional[str] = Field(None, description="关联用户名")
+    memory_exists: bool = Field(False, description="MEMORY.md 是否存在")
+    user_exists: bool = Field(False, description="USER.md 是否存在")
+    memory_chars: int = Field(0, description="MEMORY.md 当前字符数")
+    user_chars: int = Field(0, description="USER.md 当前字符数")
+    memory_limit: int = Field(2200, description="MEMORY.md 字符限制")
+    user_limit: int = Field(1375, description="USER.md 字符限制")
+
+
+class ProfileMemoryListResponse(BaseModel):
+    items: List[ProfileMemoryListItem] = Field(default_factory=list, description="Profile 记忆列表")
+    total: int = Field(0, description="总数量")
