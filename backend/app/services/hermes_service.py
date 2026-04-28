@@ -107,19 +107,65 @@ class HermesService:
         )
         
         if returncode == 0 and stdout:
+            match = re.search(r"hermes\s+agent\s+v(\d+\.\d+\.\d+)", stdout, re.IGNORECASE)
+            if match:
+                return match.group(1)
+            
+            match = re.search(r"v(\d+\.\d+\.\d+)\s+\(", stdout)
+            if match:
+                return match.group(1)
+            
             match = re.search(r"(\d+\.\d+\.\d+)", stdout)
             if match:
-                return match.group(1)
-            
-            match = re.search(r"hermes\s+([\d.a-z-]+)", stdout, re.IGNORECASE)
-            if match:
-                return match.group(1)
-            
-            version = stdout.strip()
-            if version:
-                return version
+                version = match.group(1)
+                if self._is_semantic_version(version):
+                    return version
         
         logger.warning(f"Failed to get hermes version: returncode={returncode}, stdout='{stdout}', stderr='{stderr}'")
+        return None
+    
+    def _is_semantic_version(self, version: str) -> bool:
+        parts = version.split(".")
+        if len(parts) != 3:
+            return False
+        
+        try:
+            major = int(parts[0])
+            if major > 100:
+                return False
+            return True
+        except ValueError:
+            return False
+    
+    def _parse_github_version(self, data: dict) -> Optional[str]:
+        name = data.get("name", "")
+        tag_name = data.get("tag_name", "")
+        
+        match = re.search(r"hermes\s+agent\s+v(\d+\.\d+\.\d+)", name, re.IGNORECASE)
+        if match:
+            version = match.group(1)
+            if self._is_semantic_version(version):
+                return version
+        
+        match = re.search(r"v(\d+\.\d+\.\d+)\s+\(", name)
+        if match:
+            version = match.group(1)
+            if self._is_semantic_version(version):
+                return version
+        
+        match = re.search(r"v(\d+\.\d+\.\d+)", tag_name)
+        if match:
+            version = match.group(1)
+            if self._is_semantic_version(version):
+                return version
+        
+        match = re.search(r"(\d+\.\d+\.\d+)", name)
+        if match:
+            version = match.group(1)
+            if self._is_semantic_version(version):
+                return version
+        
+        logger.warning(f"Could not parse semantic version from GitHub release: name='{name}', tag='{tag_name}'")
         return None
 
     def get_hermes_version(self) -> str:
@@ -497,14 +543,15 @@ class HermesService:
                 
                 if response.status_code == 200:
                     data = response.json()
-                    tag_name = data.get("tag_name", "")
-                    match = re.search(r"(\d+\.\d+\.\d+)", tag_name)
-                    if match:
-                        latest = match.group(1)
+                    latest = self._parse_github_version(data)
+                    
+                    if latest:
                         self._cached_latest_version = latest
                         self._version_cache_time = datetime.now()
-                        logger.info(f"Latest hermes version: {latest}")
+                        logger.info(f"Latest hermes version from GitHub: {latest}")
                         return latest
+                    else:
+                        logger.warning(f"Could not parse version from GitHub response: {data}")
                 else:
                     logger.warning(f"GitHub API returned status {response.status_code}: {response.text}")
         

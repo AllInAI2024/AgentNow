@@ -24,24 +24,36 @@
               <span>系统信息</span>
             </div>
           </template>
-          <template #extra>
-            <a-tooltip :title="overviewData?.system_info.has_update ? '有新版本可用' : '当前已是最新版本'">
-              <a-tag 
-                :color="overviewData?.system_info.has_update ? 'warning' : 'success'"
-                class="version-tag"
-                @click="handleCheckVersion"
-              >
-                v{{ overviewData?.system_info.version }}
-                <SyncOutlined v-if="overviewData?.system_info.has_update" class="update-icon" />
-              </a-tag>
-            </a-tooltip>
-          </template>
           
           <div class="info-grid">
-            <div class="info-item">
+            <div class="info-item version-item">
               <div class="info-label">当前版本</div>
-              <div class="info-value">v{{ overviewData?.system_info.version || 'unknown' }}</div>
+              <div class="info-value">
+                <span class="version-text">v{{ overviewData?.system_info.version || 'unknown' }}</span>
+                
+                <a-tooltip title="检查更新">
+                  <a-button 
+                    type="text" 
+                    size="small" 
+                    class="refresh-btn"
+                    @click="handleCheckVersion" 
+                    :loading="checkingVersion"
+                  >
+                    <ReloadOutlined />
+                  </a-button>
+                </a-tooltip>
+                
+                <div v-if="overviewData?.system_info.has_update" class="update-notice">
+                  <a-tag color="warning" class="new-version-tag">
+                    <SyncOutlined /> 发现新版本: v{{ overviewData?.system_info.latest_version }}
+                  </a-tag>
+                  <a-button type="primary" size="small" class="update-btn" @click="handleStartUpdate" :loading="updating">
+                    <CloudUploadOutlined /> 立即升级
+                  </a-button>
+                </div>
+              </div>
             </div>
+            
             <div class="info-item">
               <div class="info-label">运行状态</div>
               <div class="info-value">
@@ -53,33 +65,15 @@
                 </span>
               </div>
             </div>
+            
             <div class="info-item">
               <div class="info-label">运行时长</div>
               <div class="info-value">{{ overviewData?.system_info.uptime || '未知' }}</div>
             </div>
+            
             <div class="info-item">
               <div class="info-label">API Server</div>
               <div class="info-value">端口 {{ overviewData?.system_info.api_server_port || 8642 }}</div>
-            </div>
-          </div>
-          
-          <a-divider v-if="overviewData?.system_info.has_update" />
-          
-          <div v-if="overviewData?.system_info.has_update" class="update-banner">
-            <div class="update-info">
-              <AlertOutlined class="update-icon-large" />
-              <div>
-                <div class="update-title">发现新版本: v{{ overviewData?.system_info.latest_version }}</div>
-                <div class="update-desc">建议尽快升级以获取最新功能和安全修复</div>
-              </div>
-            </div>
-            <div class="update-actions">
-              <a-button type="primary" @click="handleStartUpdate" :loading="updating">
-                <CloudUploadOutlined /> 立即升级
-              </a-button>
-              <a-button @click="handleCheckVersion" :loading="checkingVersion">
-                <ReloadOutlined /> 检查更新
-              </a-button>
             </div>
           </div>
         </a-card>
@@ -284,7 +278,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   DashboardOutlined,
@@ -294,7 +288,6 @@ import {
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   CloseCircleOutlined,
-  AlertOutlined,
   CloudUploadOutlined,
   BarChartOutlined,
   ApartmentOutlined,
@@ -308,7 +301,6 @@ import {
   UserOutlined,
   ToolOutlined,
   DatabaseOutlined,
-  FileTextOutlined,
 } from '@ant-design/icons-vue'
 import type { 
   HermesOverviewResponse, 
@@ -575,6 +567,51 @@ onMounted(() => {
   font-size: 18px;
   font-weight: 600;
   color: #1d2129;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.version-item .info-value {
+  flex-wrap: wrap;
+}
+
+.version-text {
+  margin-right: 4px;
+}
+
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  color: #86909c;
+}
+
+.refresh-btn:hover {
+  color: #165DFF;
+  background: rgba(22, 93, 255, 0.05);
+}
+
+.update-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 8px;
+  padding-left: 12px;
+  border-left: 2px solid #ff7d00;
+}
+
+.new-version-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.update-btn {
+  font-size: 13px;
 }
 
 .status-badge {
@@ -600,58 +637,6 @@ onMounted(() => {
 .status-unhealthy {
   background: #fff2f0;
   color: #f53f3f;
-}
-
-.version-tag {
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.update-icon {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.update-banner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.update-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.update-icon-large {
-  font-size: 32px;
-  color: #ff7d00;
-}
-
-.update-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1d2129;
-}
-
-.update-desc {
-  font-size: 13px;
-  color: #86909c;
-  margin-top: 4px;
-}
-
-.update-actions {
-  display: flex;
-  gap: 12px;
 }
 
 .stats-grid {
