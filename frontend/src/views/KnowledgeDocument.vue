@@ -32,17 +32,6 @@
                 {{ cat }}
               </a-select-option>
             </a-select>
-            <a-select
-              v-model:value="filterSyncStatus"
-              placeholder="同步状态"
-              allow-clear
-              style="width: 120px"
-              @change="handleFilter"
-            >
-              <a-select-option :value="0">未同步</a-select-option>
-              <a-select-option :value="1">已同步</a-select-option>
-              <a-select-option :value="2">同步失败</a-select-option>
-            </a-select>
             <a-button @click="handleReset">重置</a-button>
           </a-space>
         </div>
@@ -68,11 +57,6 @@
             <template v-else-if="column.key === 'file_size'">
               {{ formatFileSize(record.file_size) }}
             </template>
-            <template v-else-if="column.key === 'sync_status'">
-              <a-tag :color="getSyncStatusColor(record.sync_status)">
-                {{ getSyncStatusText(record.sync_status) }}
-              </a-tag>
-            </template>
             <template v-else-if="column.key === 'is_public'">
               <a-tag :color="record.is_public ? 'green' : 'orange'">
                 {{ record.is_public ? '公开' : '私有' }}
@@ -93,15 +77,6 @@
                   @click="handleEdit(record)"
                 >
                   编辑
-                </a-button>
-                <a-button
-                  v-if="hasSyncPermission"
-                  type="link"
-                  size="small"
-                  :loading="syncingId === record.id"
-                  @click="handleSync(record)"
-                >
-                  同步
                 </a-button>
                 <a-popconfirm
                   v-if="canDelete(record)"
@@ -307,17 +282,14 @@ interface Pagination {
 const userStore = useUserStore()
 
 const canCreate = computed(() => userStore.hasPermission('knowledge:doc:create'))
-const hasSyncPermission = computed(() => userStore.hasPermission('knowledge:doc:sync'))
 
 const loading = ref(false)
 const uploading = ref(false)
 const submitting = ref(false)
 const uploadProgress = ref(0)
-const syncingId = ref<number | null>(null)
 
 const searchKeyword = ref('')
 const filterCategory = ref<string | undefined>()
-const filterSyncStatus = ref<number | undefined>()
 
 const categories = ref<string[]>([])
 const docList = ref<KnowledgeDoc[]>([])
@@ -369,10 +341,9 @@ const columns = [
   { title: '文档名称', dataIndex: 'title', key: 'title', width: 300 },
   { title: '大小', dataIndex: 'file_size', key: 'file_size', width: 100 },
   { title: '类型', dataIndex: 'file_type', key: 'file_type', width: 100 },
-  { title: '同步状态', dataIndex: 'sync_status', key: 'sync_status', width: 100 },
   { title: '公开', dataIndex: 'is_public', key: 'is_public', width: 80 },
   { title: '上传时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
-  { title: '操作', key: 'action', width: 280, fixed: 'right' as const },
+  { title: '操作', key: 'action', width: 220, fixed: 'right' as const },
 ]
 
 const canEdit = (record: KnowledgeDoc) => {
@@ -405,24 +376,6 @@ const formatDate = (dateStr: string | null): string => {
   })
 }
 
-const getSyncStatusColor = (status: number): string => {
-  switch (status) {
-    case 0: return 'default'
-    case 1: return 'green'
-    case 2: return 'red'
-    default: return 'default'
-  }
-}
-
-const getSyncStatusText = (status: number): string => {
-  switch (status) {
-    case 0: return '未同步'
-    case 1: return '已同步'
-    case 2: return '同步失败'
-    default: return '未知'
-  }
-}
-
 const fetchDocs = async () => {
   loading.value = true
   try {
@@ -431,7 +384,6 @@ const fetchDocs = async () => {
       page_size: pagination.pageSize,
       keyword: searchKeyword.value || undefined,
       category: filterCategory.value,
-      sync_status: filterSyncStatus.value,
     })
     if (res.code === 200) {
       docList.value = res.data.items
@@ -461,11 +413,19 @@ const beforeUpload = (file: File): boolean => {
     return false
   }
   selectedFile.value = file
+  fileList.value = [{
+    uid: file.uid || String(Date.now()),
+    name: file.name,
+    status: 'done',
+    size: file.size,
+    originFileObj: file,
+  }]
   return false
 }
 
 const handleRemoveFile = (): boolean => {
   selectedFile.value = null
+  fileList.value = []
   return true
 }
 
@@ -617,19 +577,11 @@ const handleDownload = async (record: KnowledgeDoc) => {
   }
 }
 
-const handleSync = async (record: KnowledgeDoc) => {
-  syncingId.value = record.id
-  try {
-    const res = await knowledgeApi.syncDoc(record.id)
-    if (res.code === 200) {
-      message.success(res.data.message || '同步成功')
-      fetchDocs()
-    }
-  } catch (error) {
-    console.error('同步失败:', error)
-  } finally {
-    syncingId.value = null
-  }
+const handleReset = () => {
+  searchKeyword.value = ''
+  filterCategory.value = undefined
+  pagination.current = 1
+  fetchDocs()
 }
 
 const handleSearch = () => {
@@ -638,14 +590,6 @@ const handleSearch = () => {
 }
 
 const handleFilter = () => {
-  pagination.current = 1
-  fetchDocs()
-}
-
-const handleReset = () => {
-  searchKeyword.value = ''
-  filterCategory.value = undefined
-  filterSyncStatus.value = undefined
   pagination.current = 1
   fetchDocs()
 }

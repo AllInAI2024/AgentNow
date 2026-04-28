@@ -1,4 +1,5 @@
 from typing import List, Optional
+from urllib.parse import quote
 from fastapi import (
     APIRouter, 
     Depends, 
@@ -372,7 +373,7 @@ def download_document(
         io.BytesIO(file_content),
         media_type=mime_type or "application/octet-stream",
         headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}"
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}"
         }
     )
 
