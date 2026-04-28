@@ -896,7 +896,7 @@ class HermesService:
                 logger.warning(f"Failed to parse skill frontmatter: {e}")
                 frontmatter = {}
 
-        actual_content = "\n".join(content_lines).strip()
+        actual_content = "\n".join(content_lines)
         return frontmatter, actual_content
 
     def _get_bundled_skills(self) -> Dict[str, str]:

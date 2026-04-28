@@ -33,11 +33,7 @@
                   @click="selectedCategory = ''"
                 >
                   <span class="category-name">全部技能</span>
-                  <span class="category-counts">
-                    <span class="count-installed">{{ totalInstalledCount }}</span>
-                    <span class="count-divider">/</span>
-                    <span class="count-total">{{ totalSkillsCount }}</span>
-                  </span>
+                  <span class="category-count">{{ totalSkillsCount }}</span>
                 </div>
                 <div 
                   v-for="cat in skillList?.categories || []" 
@@ -46,11 +42,7 @@
                   @click="selectedCategory = cat.name"
                 >
                   <span class="category-name">{{ cat.display_name }}</span>
-                  <span class="category-counts">
-                    <span class="count-installed">{{ cat.installed_count }}</span>
-                    <span class="count-divider">/</span>
-                    <span class="count-total">{{ cat.skill_count }}</span>
-                  </span>
+                  <span class="category-count">{{ cat.skill_count }}</span>
                 </div>
               </div>
             </a-card>
@@ -76,8 +68,7 @@
                     <ThunderboltOutlined class="card-icon" />
                     <span>{{ currentCategoryName }}</span>
                     <span class="skill-stats">
-                      (共 <span class="stat-total">{{ currentCategoryTotal }}</span> 个，
-                      已安装 <span class="stat-installed">{{ currentCategoryInstalled }}</span> 个)
+                      (共 <span class="stat-total">{{ currentCategoryTotal }}</span> 个)
                     </span>
                   </div>
                   <div class="card-title-right">
@@ -107,8 +98,8 @@
                 <div 
                   v-for="skill in filteredSkills" 
                   :key="skill.name"
-                  :class="['skill-card', { selected: selectedSkill?.name === skill.name, 'skill-installed': skill.is_installed }]"
-                  @click="handleSelectSkill(skill)"
+                  :class="['skill-card', { 'skill-bundled': skill.is_bundled }]"
+                  @click="handleViewSkill(skill)"
                 >
                   <div class="skill-header">
                     <div class="skill-icon-wrapper">
@@ -124,8 +115,6 @@
                     </div>
                     <div class="skill-badges">
                       <a-tag v-if="skill.is_bundled" color="blue">内置</a-tag>
-                      <a-tag v-else-if="skill.is_installed" color="green">已安装</a-tag>
-                      <a-tag v-else color="orange">未安装</a-tag>
                     </div>
                   </div>
                   <div class="skill-description">
@@ -149,20 +138,12 @@
                     </div>
                     <div class="skill-actions">
                       <a-button 
-                        v-if="skill.is_installed && !skill.is_bundled"
+                        v-if="!skill.is_bundled"
                         type="text" 
                         size="small"
-                        @click.stop="handleUninstallSkill(skill)"
+                        @click.stop="handleUpdateSkill(skill)"
                       >
-                        <DeleteOutlined /> 卸载
-                      </a-button>
-                      <a-button 
-                        v-else-if="!skill.is_installed"
-                        type="text" 
-                        size="small"
-                        @click.stop="handleInstallSkill(skill)"
-                      >
-                        <CloudDownloadOutlined /> 安装
+                        <ReloadOutlined /> 更新
                       </a-button>
                     </div>
                   </div>
@@ -170,133 +151,176 @@
               </div>
             </a-card>
           </div>
-
-          <div class="detail-panel" :class="{ expanded: selectedSkill }">
-            <div v-if="selectedSkill" class="detail-content">
-              <div class="detail-header">
-                <div class="detail-icon-wrapper">
-                  <ToolOutlined class="detail-icon" />
-                </div>
-                <div class="detail-header-info">
-                  <div class="detail-name">{{ selectedSkill.name }}</div>
-                  <div class="detail-meta">
-                    <a-tag v-if="selectedSkill.is_bundled" color="blue">内置技能</a-tag>
-                    <a-tag v-else-if="selectedSkill.is_installed" color="green">已安装</a-tag>
-                    <a-tag v-else color="orange">未安装</a-tag>
-                    <span class="detail-version">v{{ selectedSkill.version }}</span>
-                  </div>
-                </div>
-                <a-button type="text" class="detail-close" @click="selectedSkill = null">
-                  <CloseOutlined />
-                </a-button>
-              </div>
-
-              <div class="detail-body">
-                <div class="detail-section">
-                  <div class="section-label">描述</div>
-                  <div class="section-value">
-                    {{ selectedSkill.description || '暂无描述' }}
-                  </div>
-                </div>
-
-                <div class="detail-section">
-                  <div class="section-label">分类</div>
-                  <div class="section-value">
-                    <a-tag>{{ selectedSkill.category_name || selectedSkill.category }}</a-tag>
-                  </div>
-                </div>
-
-                <div class="detail-section">
-                  <div class="section-label">作者</div>
-                  <div class="section-value">
-                    {{ selectedSkill.author || 'Unknown' }}
-                  </div>
-                </div>
-
-                <div class="detail-section">
-                  <div class="section-label">许可证</div>
-                  <div class="section-value">
-                    {{ selectedSkill.license || 'Unknown' }}
-                  </div>
-                </div>
-
-                <div class="detail-section" v-if="selectedSkill.metadata?.hermes?.tags?.length">
-                  <div class="section-label">标签</div>
-                  <div class="section-value">
-                    <a-tag 
-                      v-for="tag in selectedSkill.metadata.hermes.tags" 
-                      :key="tag"
-                      color="blue"
-                      style="margin-bottom: 4px;"
-                    >
-                      {{ tag }}
-                    </a-tag>
-                  </div>
-                </div>
-
-                <div class="detail-section" v-if="selectedSkill.usage_count !== undefined">
-                  <div class="section-label">使用次数</div>
-                  <div class="section-value">
-                    {{ selectedSkill.usage_count }} 次
-                  </div>
-                </div>
-
-                <div class="detail-section" v-if="selectedSkill.updated_at">
-                  <div class="section-label">更新时间</div>
-                  <div class="section-value">
-                    {{ selectedSkill.updated_at }}
-                  </div>
-                </div>
-
-                <div class="detail-section" v-if="selectedSkill.content">
-                  <div class="section-label">技能内容</div>
-                  <div class="section-value content-box">
-                    <a-input-textarea 
-                      v-model:value="selectedSkill.content" 
-                      :rows="12"
-                      readonly
-                      class="content-textarea"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div class="detail-actions">
-                <a-button 
-                  v-if="selectedSkill.is_installed && !selectedSkill.is_bundled"
-                  type="default" 
-                  @click="handleUpdateSkill(selectedSkill)"
-                  :loading="actionLoading"
-                >
-                  <ReloadOutlined /> 更新
-                </a-button>
-                <a-button 
-                  v-if="selectedSkill.is_installed && !selectedSkill.is_bundled"
-                  type="default" 
-                  danger
-                  @click="handleUninstallSkill(selectedSkill)"
-                  :loading="actionLoading"
-                >
-                  <DeleteOutlined /> 卸载
-                </a-button>
-                <a-button 
-                  v-else-if="!selectedSkill.is_installed"
-                  type="primary" 
-                  @click="handleInstallSkill(selectedSkill)"
-                  :loading="actionLoading"
-                >
-                  <CloudDownloadOutlined /> 安装
-                </a-button>
-              </div>
-            </div>
-            <div v-else class="detail-empty">
-              <ToolOutlined class="empty-detail-icon" />
-              <div class="empty-detail-text">点击左侧技能卡片查看详情</div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
+
+    <a-modal
+      v-model:open="detailModalVisible"
+      :title="null"
+      :footer="null"
+      width="900px"
+      :closable="true"
+      class="skill-detail-modal"
+    >
+      <div v-if="selectedSkill" class="skill-detail-content">
+        <div class="detail-header">
+          <div class="detail-icon-wrapper">
+            <ToolOutlined class="detail-icon" />
+          </div>
+          <div class="detail-header-info">
+            <div class="detail-name">{{ selectedSkill.name }}</div>
+            <div class="detail-meta">
+              <a-tag v-if="selectedSkill.is_bundled" color="blue">内置技能</a-tag>
+              <a-tag v-else color="green">自定义技能</a-tag>
+              <span class="detail-version">v{{ selectedSkill.version }}</span>
+              <span class="detail-author">{{ selectedSkill.author || 'Unknown' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <a-tabs v-model:activeKey="activeTab" class="detail-tabs">
+          <a-tab-pane key="content" tab="技能内容 (SKILL.md)">
+            <div class="tab-content">
+              <div v-if="selectedSkill.content" class="skill-md-content">
+                <pre><code>{{ selectedSkill.content }}</code></pre>
+              </div>
+              <div v-else class="empty-content">
+                <a-empty description="该技能暂无内容" />
+              </div>
+            </div>
+          </a-tab-pane>
+
+          <a-tab-pane key="info" tab="基本信息">
+            <div class="tab-content info-tab">
+              <div class="info-section">
+                <div class="info-item">
+                  <div class="info-label">描述</div>
+                  <div class="info-value">{{ selectedSkill.description || '暂无描述' }}</div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">分类</div>
+                  <div class="info-value">
+                    <a-tag>{{ selectedSkill.category_name || selectedSkill.category }}</a-tag>
+                  </div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">版本</div>
+                  <div class="info-value">{{ selectedSkill.version }}</div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">作者</div>
+                  <div class="info-value">{{ selectedSkill.author || 'Unknown' }}</div>
+                </div>
+                <div class="info-item">
+                  <div class="info-label">许可证</div>
+                  <div class="info-value">{{ selectedSkill.license || 'Unknown' }}</div>
+                </div>
+                <div class="info-item" v-if="selectedSkill.updated_at">
+                  <div class="info-label">更新时间</div>
+                  <div class="info-value">{{ selectedSkill.updated_at }}</div>
+                </div>
+              </div>
+            </div>
+          </a-tab-pane>
+
+          <a-tab-pane key="related" tab="相关技能" v-if="hasRelatedSkills">
+            <div class="tab-content">
+              <div class="related-skills">
+                <a-tag 
+                  v-for="skill in relatedSkillNames" 
+                  :key="skill"
+                  color="blue"
+                  class="related-tag"
+                >
+                  {{ skill }}
+                </a-tag>
+              </div>
+              <div v-if="!hasRelatedSkills" class="empty-content">
+                <a-empty description="该技能没有相关技能" />
+              </div>
+            </div>
+          </a-tab-pane>
+
+          <a-tab-pane key="versions" tab="版本管理">
+            <div class="tab-content versions-tab">
+              <div class="version-info">
+                <div class="current-version">
+                  <div class="version-label">当前版本</div>
+                  <div class="version-number">v{{ selectedSkill.version }}</div>
+                </div>
+                <div class="version-divider"></div>
+                <div class="latest-version" :class="{ 'has-update': hasUpdate }">
+                  <div class="version-label">最新版本</div>
+                  <div class="version-number">
+                    <span v-if="hasUpdate" class="update-available">
+                      v{{ latestVersion }}
+                      <Tag color="orange">有更新</Tag>
+                    </span>
+                    <span v-else>v{{ selectedSkill.version }} (已是最新)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="version-actions">
+                <a-button 
+                  type="primary" 
+                  @click="handleUpgradeSkill"
+                  :loading="actionLoading"
+                  :disabled="!hasUpdate"
+                >
+                  <CloudDownloadOutlined /> 升级到最新版本
+                </a-button>
+                <a-button 
+                  @click="handleCheckUpdate"
+                  :loading="checkingUpdate"
+                >
+                  <ReloadOutlined /> 检查更新
+                </a-button>
+              </div>
+
+              <div class="update-history" v-if="updateHistory.length > 0">
+                <div class="history-title">更新历史</div>
+                <div class="history-list">
+                  <div v-for="item in updateHistory" :key="item.version" class="history-item">
+                    <div class="history-version">v{{ item.version }}</div>
+                    <div class="history-date">{{ item.date }}</div>
+                    <div class="history-changes">{{ item.changes }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </a-tab-pane>
+        </a-tabs>
+
+        <div class="detail-actions">
+          <a-button 
+            v-if="!selectedSkill.is_bundled"
+            type="default" 
+            @click="handleUpgradeSkill"
+            :loading="actionLoading"
+            :disabled="!hasUpdate"
+          >
+            <ReloadOutlined /> 升级
+          </a-button>
+          <a-button 
+            v-if="!selectedSkill.is_bundled"
+            type="default" 
+            danger
+            @click="handleUninstallSkill"
+            :loading="actionLoading"
+          >
+            <DeleteOutlined /> 卸载
+          </a-button>
+          <a-button 
+            type="primary" 
+            @click="handleEditSkill"
+          >
+            <EditOutlined /> 编辑
+          </a-button>
+        </div>
+      </div>
+    </a-modal>
 
     <a-modal
       v-model:open="createModalVisible"
@@ -306,8 +330,6 @@
     >
       <a-form
         :model="createForm"
-        :label-col="{ span: 5 }"
-        :wrapper-col="{ span: 19 }"
         layout="vertical"
       >
         <a-form-item label="技能名称" required>
@@ -357,7 +379,7 @@
           <a-textarea 
             v-model:value="createForm.content" 
             placeholder="输入技能内容（Markdown 格式）"
-            :rows="10"
+            :rows="15"
             :show-count="true"
           />
         </a-form-item>
@@ -438,7 +460,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { message } from 'ant-design-vue'
+import { message, Tag } from 'ant-design-vue'
 import {
   ToolOutlined,
   ReloadOutlined,
@@ -449,12 +471,11 @@ import {
   CloudDownloadOutlined,
   DeleteOutlined,
   FolderOutlined,
-  CloseOutlined,
+  EditOutlined,
 } from '@ant-design/icons-vue'
 import type { 
   Skill, 
   SkillListResponse,
-  SkillCategory,
   AvailableSkill,
   SkillCreateParams
 } from '@/types'
@@ -465,11 +486,18 @@ const loading = ref(false)
 const actionLoading = ref(false)
 const createLoading = ref(false)
 const availableLoading = ref(false)
+const checkingUpdate = ref(false)
 
 const skillList = ref<SkillListResponse | null>(null)
 const selectedCategory = ref('')
 const searchKeyword = ref('')
 const selectedSkill = ref<Skill | null>(null)
+const detailModalVisible = ref(false)
+const activeTab = ref('content')
+
+const hasUpdate = ref(false)
+const latestVersion = ref('')
+const updateHistory = ref<{ version: string; date: string; changes: string }[]>([])
 
 const createModalVisible = ref(false)
 const createForm = ref<SkillCreateParams>({
@@ -492,11 +520,6 @@ const totalSkillsCount = computed(() => {
   return skillList.value.categories.reduce((sum, cat) => sum + cat.skill_count, 0)
 })
 
-const totalInstalledCount = computed(() => {
-  if (!skillList.value?.categories) return 0
-  return skillList.value.categories.reduce((sum, cat) => sum + cat.installed_count, 0)
-})
-
 const currentCategoryName = computed(() => {
   if (!selectedCategory.value) return '技能列表'
   const cat = skillList.value?.categories?.find(c => c.name === selectedCategory.value)
@@ -507,12 +530,6 @@ const currentCategoryTotal = computed(() => {
   if (!selectedCategory.value) return totalSkillsCount.value
   const cat = skillList.value?.categories?.find(c => c.name === selectedCategory.value)
   return cat?.skill_count || 0
-})
-
-const currentCategoryInstalled = computed(() => {
-  if (!selectedCategory.value) return totalInstalledCount.value
-  const cat = skillList.value?.categories?.find(c => c.name === selectedCategory.value)
-  return cat?.installed_count || 0
 })
 
 const filteredSkills = computed<Skill[]>(() => {
@@ -530,12 +547,6 @@ const filteredSkills = computed<Skill[]>(() => {
   }
   
   skills.sort((a, b) => {
-    const aInstalled = a.is_installed ? 0 : 1
-    const bInstalled = b.is_installed ? 0 : 1
-    if (aInstalled !== bInstalled) {
-      return aInstalled - bInstalled
-    }
-    
     const aBundled = a.is_bundled ? 0 : 1
     const bBundled = b.is_bundled ? 0 : 1
     if (aBundled !== bBundled) {
@@ -555,6 +566,14 @@ const filteredAvailableSkills = computed(() => {
     s.name.toLowerCase().includes(keyword) ||
     s.description.toLowerCase().includes(keyword)
   )
+})
+
+const hasRelatedSkills = computed(() => {
+  return selectedSkill.value?.metadata?.hermes?.related_skills?.length || 0
+})
+
+const relatedSkillNames = computed(() => {
+  return selectedSkill.value?.metadata?.hermes?.related_skills || []
 })
 
 const fetchSkills = async () => {
@@ -581,8 +600,12 @@ const handleRefresh = () => {
   fetchSkills()
 }
 
-const handleSelectSkill = (skill: Skill) => {
+const handleViewSkill = (skill: Skill) => {
   selectedSkill.value = skill
+  detailModalVisible.value = true
+  activeTab.value = 'content'
+  hasUpdate.value = false
+  latestVersion.value = skill.version || ''
 }
 
 const handleSearch = () => {
@@ -599,6 +622,22 @@ const handleCreateSkill = () => {
     author: '',
     license: 'MIT',
     tags: [],
+  }
+  createModalVisible.value = true
+}
+
+const handleEditSkill = () => {
+  if (!selectedSkill.value) return
+  
+  createForm.value = {
+    name: selectedSkill.value.name,
+    description: selectedSkill.value.description || '',
+    content: selectedSkill.value.content || '',
+    category: selectedSkill.value.category || '',
+    version: selectedSkill.value.version || '1.0.0',
+    author: selectedSkill.value.author || '',
+    license: selectedSkill.value.license || 'MIT',
+    tags: selectedSkill.value.metadata?.hermes?.tags || [],
   }
   createModalVisible.value = true
 }
@@ -649,22 +688,22 @@ const handleInstallSkill = async (skill: Skill) => {
   }
 }
 
-const handleUninstallSkill = async (skill: Skill) => {
+const handleUninstallSkill = async () => {
+  if (!selectedSkill.value) return
+  
   message.confirm({
     title: '确认卸载',
-    content: `确定要卸载技能 "${skill.name}" 吗？`,
+    content: `确定要卸载技能 "${selectedSkill.value.name}" 吗？`,
     okText: '卸载',
     okType: 'danger',
     cancelText: '取消',
     async onOk() {
       actionLoading.value = true
       try {
-        const res = await hermesApi.uninstallSkill(skill.name)
+        const res = await hermesApi.uninstallSkill(selectedSkill.value!.name)
         if (res.code === 200) {
           message.success('卸载成功')
-          if (selectedSkill.value?.name === skill.name) {
-            selectedSkill.value = null
-          }
+          detailModalVisible.value = false
           fetchSkills()
         } else {
           message.error(res.message || '卸载失败')
@@ -694,6 +733,27 @@ const handleUpdateSkill = async (skill: Skill) => {
     message.error('更新技能失败')
   } finally {
     actionLoading.value = false
+  }
+}
+
+const handleUpgradeSkill = async () => {
+  if (!selectedSkill.value) return
+  await handleUpdateSkill(selectedSkill.value)
+}
+
+const handleCheckUpdate = async () => {
+  if (!selectedSkill.value) return
+  
+  checkingUpdate.value = true
+  try {
+    hasUpdate.value = false
+    latestVersion.value = selectedSkill.value.version || ''
+    
+    message.info('版本检查功能开发中...')
+  } catch (error) {
+    console.error('Failed to check update:', error)
+  } finally {
+    checkingUpdate.value = false
   }
 }
 
@@ -861,28 +921,17 @@ onMounted(() => {
   color: inherit;
 }
 
-.category-counts {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+.category-count {
   font-size: 12px;
-}
-
-.count-installed {
-  color: #00b42a;
-  font-weight: 600;
-}
-
-.category-item.active .count-installed {
-  color: #00b42a;
-}
-
-.count-divider {
-  color: #c9cdd4;
-}
-
-.count-total {
   color: #86909c;
+  background: #f2f3f5;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.category-item.active .category-count {
+  background: rgba(22, 93, 255, 0.15);
+  color: #165DFF;
 }
 
 .action-list {
@@ -934,11 +983,6 @@ onMounted(() => {
   color: #86909c;
 }
 
-.stat-installed {
-  color: #00b42a;
-  font-weight: 600;
-}
-
 .card-title-right {
   display: flex;
   align-items: center;
@@ -954,7 +998,7 @@ onMounted(() => {
 
 .skills-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap: 16px;
 }
 
@@ -972,13 +1016,8 @@ onMounted(() => {
   box-shadow: 0 4px 16px rgba(22, 93, 255, 0.1);
 }
 
-.skill-card.selected {
-  border-color: #165DFF;
-  background: linear-gradient(135deg, rgba(22, 93, 255, 0.03) 0%, rgba(114, 46, 209, 0.02) 100%);
-}
-
-.skill-card.skill-installed {
-  border-left: 3px solid #00b42a;
+.skill-card.skill-bundled {
+  border-left: 3px solid #165DFF;
 }
 
 .skill-header {
@@ -1080,35 +1119,22 @@ onMounted(() => {
   gap: 8px;
 }
 
-.detail-panel {
-  width: 0;
-  overflow: hidden;
-  transition: width 0.3s ease;
-  border-left: 0;
+:deep(.skill-detail-modal .ant-modal-body) {
+  padding: 0;
 }
 
-.detail-panel.expanded {
-  width: 380px;
-  flex-shrink: 0;
-  border-left: 1px solid #e5e6eb;
-  margin-left: -1px;
-}
-
-.detail-content {
+.skill-detail-content {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  padding: 20px;
-  background: #fff;
+  max-height: 70vh;
 }
 
 .detail-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 16px;
-  padding-bottom: 20px;
+  padding: 24px 24px 16px;
   border-bottom: 1px solid #f2f3f5;
-  position: relative;
 }
 
 .detail-icon-wrapper {
@@ -1133,13 +1159,10 @@ onMounted(() => {
 }
 
 .detail-name {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
   color: #1d2129;
   margin-bottom: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .detail-meta {
@@ -1150,78 +1173,189 @@ onMounted(() => {
 }
 
 .detail-version {
+  font-size: 14px;
+  color: #4e5969;
+}
+
+.detail-author {
+  font-size: 14px;
+  color: #4e5969;
+}
+
+.detail-tabs {
+  flex: 1;
+  overflow: hidden;
+}
+
+.tab-content {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.skill-md-content {
+  background: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.skill-md-content pre {
+  margin: 0;
+  padding: 0;
+}
+
+.skill-md-content code {
+  color: #d4d4d4;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.empty-content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px 0;
+}
+
+.info-tab {
+  padding: 16px 24px;
+}
+
+.info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-label {
+  font-size: 13px;
+  color: #86909c;
+  font-weight: 500;
+}
+
+.info-value {
+  font-size: 14px;
+  color: #1d2129;
+}
+
+.related-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.related-tag {
+  cursor: pointer;
+}
+
+.versions-tab {
+  padding: 16px 24px;
+}
+
+.version-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 24px 0;
+  background: #f7f8fa;
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.current-version,
+.latest-version {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-label {
   font-size: 13px;
   color: #86909c;
 }
 
-.detail-close {
-  position: absolute;
-  top: 0;
-  right: 0;
-  padding: 4px;
+.version-number {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1d2129;
 }
 
-.detail-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px 0;
+.update-available {
+  color: #fa8c16;
 }
 
-.detail-section {
-  margin-bottom: 20px;
+.version-divider {
+  width: 2px;
+  height: 40px;
+  background: #e5e6eb;
 }
 
-.section-label {
-  font-size: 13px;
+.version-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.update-history {
+  border-top: 1px solid #f2f3f5;
+  padding-top: 20px;
+}
+
+.history-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d2129;
+  margin-bottom: 12px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-item {
+  padding: 12px;
+  background: #f7f8fa;
+  border-radius: 8px;
+}
+
+.history-version {
+  font-size: 14px;
+  font-weight: 600;
+  color: #165DFF;
+  margin-bottom: 4px;
+}
+
+.history-date {
+  font-size: 12px;
   color: #86909c;
   margin-bottom: 8px;
 }
 
-.section-value {
-  font-size: 14px;
-  color: #1d2129;
-  line-height: 1.5;
-}
-
-.content-box {
-  background: #f7f8fa;
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.content-textarea {
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 12px;
-  background: transparent;
-  border: none;
+.history-changes {
+  font-size: 13px;
+  color: #4e5969;
 }
 
 .detail-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 12px;
-  padding-top: 20px;
+  padding: 16px 24px;
   border-top: 1px solid #f2f3f5;
-}
-
-.detail-empty {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  height: 100%;
-  background: #fff;
-  padding: 20px;
-}
-
-.empty-detail-icon {
-  font-size: 64px;
-  color: #c9cdd4;
-  margin-bottom: 16px;
-}
-
-.empty-detail-text {
-  font-size: 14px;
-  color: #86909c;
 }
 
 .modal-footer {
