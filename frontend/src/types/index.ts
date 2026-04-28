@@ -126,3 +126,80 @@ export interface Role {
   created_at: string | null
   updated_at: string | null
 }
+
+export interface KnowledgeDoc {
+  id: number
+  title: string
+  file_name: string
+  file_path: string | null
+  hermes_path: string | null
+  file_size: number
+  file_type: string | null
+  mime_type: string | null
+  content_hash: string | null
+  status: number
+  sync_status: number
+  sync_error: string | null
+  synced_at: string | null
+  description: string | null
+  tags: string[]
+  category: string | null
+  created_by: number
+  is_public: boolean
+  embedding_id: string | null
+  embedding_info: Record<string, unknown> | null
+  deleted_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface KnowledgeDocList {
+  items: KnowledgeDoc[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface CreateKnowledgeDocParams {
+  title: string
+  description?: string
+  tags?: string[]
+  category?: string
+  is_public?: boolean
+}
+
+export interface UpdateKnowledgeDocParams {
+  title?: string
+  description?: string
+  tags?: string[]
+  category?: string
+  is_public?: boolean
+}
+
+export interface KnowledgeConfig {
+  id: number
+  config_key: string
+  config_value: string
+  description: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface SyncStatus {
+  doc_id: number
+  sync_status: number
+  synced_at: string | null
+  message: string
+}
+
+export interface DeleteResult {
+  success: boolean
+  message: string
+}
+
+export interface HermesFile {
+  filename: string
+  size: number
+  modified: string | null
+}

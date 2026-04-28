@@ -1,10 +1,10 @@
 # 知识库管理功能设计文档
 
-> 版本：v1.0  
-> 日期：2026-04-28  
+> 版本：v1.0\
+> 日期：2026-04-28\
 > 状态：基础CRUD版本（不含混合检索）
 
----
+***
 
 ## 一、背景与目标
 
@@ -12,13 +12,13 @@
 
 根据对 Hermes 官方文档和代码的调研，Hermes 的知识库功能现状如下：
 
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| Knowledgebase 配置 | Feature Request | Issue #844，开发中 |
-| semantic-memory skill | PR #4056 | 可选安装，实现混合检索 |
-| workspace 目录 | 已有 | `~/.hermes/workspace/` 持久化存储 |
-| document_cache | 已有 | 临时缓存，24小时自动清理 |
-| 知识库管理 API | 暂不支持 | 目前只有 CLI 或文件系统操作 |
+| 功能                    | 状态              | 说明                           |
+| --------------------- | --------------- | ---------------------------- |
+| Knowledgebase 配置      | Feature Request | Issue #844，开发中               |
+| semantic-memory skill | PR #4056        | 可选安装，实现混合检索                  |
+| workspace 目录          | 已有              | `~/.hermes/workspace/` 持久化存储 |
+| document\_cache       | 已有              | 临时缓存，24小时自动清理                |
+| 知识库管理 API             | 暂不支持            | 目前只有 CLI 或文件系统操作             |
 
 ### 1.2 混合检索实现方式（当前暂不实现）
 
@@ -31,12 +31,13 @@ Hermes 的 `semantic-memory` skill 采用以下技术栈：
 ### 1.3 本阶段目标
 
 **基础CRUD版本**：
+
 - 实现文档的增删改查功能
 - 与 Hermes workspace 目录同步
 - 存储文档原文与 Hermes embedding 的对应关系
 - 不实现混合检索（后续版本扩展）
 
----
+***
 
 ## 二、设计原则
 
@@ -79,13 +80,13 @@ Hermes 的 `semantic-memory` skill 采用以下技术栈：
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
----
+***
 
 ## 三、数据库设计
 
 ### 3.1 数据表结构
 
-#### 3.1.1 知识库文档表 (knowledge_docs)
+#### 3.1.1 知识库文档表 (knowledge\_docs)
 
 存储文档的基本元数据信息。
 
@@ -131,7 +132,7 @@ CREATE TABLE IF NOT EXISTS knowledge_docs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库文档表';
 ```
 
-#### 3.1.2 文档分块表 (knowledge_doc_chunks)
+#### 3.1.2 文档分块表 (knowledge\_doc\_chunks)
 
 存储文档的分块信息，用于记录与 Hermes embedding 的对应关系。
 （基础版本可简化，后续实现检索时完善）
@@ -163,7 +164,7 @@ CREATE TABLE IF NOT EXISTS knowledge_doc_chunks (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档分块表';
 ```
 
-#### 3.1.3 知识库配置表 (knowledge_configs)
+#### 3.1.3 知识库配置表 (knowledge\_configs)
 
 存储知识库的全局配置信息。
 
@@ -216,7 +217,7 @@ INSERT INTO knowledge_configs (config_key, config_value, description) VALUES
 └─────────────────────┘
 ```
 
----
+***
 
 ## 四、后端设计
 
@@ -254,11 +255,13 @@ backend/app/
 #### 4.2.1 模型层 (Models)
 
 **KnowledgeDoc 模型**：
+
 - 映射 `knowledge_docs` 表
 - 包含软删除字段 `deleted_at`
 - 与 `KnowledgeDocChunk` 一对多关系
 
 **KnowledgeDocChunk 模型**：
+
 - 映射 `knowledge_doc_chunks` 表
 - 存储分块原文，便于后续查看
 - 记录 Hermes embedding 对应关系
@@ -266,11 +269,13 @@ backend/app/
 #### 4.2.2 服务层 (Services)
 
 **KnowledgeService**：
+
 - 文档上传、下载、删除、列表查询
 - 文档元数据管理（标签、分类、描述）
 - 文件存储管理
 
 **HermesSyncService**：
+
 - 与 Hermes workspace 目录同步
 - 文件复制/移动操作
 - 同步状态追踪
@@ -278,17 +283,17 @@ backend/app/
 
 #### 4.2.3 路由层 (Routers)
 
-| 接口 | 方法 | 描述 | 权限 |
-|------|------|------|------|
-| `/api/v1/knowledge/docs` | GET | 获取文档列表（分页） | 登录用户 |
-| `/api/v1/knowledge/docs/{id}` | GET | 获取文档详情 | 登录用户 |
-| `/api/v1/knowledge/docs` | POST | 上传文档 | 登录用户 |
-| `/api/v1/knowledge/docs/{id}` | PUT | 更新文档信息 | 上传者/管理员 |
-| `/api/v1/knowledge/docs/{id}` | DELETE | 删除文档（软删除） | 上传者/管理员 |
-| `/api/v1/knowledge/docs/{id}/download` | GET | 下载文档 | 登录用户 |
-| `/api/v1/knowledge/docs/{id}/sync` | POST | 手动同步到Hermes | 管理员 |
-| `/api/v1/knowledge/configs` | GET | 获取知识库配置 | 管理员 |
-| `/api/v1/knowledge/configs` | PUT | 更新知识库配置 | 管理员 |
+| 接口                                     | 方法     | 描述          | 权限      |
+| -------------------------------------- | ------ | ----------- | ------- |
+| `/api/v1/knowledge/docs`               | GET    | 获取文档列表（分页）  | 登录用户    |
+| `/api/v1/knowledge/docs/{id}`          | GET    | 获取文档详情      | 登录用户    |
+| `/api/v1/knowledge/docs`               | POST   | 上传文档        | 登录用户    |
+| `/api/v1/knowledge/docs/{id}`          | PUT    | 更新文档信息      | 上传者/管理员 |
+| `/api/v1/knowledge/docs/{id}`          | DELETE | 删除文档（软删除）   | 上传者/管理员 |
+| `/api/v1/knowledge/docs/{id}/download` | GET    | 下载文档        | 登录用户    |
+| `/api/v1/knowledge/docs/{id}/sync`     | POST   | 手动同步到Hermes | 管理员     |
+| `/api/v1/knowledge/configs`            | GET    | 获取知识库配置     | 管理员     |
+| `/api/v1/knowledge/configs`            | PUT    | 更新知识库配置     | 管理员     |
 
 #### 4.2.4 Schema 定义
 
@@ -404,7 +409,7 @@ class SyncStatusResponse(BaseModel):
    └── 更新 sync_status
 ```
 
----
+***
 
 ## 五、前端设计
 
@@ -434,13 +439,13 @@ class SyncStatusResponse(BaseModel):
 
 #### 5.2.1 主要组件
 
-| 组件名 | 路径 | 描述 |
-|--------|------|------|
-| KnowledgeDocumentList | `views/knowledge/DocumentList.vue` | 文档列表主页面 |
-| KnowledgeUploadModal | `components/knowledge/UploadModal.vue` | 上传弹窗 |
-| KnowledgeEditModal | `components/knowledge/EditModal.vue` | 编辑弹窗 |
-| KnowledgeDetailModal | `components/knowledge/DetailModal.vue` | 详情弹窗 |
-| FileIcon | `components/common/FileIcon.vue` | 文件类型图标 |
+| 组件名                   | 路径                                     | 描述      |
+| --------------------- | -------------------------------------- | ------- |
+| KnowledgeDocumentList | `views/knowledge/DocumentList.vue`     | 文档列表主页面 |
+| KnowledgeUploadModal  | `components/knowledge/UploadModal.vue` | 上传弹窗    |
+| KnowledgeEditModal    | `components/knowledge/EditModal.vue`   | 编辑弹窗    |
+| KnowledgeDetailModal  | `components/knowledge/DetailModal.vue` | 详情弹窗    |
+| FileIcon              | `components/common/FileIcon.vue`       | 文件类型图标  |
 
 #### 5.2.2 API 模块
 
@@ -526,7 +531,7 @@ export const knowledgeApi = {
 },
 ```
 
----
+***
 
 ## 六、与 Hermes 的集成方式
 
@@ -540,11 +545,11 @@ export const knowledgeApi = {
 
 ### 6.2 同步策略
 
-| 场景 | 策略 |
-|------|------|
-| 新增文档 | 立即同步到 Hermes workspace |
-| 更新文档 | 删除旧文件，同步新文件 |
-| 删除文档 | 从 Hermes workspace 删除 |
+| 场景        | 策略                      |
+| --------- | ----------------------- |
+| 新增文档      | 立即同步到 Hermes workspace  |
+| 更新文档      | 删除旧文件，同步新文件             |
+| 删除文档      | 从 Hermes workspace 删除   |
 | Hermes 重启 | Hermes 自动重新扫描 workspace |
 
 ### 6.3 配置要求
@@ -569,7 +574,7 @@ hermes skill install semantic-memory
 pip install fastembed
 ```
 
----
+***
 
 ## 七、权限设计
 
@@ -577,25 +582,25 @@ pip install fastembed
 
 在 `permissions` 表中添加以下权限：
 
-| 权限名称 | 权限码 | 类型 | 路径 | 说明 |
-|----------|--------|------|------|------|
-| 文档查询 | knowledge:doc:query | 3 | GET /api/v1/knowledge/docs | 查看文档列表 |
-| 文档详情 | knowledge:doc:detail | 3 | GET /api/v1/knowledge/docs/{id} | 查看文档详情 |
-| 文档上传 | knowledge:doc:create | 3 | POST /api/v1/knowledge/docs | 上传文档 |
-| 文档编辑 | knowledge:doc:update | 3 | PUT /api/v1/knowledge/docs/{id} | 编辑文档信息 |
-| 文档删除 | knowledge:doc:delete | 3 | DELETE /api/v1/knowledge/docs/{id} | 删除文档 |
-| 文档下载 | knowledge:doc:download | 3 | GET /api/v1/knowledge/docs/{id}/download | 下载文档 |
-| 文档同步 | knowledge:doc:sync | 3 | POST /api/v1/knowledge/docs/{id}/sync | 手动同步到Hermes |
-| 配置查看 | knowledge:config:view | 3 | GET /api/v1/knowledge/configs | 查看知识库配置 |
-| 配置编辑 | knowledge:config:edit | 3 | PUT /api/v1/knowledge/configs | 编辑知识库配置 |
+| 权限名称 | 权限码                    | 类型 | 路径                                       | 说明          |
+| ---- | ---------------------- | -- | ---------------------------------------- | ----------- |
+| 文档查询 | knowledge:doc:query    | 3  | GET /api/v1/knowledge/docs               | 查看文档列表      |
+| 文档详情 | knowledge:doc:detail   | 3  | GET /api/v1/knowledge/docs/{id}          | 查看文档详情      |
+| 文档上传 | knowledge:doc:create   | 3  | POST /api/v1/knowledge/docs              | 上传文档        |
+| 文档编辑 | knowledge:doc:update   | 3  | PUT /api/v1/knowledge/docs/{id}          | 编辑文档信息      |
+| 文档删除 | knowledge:doc:delete   | 3  | DELETE /api/v1/knowledge/docs/{id}       | 删除文档        |
+| 文档下载 | knowledge:doc:download | 3  | GET /api/v1/knowledge/docs/{id}/download | 下载文档        |
+| 文档同步 | knowledge:doc:sync     | 3  | POST /api/v1/knowledge/docs/{id}/sync    | 手动同步到Hermes |
+| 配置查看 | knowledge:config:view  | 3  | GET /api/v1/knowledge/configs            | 查看知识库配置     |
+| 配置编辑 | knowledge:config:edit  | 3  | PUT /api/v1/knowledge/configs            | 编辑知识库配置     |
 
 ### 7.2 角色权限分配
 
-| 角色 | 权限 |
-|------|------|
-| 超级管理员 | 所有权限 |
-| 系统管理员 | knowledge:doc:*, knowledge:config:* |
-| 普通用户 | knowledge:doc:query, knowledge:doc:detail, knowledge:doc:create, knowledge:doc:download |
+| 角色    | 权限                                                                                      |
+| ----- | --------------------------------------------------------------------------------------- |
+| 超级管理员 | 所有权限                                                                                    |
+| 系统管理员 | knowledge:doc:*, knowledge:config:*                                                     |
+| 普通用户  | knowledge:doc:query, knowledge:doc:detail, knowledge:doc:create, knowledge:doc:download |
 
 ### 7.3 数据权限
 
@@ -603,7 +608,7 @@ pip install fastembed
 - **管理员**：可以编辑、删除所有文档
 - **公共文档**：所有用户都可以查看、下载（`is_public = true`）
 
----
+***
 
 ## 八、数据库升级脚本
 
@@ -746,19 +751,19 @@ WHERE code IN (
 3. 重启后端服务
 4. 验证新功能
 
----
+***
 
 ## 九、后续扩展规划
 
 ### 9.1 版本规划
 
-| 版本 | 功能 | 说明 |
-|------|------|------|
-| v1.0 (当前) | 基础CRUD | 文档上传/下载/删除/列表，与Hermes同步 |
-| v1.1 | 混合检索 | 集成Hermes semantic-memory，实现向量+关键词搜索 |
-| v1.2 | 文档预览 | PDF、文本文件在线预览 |
-| v1.3 | 批量操作 | 批量上传、批量删除、批量同步 |
-| v1.4 | 权限细化 | 部门级权限、文档分享功能 |
+| 版本        | 功能     | 说明                                  |
+| --------- | ------ | ----------------------------------- |
+| v1.0 (当前) | 基础CRUD | 文档上传/下载/删除/列表，与Hermes同步             |
+| v1.1      | 混合检索   | 集成Hermes semantic-memory，实现向量+关键词搜索 |
+| v1.2      | 文档预览   | PDF、文本文件在线预览                        |
+| v1.3      | 批量操作   | 批量上传、批量删除、批量同步                      |
+| v1.4      | 权限细化   | 部门级权限、文档分享功能                        |
 
 ### 9.2 混合检索集成方案
 
@@ -770,7 +775,6 @@ WHERE code IN (
    # 或安装 Hermes semantic-memory skill
    hermes skill install semantic-memory
    ```
-
 2. **配置 Hermes**：
    ```yaml
    knowledgebase:
@@ -779,13 +783,12 @@ WHERE code IN (
        - ~/.hermes/workspace/docs
      auto_retrieve: true
    ```
-
 3. **扩展 AgentNow**：
    - 添加搜索 API 接口
    - 前端添加搜索结果展示
    - 可能需要独立的向量数据库（如 ChromaDB）
 
----
+***
 
 ## 十、注意事项
 
@@ -799,7 +802,7 @@ WHERE code IN (
 
 1. **文件存储**：考虑使用对象存储（如 OSS、S3）替代本地文件系统
 2. **异步同步**：使用 Celery 或其他任务队列处理文件同步
-3. **文件去重**：基于 content_hash 实现文件级去重
+3. **文件去重**：基于 content\_hash 实现文件级去重
 4. **监控告警**：监控同步状态，失败时及时告警
 
 ### 10.3 安全考虑
@@ -809,6 +812,7 @@ WHERE code IN (
 3. **访问控制**：确保非公开文档只有授权用户可访问
 4. **病毒扫描**：生产环境建议集成病毒扫描服务
 
----
+***
 
 > 本文档为知识库管理功能的基础版本设计方案，聚焦于实现文档的增删改查和与 Hermes 的文件同步。混合检索功能将在后续版本中实现。
+

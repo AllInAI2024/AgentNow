@@ -55,6 +55,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '角色管理', requiresAuth: true },
   },
   {
+    path: '/knowledge/document',
+    name: 'KnowledgeDocument',
+    component: () => import('@/views/KnowledgeDocument.vue'),
+    meta: { title: '文档列表', requiresAuth: true },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/dashboard',
   },

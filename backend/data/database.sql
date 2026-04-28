@@ -1,6 +1,6 @@
 -- 智现 AgentNow 智能体平台数据库初始化脚本
 -- 数据库: agentnow
--- 版本: v6.0 (新增部门管理和员工管理)
+-- 版本: v7.0 (新增知识库管理)
 -- 日期: 2026-04-28
 
 -- 创建数据库
@@ -128,7 +128,80 @@ CREATE TABLE IF NOT EXISTS user_roles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户-角色关联表';
 
 -- ============================================
--- 六、初始化数据
+-- 七、知识库配置表
+-- ============================================
+CREATE TABLE IF NOT EXISTS knowledge_configs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '配置ID',
+    config_key VARCHAR(100) NOT NULL UNIQUE COMMENT '配置键',
+    config_value TEXT COMMENT '配置值',
+    description VARCHAR(500) COMMENT '配置描述',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_config_key (config_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库配置表';
+
+-- ============================================
+-- 八、知识库文档表
+-- ============================================
+CREATE TABLE IF NOT EXISTS knowledge_docs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '文档ID',
+    title VARCHAR(500) NOT NULL COMMENT '文档标题',
+    file_name VARCHAR(500) NOT NULL COMMENT '原始文件名',
+    file_path VARCHAR(1000) COMMENT 'AgentNow 存储路径（相对路径）',
+    hermes_path VARCHAR(1000) COMMENT 'Hermes workspace 中的路径（相对路径）',
+    file_size BIGINT DEFAULT 0 COMMENT '文件大小（字节）',
+    file_type VARCHAR(50) COMMENT '文件类型/扩展名',
+    mime_type VARCHAR(100) COMMENT 'MIME类型',
+    content_hash VARCHAR(64) COMMENT '文件内容哈希值（SHA256）',
+    status TINYINT DEFAULT 1 COMMENT '状态：1-已上传，2-已同步到Hermes，3-处理中，4-失败',
+    sync_status TINYINT DEFAULT 0 COMMENT '同步状态：0-未同步，1-已同步，2-同步失败',
+    sync_error TEXT COMMENT '同步失败错误信息',
+    synced_at DATETIME COMMENT '同步到Hermes的时间',
+    description TEXT COMMENT '文档描述/摘要',
+    tags JSON COMMENT '标签列表',
+    category VARCHAR(100) COMMENT '文档分类',
+    created_by BIGINT COMMENT '上传者用户ID',
+    is_public BOOLEAN DEFAULT TRUE COMMENT '是否公开',
+    embedding_id VARCHAR(255) COMMENT 'Hermes embedding ID',
+    embedding_info JSON COMMENT 'Hermes embedding 相关信息',
+    deleted_at DATETIME COMMENT '删除时间（软删除）',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_title (title),
+    INDEX idx_file_name (file_name),
+    INDEX idx_status (status),
+    INDEX idx_sync_status (sync_status),
+    INDEX idx_category (category),
+    INDEX idx_created_by (created_by),
+    INDEX idx_created_at (created_at),
+    INDEX idx_deleted_at (deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库文档表';
+
+-- ============================================
+-- 九、文档分块表
+-- ============================================
+CREATE TABLE IF NOT EXISTS knowledge_doc_chunks (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '分块ID',
+    doc_id BIGINT NOT NULL COMMENT '所属文档ID',
+    chunk_index INT COMMENT '分块序号',
+    chunk_content TEXT COMMENT '分块原文内容',
+    chunk_hash VARCHAR(64) COMMENT '分块内容哈希',
+    start_position BIGINT COMMENT '起始位置',
+    end_position BIGINT COMMENT '结束位置',
+    char_count INT COMMENT '字符数',
+    token_count INT COMMENT '预估token数',
+    hermes_embedding_id VARCHAR(255) COMMENT 'Hermes embedding ID',
+    embedding_info JSON COMMENT 'Embedding 元信息',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (doc_id) REFERENCES knowledge_docs(id) ON DELETE CASCADE,
+    INDEX idx_doc_id (doc_id),
+    INDEX idx_chunk_index (chunk_index),
+    INDEX idx_hermes_embedding_id (hermes_embedding_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档分块表';
+
+-- ============================================
+-- 十、初始化数据
 -- ============================================
 
 -- 插入系统内置角色
@@ -228,6 +301,36 @@ VALUES
 (@role_manage_id, '角色删除', 'role:delete', 3, '/api/v1/roles/:id'),
 (@role_manage_id, '角色权限配置', 'role:assign_permission', 3, '/api/v1/roles/:id/permissions');
 
+-- 获取知识库文档列表菜单ID
+SET @knowledge_doc_id = (SELECT id FROM permissions WHERE code = 'knowledge:document');
+SET @knowledge_setting_id = (SELECT id FROM permissions WHERE code = 'knowledge:setting');
+
+-- 知识库文档管理相关按钮权限
+INSERT INTO permissions (parent_id, name, code, type, path)
+VALUES 
+(@knowledge_doc_id, '文档查询', 'knowledge:doc:query', 3, '/api/v1/knowledge/docs'),
+(@knowledge_doc_id, '文档详情', 'knowledge:doc:detail', 3, '/api/v1/knowledge/docs/:id'),
+(@knowledge_doc_id, '文档上传', 'knowledge:doc:create', 3, '/api/v1/knowledge/docs'),
+(@knowledge_doc_id, '文档编辑', 'knowledge:doc:update', 3, '/api/v1/knowledge/docs/:id'),
+(@knowledge_doc_id, '文档删除', 'knowledge:doc:delete', 3, '/api/v1/knowledge/docs/:id'),
+(@knowledge_doc_id, '文档下载', 'knowledge:doc:download', 3, '/api/v1/knowledge/docs/:id/download'),
+(@knowledge_doc_id, '文档同步', 'knowledge:doc:sync', 3, '/api/v1/knowledge/docs/:id/sync');
+
+-- 知识库设置相关按钮权限
+INSERT INTO permissions (parent_id, name, code, type, path)
+VALUES 
+(@knowledge_setting_id, '配置查看', 'knowledge:config:view', 3, '/api/v1/knowledge/configs'),
+(@knowledge_setting_id, '配置编辑', 'knowledge:config:edit', 3, '/api/v1/knowledge/configs');
+
+-- 初始化知识库配置
+INSERT INTO knowledge_configs (config_key, config_value, description) VALUES
+('storage.base_path', './data/knowledge_docs', 'AgentNow 知识库文档存储根目录'),
+('hermes.workspace_path', '~/.hermes/workspace/docs', 'Hermes workspace 文档目录'),
+('sync.auto_sync', 'true', '是否自动同步到Hermes'),
+('file.max_size', '104857600', '单文件最大大小（字节，默认100MB）'),
+('file.allowed_types', '.pdf,.doc,.docx,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.html,.htm,.xml', '允许上传的文件类型'),
+('embedding.enabled', 'false', '是否启用embedding（基础版本为false）');
+
 -- 为超级管理员角色分配所有权限
 SET @super_admin_role_id = (SELECT id FROM roles WHERE code = 'super_admin');
 
@@ -249,7 +352,11 @@ WHERE code IN (
     'role:manage', 'permission:manage',
     'role:query', 'role:create', 'role:update', 'role:delete', 'role:assign_permission',
     'agent', 'agent:list', 'agent:config', 'agent:conversation',
-    'knowledge', 'knowledge:document', 'knowledge:setting'
+    'knowledge', 'knowledge:document', 'knowledge:setting',
+    'knowledge:doc:query', 'knowledge:doc:detail', 'knowledge:doc:create',
+    'knowledge:doc:update', 'knowledge:doc:delete', 'knowledge:doc:download',
+    'knowledge:doc:sync',
+    'knowledge:config:view', 'knowledge:config:edit'
 );
 
 -- 为普通用户角色分配权限
@@ -260,7 +367,9 @@ SELECT @user_role_id, id FROM permissions
 WHERE code IN (
     'dashboard',
     'agent:list', 'agent:conversation',
-    'knowledge:document'
+    'knowledge:document',
+    'knowledge:doc:query', 'knowledge:doc:detail', 
+    'knowledge:doc:create', 'knowledge:doc:download'
 );
 
 -- ============================================

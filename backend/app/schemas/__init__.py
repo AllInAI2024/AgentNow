@@ -34,6 +34,20 @@ from app.schemas.department import (
     DepartmentResponse,
     DepartmentTreeResponse,
 )
+from app.schemas.knowledge import (
+    KnowledgeDocBase,
+    KnowledgeDocCreate,
+    KnowledgeDocUpdate,
+    KnowledgeDocResponse,
+    KnowledgeDocListResponse,
+    KnowledgeDocChunkResponse,
+    KnowledgeConfigBase,
+    KnowledgeConfigUpdate,
+    KnowledgeConfigResponse,
+    SyncStatusResponse,
+    UploadResult,
+    DeleteResult,
+)
 
 __all__ = [
     "UserBase",
@@ -64,4 +78,16 @@ __all__ = [
     "DepartmentUpdate",
     "DepartmentResponse",
     "DepartmentTreeResponse",
+    "KnowledgeDocBase",
+    "KnowledgeDocCreate",
+    "KnowledgeDocUpdate",
+    "KnowledgeDocResponse",
+    "KnowledgeDocListResponse",
+    "KnowledgeDocChunkResponse",
+    "KnowledgeConfigBase",
+    "KnowledgeConfigUpdate",
+    "KnowledgeConfigResponse",
+    "SyncStatusResponse",
+    "UploadResult",
+    "DeleteResult",
 ]

@@ -20,6 +20,9 @@ from app.models.permission import Permission
 from app.models.department import Department
 from app.models.user_role import UserRole
 from app.models.role_permission import RolePermission
+from app.models.knowledge_doc import KnowledgeDoc
+from app.models.knowledge_doc_chunk import KnowledgeDocChunk
+from app.models.knowledge_config import KnowledgeConfig
 
 __all__ = [
     "Base", 
@@ -30,5 +33,8 @@ __all__ = [
     "Permission", 
     "Department",
     "UserRole", 
-    "RolePermission"
+    "RolePermission",
+    "KnowledgeDoc",
+    "KnowledgeDocChunk",
+    "KnowledgeConfig",
 ]
