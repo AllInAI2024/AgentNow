@@ -3,9 +3,15 @@ import re
 import subprocess
 import asyncio
 import platform
+import sys
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, List
+from pathlib import Path
 from sqlalchemy.orm import Session
+
+import httpx
+
 from app.models import User
 from app.schemas.hermes import (
     HealthStatus,
@@ -19,6 +25,7 @@ from app.schemas.hermes import (
     UpdateProgress,
 )
 
+logger = logging.getLogger(__name__)
 
 _update_progress: Optional[UpdateProgress] = None
 
@@ -28,76 +35,166 @@ class HermesService:
         self._cached_version: Optional[str] = None
         self._cached_latest_version: Optional[str] = None
         self._version_cache_time: Optional[datetime] = None
+        self._hermes_path: Optional[str] = None
+        self._system: str = platform.system().lower()
+        self._python_path: str = sys.executable
+        self._pip_path: str = os.path.join(os.path.dirname(self._python_path), "pip")
+        self._find_hermes_path()
 
-    def get_hermes_version(self) -> str:
-        if self._cached_version:
-            return self._cached_version
+    def _find_hermes_path(self) -> None:
+        possible_paths = [
+            os.path.join(os.path.dirname(self._python_path), "hermes"),
+            "/usr/local/bin/hermes",
+            os.path.expanduser("~/.local/bin/hermes"),
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path) and os.access(path, os.X_OK):
+                self._hermes_path = path
+                logger.info(f"Found hermes executable at: {path}")
+                return
         
         try:
             result = subprocess.run(
-                ["hermes", "--version"],
+                ["which", "hermes"] if self._system != "windows" else ["where", "hermes"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
             if result.returncode == 0:
-                output = result.stdout.strip()
-                match = re.search(r"(\d+\.\d+\.\d+)", output)
-                if match:
-                    self._cached_version = match.group(1)
-                    return self._cached_version
-                return output
-            return "unknown"
-        except Exception:
-            return "unknown"
-
-    async def check_latest_version(self) -> Optional[str]:
-        if self._version_cache_time and self._cached_latest_version:
-            if datetime.now() - self._version_cache_time < timedelta(hours=1):
-                return self._cached_latest_version
+                self._hermes_path = result.stdout.strip().split('\n')[0]
+                logger.info(f"Found hermes executable via which/where: {self._hermes_path}")
+                return
+        except Exception as e:
+            logger.debug(f"Failed to find hermes via which/where: {e}")
         
+        self._hermes_path = "hermes"
+        logger.warning(f"Could not find hermes executable, will use 'hermes' command directly")
+
+    def _run_command(self, cmd: List[str], timeout: int = 30) -> tuple[int, str, str]:
         try:
-            import aiohttp
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest",
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        tag_name = data.get("tag_name", "")
-                        match = re.search(r"(\d+\.\d+\.\d+)", tag_name)
-                        if match:
-                            latest = match.group(1)
-                            self._cached_latest_version = latest
-                            self._version_cache_time = datetime.now()
-                            return latest
-        except Exception:
-            pass
+            logger.debug(f"Running command: {' '.join(cmd)}")
+            
+            env = os.environ.copy()
+            env["PATH"] = os.path.dirname(self._python_path) + os.pathsep + env.get("PATH", "")
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env
+            )
+            
+            logger.debug(f"Command return code: {result.returncode}")
+            if result.stdout:
+                logger.debug(f"Command stdout: {result.stdout[:500]}{'...' if len(result.stdout) > 500 else ''}")
+            if result.stderr:
+                logger.debug(f"Command stderr: {result.stderr[:500]}{'...' if len(result.stderr) > 500 else ''}")
+            
+            return result.returncode, result.stdout, result.stderr
+        except subprocess.TimeoutExpired:
+            logger.error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
+            return -1, "", f"Command timed out after {timeout} seconds"
+        except Exception as e:
+            logger.error(f"Command failed: {' '.join(cmd)}, error: {e}")
+            return -2, "", str(e)
+
+    def _get_hermes_version(self) -> Optional[str]:
+        returncode, stdout, stderr = self._run_command(
+            [self._hermes_path, "--version"],
+            timeout=15
+        )
+        
+        if returncode == 0 and stdout:
+            match = re.search(r"(\d+\.\d+\.\d+)", stdout)
+            if match:
+                return match.group(1)
+            
+            match = re.search(r"hermes\s+([\d.a-z-]+)", stdout, re.IGNORECASE)
+            if match:
+                return match.group(1)
+            
+            version = stdout.strip()
+            if version:
+                return version
+        
+        logger.warning(f"Failed to get hermes version: returncode={returncode}, stdout='{stdout}', stderr='{stderr}'")
         return None
 
-    def get_uptime(self) -> str:
+    def get_hermes_version(self) -> str:
+        if self._cached_version:
+            return self._cached_version
+        
+        version = self._get_hermes_version()
+        if version:
+            self._cached_version = version
+            return version
+        
+        return "unknown"
+
+    def get_system_uptime(self) -> dict:
         try:
-            if platform.system() == "Windows":
-                result = subprocess.run(
-                    ["net", "stats", "srv"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                output = result.stdout
-                match = re.search(r"since\s+(.+)$", output, re.MULTILINE)
-                if match:
-                    return f"自 {match.group(1)} 启动"
-            else:
+            if self._system == "linux":
                 with open("/proc/uptime", "r") as f:
                     uptime_seconds = float(f.readline().split()[0])
-                    return self._format_uptime(uptime_seconds)
-        except Exception:
-            pass
-        return "未知"
+                    return {
+                        "seconds": uptime_seconds,
+                        "formatted": self._format_uptime(uptime_seconds),
+                        "start_time": datetime.now() - timedelta(seconds=uptime_seconds)
+                    }
+            elif self._system == "darwin":
+                returncode, stdout, stderr = self._run_command(
+                    ["sysctl", "-n", "kern.boottime"],
+                    timeout=10
+                )
+                if returncode == 0 and stdout:
+                    match = re.search(r"sec\s*=\s*(\d+)", stdout)
+                    if match:
+                        boot_time = int(match.group(1))
+                        uptime_seconds = datetime.now().timestamp() - boot_time
+                        return {
+                            "seconds": uptime_seconds,
+                            "formatted": self._format_uptime(uptime_seconds),
+                            "start_time": datetime.fromtimestamp(boot_time)
+                        }
+                
+                returncode, stdout, stderr = self._run_command(
+                    ["uptime"],
+                    timeout=10
+                )
+                if returncode == 0 and stdout:
+                    return {
+                        "seconds": 0,
+                        "formatted": stdout.strip(),
+                        "start_time": None
+                    }
+            elif self._system == "windows":
+                returncode, stdout, stderr = self._run_command(
+                    ["net", "stats", "srv"],
+                    timeout=10
+                )
+                if returncode == 0:
+                    match = re.search(r"since\s+(.+)$", stdout, re.MULTILINE)
+                    if match:
+                        return {
+                            "seconds": 0,
+                            "formatted": f"自 {match.group(1)} 启动",
+                            "start_time": None
+                        }
+        except Exception as e:
+            logger.error(f"Failed to get system uptime: {e}")
+        
+        return {
+            "seconds": 0,
+            "formatted": "未知",
+            "start_time": None
+        }
 
     def _format_uptime(self, seconds: float) -> str:
+        if seconds < 60:
+            return "刚刚启动"
+        
         days = int(seconds // 86400)
         hours = int((seconds % 86400) // 3600)
         minutes = int((seconds % 3600) // 60)
@@ -107,160 +204,347 @@ class HermesService:
             parts.append(f"{days}天")
         if hours > 0:
             parts.append(f"{hours}小时")
-        if minutes > 0:
+        if minutes > 0 and days == 0:
             parts.append(f"{minutes}分钟")
         
         if not parts:
             return "刚刚启动"
         return " ".join(parts)
 
+    def check_hermes_available(self) -> tuple[bool, str]:
+        returncode, stdout, stderr = self._run_command(
+            [self._hermes_path, "--version"],
+            timeout=15
+        )
+        available = returncode == 0
+        message = "Hermes 可用" if available else f"Hermes 不可用: {stderr or stdout}"
+        return available, message
+
     def check_system_status(self) -> HealthStatus:
-        try:
-            result = subprocess.run(
-                ["hermes", "doctor"],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            if result.returncode == 0:
-                if "ERROR" in result.stdout.upper() or "FAIL" in result.stdout.upper():
-                    return HealthStatus.WARNING
-                return HealthStatus.HEALTHY
-            return HealthStatus.WARNING
-        except Exception:
+        available, message = self.check_hermes_available()
+        if not available:
+            logger.warning(f"Hermes not available: {message}")
             return HealthStatus.UNHEALTHY
+        
+        try:
+            returncode, stdout, stderr = self._run_command(
+                [self._hermes_path, "doctor"],
+                timeout=60
+            )
+            
+            if returncode != 0:
+                logger.warning(f"hermes doctor failed: returncode={returncode}, stderr={stderr}")
+                return HealthStatus.WARNING
+            
+            if "error" in stdout.lower() or "fail" in stdout.lower() or "failed" in stdout.lower():
+                return HealthStatus.WARNING
+            
+            return HealthStatus.HEALTHY
+        except Exception as e:
+            logger.error(f"Failed to run hermes doctor: {e}")
+            return HealthStatus.WARNING
 
     def get_total_users(self, db: Session) -> int:
         try:
-            return db.query(User).count()
-        except Exception:
+            count = db.query(User).count()
+            logger.debug(f"Total users: {count}")
+            return count
+        except Exception as e:
+            logger.error(f"Failed to get total users: {e}")
             return 0
 
-    def get_profile_count(self) -> int:
+    def get_profile_list(self) -> List[str]:
         try:
-            result = subprocess.run(
-                ["hermes", "profile", "list"],
-                capture_output=True,
-                text=True,
-                timeout=10
+            returncode, stdout, stderr = self._run_command(
+                [self._hermes_path, "profile", "list"],
+                timeout=30
             )
-            if result.returncode == 0:
-                lines = result.stdout.strip().split("\n")
-                count = 0
-                for line in lines:
-                    if line.strip() and not line.startswith("*") and not line.lower().startswith("profile"):
-                        count += 1
-                return max(count, 0)
-        except Exception:
-            pass
-        return 0
+            
+            if returncode != 0:
+                logger.warning(f"hermes profile list failed: returncode={returncode}, stderr={stderr}")
+                return []
+            
+            profiles: List[str] = []
+            lines = stdout.strip().split("\n")
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                if line.lower().startswith("profile") or "profiles" in line.lower():
+                    continue
+                
+                if "(" in line and ")" in line:
+                    name = line.split("(")[0].strip().rstrip("*")
+                elif "*" in line:
+                    name = line.rstrip("*").strip()
+                else:
+                    name = line
+                
+                if name and len(name) > 0:
+                    profiles.append(name)
+            
+            logger.debug(f"Found profiles: {profiles}")
+            return profiles
+        except Exception as e:
+            logger.error(f"Failed to get profile list: {e}")
+            return []
 
-    def check_gateway_status(self) -> dict:
+    def get_profile_count(self) -> int:
+        profiles = self.get_profile_list()
+        return len(profiles)
+
+    def get_running_processes(self) -> dict:
         running_count = 0
-        stopped_count = 0
+        process_list: List[dict] = []
         
         try:
-            if platform.system() == "Windows":
-                result = subprocess.run(
-                    ["tasklist", "/FI", "IMAGENAME eq python*"],
-                    capture_output=True,
-                    text=True,
+            if self._system in ["linux", "darwin"]:
+                returncode, stdout, stderr = self._run_command(
+                    ["ps", "aux"],
                     timeout=10
                 )
-                if "hermes" in result.stdout.lower():
-                    running_count = 1
-            else:
-                result = subprocess.run(
+                
+                if returncode == 0:
+                    lines = stdout.strip().split("\n")
+                    for line in lines:
+                        if "hermes" in line.lower() and "gateway" in line.lower():
+                            running_count += 1
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                process_list.append({
+                                    "pid": parts[1],
+                                    "user": parts[0],
+                                    "command": " ".join(parts[10:]) if len(parts) > 10 else line
+                                })
+            
+            if self._system == "darwin" and running_count == 0:
+                returncode, stdout, stderr = self._run_command(
                     ["pgrep", "-f", "hermes.*gateway"],
-                    capture_output=True,
-                    text=True,
                     timeout=10
                 )
-                if result.returncode == 0:
-                    pids = result.stdout.strip().split("\n")
+                if returncode == 0 and stdout.strip():
+                    pids = stdout.strip().split("\n")
                     running_count = len([p for p in pids if p.strip()])
-        except Exception:
-            pass
+            
+            if self._system == "linux" and running_count == 0:
+                returncode, stdout, stderr = self._run_command(
+                    ["pgrep", "-f", "hermes.*gateway"],
+                    timeout=10
+                )
+                if returncode == 0 and stdout.strip():
+                    pids = stdout.strip().split("\n")
+                    running_count = len([p for p in pids if p.strip()])
         
+        except Exception as e:
+            logger.error(f"Failed to get running processes: {e}")
+        
+        logger.debug(f"Running gateway processes: {running_count}")
         return {
             "running": running_count,
-            "stopped": 0
+            "stopped": 0,
+            "processes": process_list
         }
 
     def get_memory_usage(self) -> dict:
         try:
-            if platform.system() == "Windows":
-                import psutil
-                memory = psutil.virtual_memory()
-                used_percent = memory.percent
-                total_gb = round(memory.total / (1024**3), 1)
-                used_gb = round(memory.used / (1024**3), 1)
-            else:
+            if self._system == "linux":
                 with open("/proc/meminfo", "r") as f:
                     mem_info = {}
                     for line in f:
                         parts = line.split()
                         if len(parts) >= 2:
-                            mem_info[parts[0].rstrip(":")] = int(parts[1])
+                            key = parts[0].rstrip(":")
+                            try:
+                                mem_info[key] = int(parts[1])
+                            except ValueError:
+                                pass
                     
                     total = mem_info.get("MemTotal", 0)
                     free = mem_info.get("MemFree", 0)
                     buffers = mem_info.get("Buffers", 0)
                     cached = mem_info.get("Cached", 0)
+                    sreclaimable = mem_info.get("SReclaimable", 0)
+                    shmem = mem_info.get("Shmem", 0)
                     
-                    used = total - free - buffers - cached
+                    used = total - free - buffers - cached - sreclaimable + shmem
                     used_percent = (used / total * 100) if total > 0 else 0
                     total_gb = round(total / 1048576, 1)
                     used_gb = round(used / 1048576, 1)
             
-            if used_percent >= 80:
-                status = HealthStatus.WARNING
-            elif used_percent >= 90:
+            elif self._system == "darwin":
+                returncode, stdout, stderr = self._run_command(
+                    ["sysctl", "hw.memsize"],
+                    timeout=10
+                )
+                total = 0
+                if returncode == 0 and stdout:
+                    match = re.search(r"(\d+)", stdout)
+                    if match:
+                        total = int(match.group(1))
+                
+                returncode, stdout, stderr = self._run_command(
+                    ["vm_stat"],
+                    timeout=10
+                )
+                if returncode == 0 and stdout:
+                    lines = stdout.strip().split("\n")
+                    page_size = 4096
+                    free_pages = 0
+                    active_pages = 0
+                    inactive_pages = 0
+                    speculative_pages = 0
+                    wired_pages = 0
+                    
+                    for line in lines:
+                        if "Pages free:" in line:
+                            match = re.search(r"(\d+)", line)
+                            if match:
+                                free_pages = int(match.group(1))
+                        elif "Pages active:" in line:
+                            match = re.search(r"(\d+)", line)
+                            if match:
+                                active_pages = int(match.group(1))
+                        elif "Pages inactive:" in line:
+                            match = re.search(r"(\d+)", line)
+                            if match:
+                                inactive_pages = int(match.group(1))
+                        elif "Pages speculative:" in line:
+                            match = re.search(r"(\d+)", line)
+                            if match:
+                                speculative_pages = int(match.group(1))
+                        elif "Pages wired down:" in line:
+                            match = re.search(r"(\d+)", line)
+                            if match:
+                                wired_pages = int(match.group(1))
+                    
+                    used_pages = active_pages + inactive_pages + speculative_pages + wired_pages
+                    used = used_pages * page_size
+                    
+                    if total > 0:
+                        used_percent = (used / total * 100)
+                        total_gb = round(total / (1024**3), 1)
+                        used_gb = round(used / (1024**3), 1)
+                    else:
+                        return {
+                            "percent": 0,
+                            "total_gb": 0,
+                            "used_gb": 0,
+                            "status": HealthStatus.HEALTHY,
+                            "display": "无法获取内存信息"
+                        }
+            
+            else:
+                try:
+                    import psutil
+                    memory = psutil.virtual_memory()
+                    used_percent = memory.percent
+                    total_gb = round(memory.total / (1024**3), 1)
+                    used_gb = round(memory.used / (1024**3), 1)
+                except Exception as e:
+                    logger.error(f"Failed to get memory info: {e}")
+                    return {
+                        "percent": 0,
+                        "total_gb": 0,
+                        "used_gb": 0,
+                        "status": HealthStatus.UNHEALTHY,
+                        "display": "无法获取内存信息"
+                    }
+            
+            if used_percent >= 90:
                 status = HealthStatus.UNHEALTHY
+            elif used_percent >= 80:
+                status = HealthStatus.WARNING
             else:
                 status = HealthStatus.HEALTHY
+            
+            display = f"{round(used_percent, 1)}% ({used_gb}GB / {total_gb}GB)"
+            logger.debug(f"Memory usage: {display}, status: {status}")
             
             return {
                 "percent": round(used_percent, 1),
                 "total_gb": total_gb,
                 "used_gb": used_gb,
                 "status": status,
-                "display": f"{round(used_percent, 1)}% ({used_gb}GB / {total_gb}GB)"
+                "display": display
             }
-        except Exception:
+            
+        except Exception as e:
+            logger.error(f"Failed to get memory usage: {e}")
             return {
                 "percent": 0,
                 "total_gb": 0,
                 "used_gb": 0,
                 "status": HealthStatus.UNHEALTHY,
-                "display": "无法获取"
+                "display": f"无法获取内存信息: {e}"
             }
+
+    async def check_latest_version(self) -> Optional[str]:
+        if self._version_cache_time and self._cached_latest_version:
+            if datetime.now() - self._version_cache_time < timedelta(hours=1):
+                return self._cached_latest_version
+        
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+                response = await client.get(
+                    "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest",
+                    headers={
+                        "Accept": "application/vnd.github.v3+json",
+                        "User-Agent": "AgentNow/1.0"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    tag_name = data.get("tag_name", "")
+                    match = re.search(r"(\d+\.\d+\.\d+)", tag_name)
+                    if match:
+                        latest = match.group(1)
+                        self._cached_latest_version = latest
+                        self._version_cache_time = datetime.now()
+                        logger.info(f"Latest hermes version: {latest}")
+                        return latest
+                else:
+                    logger.warning(f"GitHub API returned status {response.status_code}: {response.text}")
+        
+        except httpx.TimeoutException:
+            logger.warning("Timeout when checking latest version")
+        except Exception as e:
+            logger.error(f"Failed to check latest version: {e}")
+        
+        return None
 
     def get_health_status(self, db: Session) -> HermesHealthStatus:
         items: List[HealthCheckItem] = []
         overall = HealthStatus.HEALTHY
         
-        hermes_status = self.check_system_status()
+        hermes_available, hermes_message = self.check_hermes_available()
+        hermes_status = HealthStatus.HEALTHY if hermes_available else HealthStatus.UNHEALTHY
+        
         items.append(HealthCheckItem(
             name="Hermes 系统",
             status=hermes_status,
-            message="Hermes Agent 核心系统状态",
+            message=hermes_message,
             value=f"版本: {self.get_hermes_version()}"
         ))
+        
         if hermes_status != HealthStatus.HEALTHY:
             overall = hermes_status
         
         db_status = HealthStatus.HEALTHY
+        db_message = "数据库连接正常"
+        db_value = "MySQL"
+        
         try:
             from sqlalchemy import text
             db.execute(text("SELECT 1"))
-            db_message = "数据库连接正常"
-            db_value = "MySQL"
         except Exception as e:
             db_status = HealthStatus.UNHEALTHY
-            db_message = f"数据库连接失败: {str(e)}"
+            db_message = f"数据库连接失败: {e}"
             db_value = "连接失败"
-            overall = HealthStatus.UNHEALTHY
+            if overall == HealthStatus.HEALTHY:
+                overall = HealthStatus.UNHEALTHY
         
         items.append(HealthCheckItem(
             name="数据库",
@@ -276,10 +560,11 @@ class HermesService:
             message="系统内存使用情况",
             value=memory_info["display"]
         ))
+        
         if memory_info["status"] != HealthStatus.HEALTHY and overall == HealthStatus.HEALTHY:
             overall = memory_info["status"]
         
-        gateway_status = self.check_gateway_status()
+        gateway_status = self.get_running_processes()
         running = gateway_status.get("running", 0)
         
         items.append(HealthCheckItem(
@@ -289,6 +574,8 @@ class HermesService:
             value=f"{running} 个运行中"
         ))
         
+        logger.debug(f"Health status items: {[{'name': i.name, 'status': i.status} for i in items]}")
+        
         return HermesHealthStatus(
             overall=overall,
             items=items,
@@ -296,11 +583,11 @@ class HermesService:
         )
 
     def get_statistics(self, db: Session) -> HermesStatistics:
-        gateway_status = self.check_gateway_status()
+        gateway_status = self.get_running_processes()
         total_profiles = self.get_profile_count()
         running_profiles = gateway_status.get("running", 0)
         
-        return HermesStatistics(
+        stats = HermesStatistics(
             total_profiles=total_profiles,
             running_profiles=running_profiles,
             stopped_profiles=max(0, total_profiles - running_profiles),
@@ -311,6 +598,9 @@ class HermesService:
             total_mcp_services=0,
             total_documents=0
         )
+        
+        logger.debug(f"Statistics: {stats.model_dump()}")
+        return stats
 
     def get_recent_activities(self) -> List[RecentActivity]:
         activities: List[RecentActivity] = []
@@ -321,11 +611,11 @@ class HermesService:
             activity_time = (now - time_offset).strftime("%H:%M:%S")
             
             events = [
-                ("系统", "系统监控", "健康检查完成"),
-                ("系统", "状态更新", "Profile 状态同步"),
+                ("系统", "健康检查", "系统健康检查完成"),
+                ("系统", "状态同步", "Profile 状态已同步"),
                 ("系统", "日志记录", "系统日志已轮转"),
-                ("系统", "配置检查", "配置文件验证通过"),
-                ("系统", "缓存刷新", "内存缓存已清理"),
+                ("系统", "配置验证", "配置文件验证通过"),
+                ("系统", "缓存管理", "内存缓存已清理"),
             ]
             
             user_name, event, details = events[i % len(events)]
@@ -344,29 +634,39 @@ class HermesService:
         
         has_update = False
         if current_version != "unknown" and latest_version:
-            current_parts = [int(p) for p in current_version.split(".")]
-            latest_parts = [int(p) for p in latest_version.split(".")]
-            for c, l in zip(current_parts, latest_parts):
-                if l > c:
-                    has_update = True
-                    break
+            try:
+                current_parts = [int(p) for p in current_version.split(".")]
+                latest_parts = [int(p) for p in latest_version.split(".")]
+                
+                for c, l in zip(current_parts, latest_parts):
+                    if l > c:
+                        has_update = True
+                        break
+            except Exception as e:
+                logger.warning(f"Failed to compare versions: {e}")
+                has_update = current_version != latest_version
+        
+        uptime_info = self.get_system_uptime()
         
         system_info = HermesSystemInfo(
             version=current_version,
             latest_version=latest_version,
             has_update=has_update,
             status=self.check_system_status(),
-            uptime=self.get_uptime(),
-            start_time=None,
+            uptime=uptime_info["formatted"],
+            start_time=uptime_info.get("start_time"),
             api_server_port=8642
         )
         
-        return HermesOverviewResponse(
+        overview = HermesOverviewResponse(
             system_info=system_info,
             statistics=self.get_statistics(db),
             health_status=self.get_health_status(db),
             recent_activities=self.get_recent_activities()
         )
+        
+        logger.info(f"Overview generated: version={current_version}, has_update={has_update}")
+        return overview
 
     async def check_version(self) -> VersionCheckResponse:
         current_version = self.get_hermes_version()
@@ -374,12 +674,17 @@ class HermesService:
         
         has_update = False
         if current_version != "unknown" and latest_version:
-            current_parts = [int(p) for p in current_version.split(".")]
-            latest_parts = [int(p) for p in latest_version.split(".")]
-            for c, l in zip(current_parts, latest_parts):
-                if l > c:
-                    has_update = True
-                    break
+            try:
+                current_parts = [int(p) for p in current_version.split(".")]
+                latest_parts = [int(p) for p in latest_version.split(".")]
+                
+                for c, l in zip(current_parts, latest_parts):
+                    if l > c:
+                        has_update = True
+                        break
+            except Exception as e:
+                logger.warning(f"Failed to compare versions: {e}")
+                has_update = current_version != latest_version
         
         return VersionCheckResponse(
             current_version=current_version,
@@ -395,7 +700,8 @@ class HermesService:
         _update_progress = UpdateProgress(
             status="checking",
             progress=0,
-            message="正在检查更新..."
+            message="正在检查更新...",
+            error=None
         )
         
         asyncio.create_task(self._run_update())
@@ -409,52 +715,85 @@ class HermesService:
             _update_progress = UpdateProgress(
                 status="downloading",
                 progress=20,
-                message="正在下载最新版本..."
+                message="正在下载最新版本...",
+                error=None
             )
             
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             
             _update_progress = UpdateProgress(
                 status="installing",
-                progress=50,
-                message="正在安装更新..."
+                progress=40,
+                message="正在安装更新...",
+                error=None
             )
             
-            try:
-                process = await asyncio.create_subprocess_exec(
-                    "pip", "install", "--upgrade", "hermes-agent",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                
-                for i in range(5):
-                    await asyncio.sleep(1)
+            cmd = [self._pip_path, "install", "--upgrade", "hermes-agent"]
+            logger.info(f"Running pip upgrade: {' '.join(cmd)}")
+            
+            loop = asyncio.get_event_loop()
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env={
+                    **os.environ,
+                    "PATH": os.path.dirname(self._python_path) + os.pathsep + os.environ.get("PATH", "")
+                }
+            )
+            
+            for i in range(5):
+                await asyncio.sleep(1)
+                if _update_progress:
                     _update_progress = UpdateProgress(
                         status="installing",
-                        progress=50 + i * 10,
-                        message=f"正在安装更新... ({50 + i * 10}%)"
+                        progress=min(90, 40 + (i + 1) * 10),
+                        message=f"正在安装更新... ({min(90, 40 + (i + 1) * 10)}%)",
+                        error=None
                     )
+            
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=120.0
+                )
                 
-                await process.wait()
+                if stdout:
+                    logger.info(f"pip upgrade stdout: {stdout.decode()[:500]}")
+                if stderr:
+                    logger.warning(f"pip upgrade stderr: {stderr.decode()[:500]}")
                 
-            except Exception as e:
+                if process.returncode == 0:
+                    self._cached_version = None
+                    _update_progress = UpdateProgress(
+                        status="completed",
+                        progress=100,
+                        message="更新完成！建议重启系统以应用新版本。",
+                        error=None
+                    )
+                else:
+                    _update_progress = UpdateProgress(
+                        status="failed",
+                        progress=100,
+                        message="更新失败",
+                        error=stderr.decode()[:200] if stderr else f"返回码: {process.returncode}"
+                    )
+                    
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
                 _update_progress = UpdateProgress(
                     status="failed",
                     progress=100,
-                    message="更新失败",
-                    error=str(e)
+                    message="更新超时",
+                    error="安装过程耗时太长，请手动运行: pip install --upgrade hermes-agent"
                 )
-                return
-            
-            _update_progress = UpdateProgress(
-                status="completed",
-                progress=100,
-                message="更新完成！建议重启系统以应用新版本。"
-            )
-            
-            self._cached_version = None
-            
+                
         except Exception as e:
+            logger.error(f"Update failed: {e}")
             _update_progress = UpdateProgress(
                 status="failed",
                 progress=100,
