@@ -19,11 +19,18 @@ from app.schemas import (
     KnowledgeDocCreate,
     KnowledgeDocUpdate,
     KnowledgeDocResponse,
+    KnowledgeDocDetailResponse,
     KnowledgeDocListResponse,
+    KnowledgeDocContentUpdate,
     KnowledgeConfigResponse,
     KnowledgeConfigUpdate,
-    SyncStatusResponse,
     DeleteResult,
+    UploadResult,
+    ContentUpdateResult,
+    AllTagsResponse,
+    AllCategoriesResponse,
+    FileSystemInfo,
+    StatisticsResponse,
     APIResponse,
 )
 from app.services.auth_service import (
@@ -32,7 +39,6 @@ from app.services.auth_service import (
     permission_required,
 )
 from app.services.knowledge_service import KnowledgeService
-from app.services.hermes_sync_service import HermesSyncService
 
 router = APIRouter(prefix="/knowledge", tags=["知识库管理"])
 
@@ -48,8 +54,11 @@ def get_documents(
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     keyword: Optional[str] = Query(None, description="搜索关键词（标题、文件名、描述）"),
     category: Optional[str] = Query(None, description="文档分类"),
-    status: Optional[int] = Query(None, description="状态：1-已上传，2-已同步到Hermes，3-处理中，4-失败"),
-    sync_status: Optional[int] = Query(None, description="同步状态：0-未同步，1-已同步，2-同步失败"),
+    tag: Optional[str] = Query(None, description="标签"),
+    is_public: Optional[bool] = Query(None, description="是否公开"),
+    created_by: Optional[int] = Query(None, description="创建者ID"),
+    sort_by: str = Query("created_at", description="排序字段"),
+    sort_order: str = Query("desc", description="排序方式：asc 或 desc"),
     current_user: User = Depends(permission_required("knowledge:doc:query")),
     db: Session = Depends(get_db)
 ):
@@ -59,8 +68,11 @@ def get_documents(
         page_size=page_size,
         keyword=keyword,
         category=category,
-        status=status,
-        sync_status=sync_status,
+        tag=tag,
+        is_public=is_public,
+        created_by=created_by,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
     
     return APIResponse(
@@ -72,28 +84,32 @@ def get_documents(
 
 @router.get(
     "/docs/{doc_id}",
-    response_model=APIResponse[KnowledgeDocResponse],
+    response_model=APIResponse[KnowledgeDocDetailResponse],
     summary="获取文档详情",
-    description="根据ID获取文档的详细信息"
+    description="根据ID获取文档的详细信息，可选择包含文档内容"
 )
 def get_document(
     doc_id: int,
+    include_content: bool = Query(False, description="是否包含文档内容（仅文本文件）"),
     current_user: User = Depends(permission_required("knowledge:doc:detail")),
     db: Session = Depends(get_db)
 ):
     service = KnowledgeService(db)
-    doc = service.get_document_by_id(doc_id)
+    result, message = service.get_document_detail(
+        doc_id=doc_id,
+        include_content=include_content
+    )
     
-    if not doc:
+    if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="文档不存在"
+            detail=message
         )
     
     return APIResponse(
         code=200,
-        message="获取成功",
-        data=KnowledgeDocResponse.model_validate(doc)
+        message=message,
+        data=result
     )
 
 
@@ -101,7 +117,7 @@ def get_document(
     "/docs",
     response_model=APIResponse[KnowledgeDocResponse],
     summary="上传文档",
-    description="上传新的文档，自动同步到Hermes（如果启用自动同步）"
+    description="上传新的文档文件"
 )
 async def upload_document(
     title: str = Form(..., description="文档标题"),
@@ -154,11 +170,68 @@ async def upload_document(
     )
 
 
+@router.post(
+    "/docs/markdown",
+    response_model=APIResponse[KnowledgeDocResponse],
+    summary="创建Markdown文档",
+    description="直接创建新的Markdown文档（不通过文件上传）"
+)
+def create_markdown_document(
+    title: str = Form(..., description="文档标题"),
+    description: Optional[str] = Form(None, description="文档描述"),
+    tags: Optional[str] = Form(None, description="标签列表（JSON数组格式）"),
+    category: Optional[str] = Form(None, description="文档分类"),
+    is_public: bool = Form(True, description="是否公开"),
+    content: str = Form("", description="Markdown内容"),
+    filename: Optional[str] = Form(None, description="文件名（不包含.md扩展名）"),
+    current_user: User = Depends(permission_required("knowledge:doc:create")),
+    db: Session = Depends(get_db)
+):
+    tags_list = []
+    if tags:
+        try:
+            tags_list = json.loads(tags)
+            if not isinstance(tags_list, list):
+                tags_list = []
+        except json.JSONDecodeError:
+            tags_list = []
+    
+    doc_data = KnowledgeDocCreate(
+        title=title,
+        description=description,
+        tags=tags_list,
+        category=category,
+        is_public=is_public,
+    )
+    
+    use_filename = filename or title
+    
+    service = KnowledgeService(db)
+    doc, message = service.create_markdown_document(
+        content=content,
+        filename=use_filename,
+        doc_data=doc_data,
+        created_by=current_user.id,
+    )
+    
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message
+        )
+    
+    return APIResponse(
+        code=200,
+        message=message,
+        data=KnowledgeDocResponse.model_validate(doc)
+    )
+
+
 @router.put(
     "/docs/{doc_id}",
     response_model=APIResponse[KnowledgeDocResponse],
     summary="更新文档信息",
-    description="更新文档的元数据信息（不更新文件本身）"
+    description="更新文档的元数据信息（标题、描述、标签、分类、公开状态）"
 )
 def update_document(
     doc_id: int,
@@ -175,7 +248,7 @@ def update_document(
     )
     
     if not doc:
-        if "not found" in message.lower():
+        if "不存在" in message:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=message
@@ -193,14 +266,59 @@ def update_document(
     )
 
 
+@router.put(
+    "/docs/{doc_id}/content",
+    response_model=APIResponse[KnowledgeDocResponse],
+    summary="更新文档内容",
+    description="更新文本类型文档的内容（Markdown、txt等）"
+)
+def update_document_content(
+    doc_id: int,
+    update_data: KnowledgeDocContentUpdate,
+    current_user: User = Depends(permission_required("knowledge:doc:update")),
+    db: Session = Depends(get_db)
+):
+    service = KnowledgeService(db)
+    doc, message = service.update_document_content(
+        doc_id=doc_id,
+        content=update_data.content,
+        user_id=current_user.id,
+        is_admin=current_user.is_super_admin,
+    )
+    
+    if not doc:
+        if "不存在" in message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=message
+            )
+        elif "无权限" in message:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=message
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=message
+            )
+    
+    return APIResponse(
+        code=200,
+        message=message,
+        data=KnowledgeDocResponse.model_validate(doc)
+    )
+
+
 @router.delete(
     "/docs/{doc_id}",
     response_model=APIResponse[DeleteResult],
     summary="删除文档",
-    description="软删除文档，同时从Hermes同步目录移除"
+    description="软删除文档（可选择硬删除）"
 )
 def delete_document(
     doc_id: int,
+    hard_delete: bool = Query(False, description="是否硬删除（永久删除，不可恢复）"),
     current_user: User = Depends(permission_required("knowledge:doc:delete")),
     db: Session = Depends(get_db)
 ):
@@ -209,10 +327,11 @@ def delete_document(
         doc_id=doc_id,
         user_id=current_user.id,
         is_admin=current_user.is_super_admin,
+        hard_delete=hard_delete,
     )
     
     if not success:
-        if "not found" in message.lower():
+        if "不存在" in message:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=message
@@ -226,7 +345,7 @@ def delete_document(
     return APIResponse(
         code=200,
         message=message,
-        data=DeleteResult(success=True, message=message)
+        data=DeleteResult(success=success, message=message)
     )
 
 
@@ -258,43 +377,10 @@ def download_document(
     )
 
 
-@router.post(
-    "/docs/{doc_id}/sync",
-    response_model=APIResponse[SyncStatusResponse],
-    summary="手动同步文档到Hermes",
-    description="手动将文档同步到Hermes workspace目录"
-)
-def sync_document(
-    doc_id: int,
-    current_user: User = Depends(permission_required("knowledge:doc:sync")),
-    db: Session = Depends(get_db)
-):
-    service = KnowledgeService(db)
-    success, message = service.sync_document(doc_id)
-    
-    doc = service.get_document_by_id(doc_id)
-    if not doc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="文档不存在"
-        )
-    
-    return APIResponse(
-        code=200 if success else 500,
-        message=message,
-        data=SyncStatusResponse(
-            doc_id=doc.id,
-            sync_status=doc.sync_status,
-            synced_at=doc.synced_at,
-            message=message,
-        )
-    )
-
-
 @router.get(
     "/categories",
-    response_model=APIResponse[List[str]],
-    summary="获取文档分类列表",
+    response_model=APIResponse[AllCategoriesResponse],
+    summary="获取所有分类",
     description="获取所有已使用的文档分类"
 )
 def get_categories(
@@ -302,12 +388,89 @@ def get_categories(
     db: Session = Depends(get_db)
 ):
     service = KnowledgeService(db)
-    categories = service.get_categories()
+    categories = service.get_all_categories()
     
     return APIResponse(
         code=200,
         message="获取成功",
-        data=categories
+        data=AllCategoriesResponse(
+            categories=categories,
+            total=len(categories)
+        )
+    )
+
+
+@router.get(
+    "/tags",
+    response_model=APIResponse[AllTagsResponse],
+    summary="获取所有标签",
+    description="获取所有已使用的文档标签"
+)
+def get_tags(
+    current_user: User = Depends(permission_required("knowledge:doc:query")),
+    db: Session = Depends(get_db)
+):
+    service = KnowledgeService(db)
+    tags = service.get_all_tags()
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=AllTagsResponse(
+            tags=tags,
+            total=len(tags)
+        )
+    )
+
+
+@router.get(
+    "/statistics",
+    response_model=APIResponse[StatisticsResponse],
+    summary="获取知识库统计信息",
+    description="获取知识库的统计信息（文档数量、大小、分类、标签等）"
+)
+def get_statistics(
+    current_user: User = Depends(permission_required("knowledge:config:view")),
+    db: Session = Depends(get_db)
+):
+    service = KnowledgeService(db)
+    stats = service.get_statistics()
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=StatisticsResponse(**stats)
+    )
+
+
+@router.get(
+    "/storage",
+    response_model=APIResponse[FileSystemInfo],
+    summary="获取存储信息",
+    description="获取文件系统存储信息（总文件数、总大小、可用空间等"
+)
+def get_storage_info(
+    current_user: User = Depends(permission_required("knowledge:config:view")),
+    db: Session = Depends(get_db)
+):
+    service = KnowledgeService(db)
+    info = service.get_storage_info()
+    
+    if not info:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="无法获取存储信息"
+        )
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=FileSystemInfo(
+            base_path=info.get("base_path", ""),
+            total_files=info.get("total_files", 0),
+            total_size=info.get("total_size", 0),
+            free_space=info.get("free_space", 0)
+        )
     )
 
 
@@ -358,28 +521,4 @@ def update_config(
         code=200,
         message="更新成功",
         data=KnowledgeConfigResponse.model_validate(config)
-    )
-
-
-@router.get(
-    "/hermes-files",
-    response_model=APIResponse[List[dict]],
-    summary="获取Hermes workspace文件列表",
-    description="获取Hermes workspace目录中的所有文件"
-)
-def get_hermes_files(
-    current_user: User = Depends(permission_required("knowledge:config:view")),
-    db: Session = Depends(get_db)
-):
-    sync_service = HermesSyncService(db)
-    files = sync_service.list_hermes_files()
-    
-    return APIResponse(
-        code=200,
-        message="获取成功",
-        data=[{
-            "filename": f["filename"],
-            "size": f["size"],
-            "modified": f["modified"].isoformat() if f["modified"] else None
-        } for f in files]
     )

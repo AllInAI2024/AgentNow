@@ -1,6 +1,6 @@
 -- 智现 AgentNow 智能体平台数据库初始化脚本
 -- 数据库: agentnow
--- 版本: v7.0 (新增知识库管理)
+-- 版本: v8.0 (知识库管理 v2.0 - 集成 mcp-markdown-vault)
 -- 日期: 2026-04-28
 
 -- 创建数据库
@@ -11,8 +11,6 @@ USE agentnow;
 -- ============================================
 -- 一、部门表
 -- ============================================
--- 部门是树形结构，支持多级部门
--- 删除父级部门时级联删除所有子部门
 CREATE TABLE IF NOT EXISTS departments (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '部门ID',
     parent_id BIGINT DEFAULT 0 COMMENT '父部门ID（0表示顶级部门）',
@@ -32,10 +30,6 @@ CREATE TABLE IF NOT EXISTS departments (
 -- ============================================
 -- 二、用户表（员工表）
 -- ============================================
--- 用户可以用 login_name（登录名）或 phone（手机号）登录
--- login_name 是必填的唯一登录账号
--- phone 是可选的，但如果设置了必须唯一
--- 员工必须属于某一个部门（department_id 不为空）
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '用户ID',
     department_id BIGINT COMMENT '所属部门ID',
@@ -146,31 +140,25 @@ CREATE TABLE IF NOT EXISTS knowledge_configs (
 CREATE TABLE IF NOT EXISTS knowledge_docs (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '文档ID',
     title VARCHAR(500) NOT NULL COMMENT '文档标题',
-    file_name VARCHAR(500) NOT NULL COMMENT '原始文件名',
-    file_path VARCHAR(1000) COMMENT 'AgentNow 存储路径（相对路径）',
-    hermes_path VARCHAR(1000) COMMENT 'Hermes workspace 中的路径（相对路径）',
+    file_name VARCHAR(500) NOT NULL COMMENT '文件名',
+    file_path VARCHAR(1000) NOT NULL COMMENT '相对存储路径（相对于知识库根目录）',
     file_size BIGINT DEFAULT 0 COMMENT '文件大小（字节）',
     file_type VARCHAR(50) COMMENT '文件类型/扩展名',
     mime_type VARCHAR(100) COMMENT 'MIME类型',
     content_hash VARCHAR(64) COMMENT '文件内容哈希值（SHA256）',
-    status TINYINT DEFAULT 1 COMMENT '状态：1-已上传，2-已同步到Hermes，3-处理中，4-失败',
-    sync_status TINYINT DEFAULT 0 COMMENT '同步状态：0-未同步，1-已同步，2-同步失败',
-    sync_error TEXT COMMENT '同步失败错误信息',
-    synced_at DATETIME COMMENT '同步到Hermes的时间',
     description TEXT COMMENT '文档描述/摘要',
-    tags JSON COMMENT '标签列表',
+    tags JSON COMMENT '标签列表，JSON数组格式',
     category VARCHAR(100) COMMENT '文档分类',
-    created_by BIGINT COMMENT '上传者用户ID',
+    created_by BIGINT COMMENT '创建者用户ID',
+    updated_by BIGINT COMMENT '最后更新者用户ID',
     is_public BOOLEAN DEFAULT TRUE COMMENT '是否公开',
-    embedding_id VARCHAR(255) COMMENT 'Hermes embedding ID',
-    embedding_info JSON COMMENT 'Hermes embedding 相关信息',
+    word_count BIGINT DEFAULT 0 COMMENT '字数统计（仅文本文件）',
+    file_modified_at DATETIME COMMENT '文件最后修改时间',
     deleted_at DATETIME COMMENT '删除时间（软删除）',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     INDEX idx_title (title),
     INDEX idx_file_name (file_name),
-    INDEX idx_status (status),
-    INDEX idx_sync_status (sync_status),
     INDEX idx_category (category),
     INDEX idx_created_by (created_by),
     INDEX idx_created_at (created_at),
@@ -178,30 +166,7 @@ CREATE TABLE IF NOT EXISTS knowledge_docs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库文档表';
 
 -- ============================================
--- 九、文档分块表
--- ============================================
-CREATE TABLE IF NOT EXISTS knowledge_doc_chunks (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '分块ID',
-    doc_id BIGINT NOT NULL COMMENT '所属文档ID',
-    chunk_index INT COMMENT '分块序号',
-    chunk_content TEXT COMMENT '分块原文内容',
-    chunk_hash VARCHAR(64) COMMENT '分块内容哈希',
-    start_position BIGINT COMMENT '起始位置',
-    end_position BIGINT COMMENT '结束位置',
-    char_count INT COMMENT '字符数',
-    token_count INT COMMENT '预估token数',
-    hermes_embedding_id VARCHAR(255) COMMENT 'Hermes embedding ID',
-    embedding_info JSON COMMENT 'Embedding 元信息',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    FOREIGN KEY (doc_id) REFERENCES knowledge_docs(id) ON DELETE CASCADE,
-    INDEX idx_doc_id (doc_id),
-    INDEX idx_chunk_index (chunk_index),
-    INDEX idx_hermes_embedding_id (hermes_embedding_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档分块表';
-
--- ============================================
--- 十、初始化数据
+-- 九、初始化数据
 -- ============================================
 
 -- 插入系统内置角色
@@ -212,7 +177,6 @@ VALUES
 ('普通用户', 'user', '普通用户，拥有基本操作权限');
 
 -- 插入系统权限/功能点（菜单结构）
--- 一级菜单（按sort排序：1-工作台, 2-智能体管理, 3-知识库管理, 4-系统管理）
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
 (0, '工作台', 'dashboard', 1, '/dashboard', 'dashboard', 1),
@@ -239,8 +203,7 @@ VALUES
 (@knowledge_id, '文档列表', 'knowledge:document', 1, '/knowledge/document', 'file', 1),
 (@knowledge_id, '知识库设置', 'knowledge:setting', 1, '/knowledge/setting', 'setting', 2);
 
--- 二级菜单 - 系统管理（包含组织管理、角色权限、系统设置，用分割线分隔）
--- 组织管理部分
+-- 二级菜单 - 系统管理
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
 (@system_id, '部门管理', 'department', 1, '/organization/department', 'apartment', 1),
@@ -313,8 +276,7 @@ VALUES
 (@knowledge_doc_id, '文档上传', 'knowledge:doc:create', 3, '/api/v1/knowledge/docs'),
 (@knowledge_doc_id, '文档编辑', 'knowledge:doc:update', 3, '/api/v1/knowledge/docs/:id'),
 (@knowledge_doc_id, '文档删除', 'knowledge:doc:delete', 3, '/api/v1/knowledge/docs/:id'),
-(@knowledge_doc_id, '文档下载', 'knowledge:doc:download', 3, '/api/v1/knowledge/docs/:id/download'),
-(@knowledge_doc_id, '文档同步', 'knowledge:doc:sync', 3, '/api/v1/knowledge/docs/:id/sync');
+(@knowledge_doc_id, '文档下载', 'knowledge:doc:download', 3, '/api/v1/knowledge/docs/:id/download');
 
 -- 知识库设置相关按钮权限
 INSERT INTO permissions (parent_id, name, code, type, path)
@@ -324,12 +286,10 @@ VALUES
 
 -- 初始化知识库配置
 INSERT INTO knowledge_configs (config_key, config_value, description) VALUES
-('storage.base_path', './data/knowledge_docs', 'AgentNow 知识库文档存储根目录'),
-('hermes.workspace_path', '~/.hermes/workspace/docs', 'Hermes workspace 文档目录'),
-('sync.auto_sync', 'true', '是否自动同步到Hermes'),
+('storage.base_path', '~/.agentnow/knowledge/docs', '知识库文档存储根目录'),
 ('file.max_size', '104857600', '单文件最大大小（字节，默认100MB）'),
 ('file.allowed_types', '.pdf,.doc,.docx,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.html,.htm,.xml', '允许上传的文件类型'),
-('embedding.enabled', 'false', '是否启用embedding（基础版本为false）');
+('mcp.enabled', 'true', '是否启用MCP服务（供Hermes调用）');
 
 -- 为超级管理员角色分配所有权限
 SET @super_admin_role_id = (SELECT id FROM roles WHERE code = 'super_admin');
@@ -355,7 +315,6 @@ WHERE code IN (
     'knowledge', 'knowledge:document', 'knowledge:setting',
     'knowledge:doc:query', 'knowledge:doc:detail', 'knowledge:doc:create',
     'knowledge:doc:update', 'knowledge:doc:delete', 'knowledge:doc:download',
-    'knowledge:doc:sync',
     'knowledge:config:view', 'knowledge:config:edit'
 );
 
@@ -373,7 +332,7 @@ WHERE code IN (
 );
 
 -- ============================================
--- 七、初始化默认管理员用户
+-- 十、初始化默认管理员用户
 -- ============================================
 -- 默认管理员账号：
 -- 登录名: admin
@@ -430,3 +389,24 @@ VALUES (@admin_user_id, @super_admin_role_id);
 -- 手机号: 13651165117
 -- 密码: 123456
 -- 注意: 首次登录后必须修改密码
+
+-- ============================================
+-- 知识库目录创建提示
+-- ============================================
+-- 创建知识库存储目录：
+-- mkdir -p ~/.agentnow/knowledge/docs
+-- chmod -R 755 ~/.agentnow/knowledge/
+
+-- ============================================
+-- MCP Server 配置提示
+-- ============================================
+-- 在 ~/.hermes/config.yaml 中添加：
+--
+-- mcp_servers:
+--   agentnow_knowledge:
+--     command: npx
+--     args:
+--       - "-y"
+--       - "@wirux/mcp-markdown-vault"
+--     env:
+--       VAULT_PATH: "/Users/yourname/.agentnow/knowledge/docs"

@@ -131,26 +131,26 @@ export interface KnowledgeDoc {
   id: number
   title: string
   file_name: string
-  file_path: string | null
-  hermes_path: string | null
+  file_path: string
   file_size: number
   file_type: string | null
   mime_type: string | null
   content_hash: string | null
-  status: number
-  sync_status: number
-  sync_error: string | null
-  synced_at: string | null
   description: string | null
   tags: string[]
   category: string | null
   created_by: number
+  updated_by: number | null
   is_public: boolean
-  embedding_id: string | null
-  embedding_info: Record<string, unknown> | null
+  word_count: number | null
+  file_modified_at: string | null
   deleted_at: string | null
   created_at: string | null
   updated_at: string | null
+}
+
+export interface KnowledgeDocDetail extends KnowledgeDoc {
+  content?: string
 }
 
 export interface KnowledgeDocList {
@@ -177,6 +177,10 @@ export interface UpdateKnowledgeDocParams {
   is_public?: boolean
 }
 
+export interface UpdateKnowledgeDocContentParams {
+  content: string
+}
+
 export interface KnowledgeConfig {
   id: number
   config_key: string
@@ -186,20 +190,38 @@ export interface KnowledgeConfig {
   updated_at: string | null
 }
 
-export interface SyncStatus {
-  doc_id: number
-  sync_status: number
-  synced_at: string | null
-  message: string
-}
-
 export interface DeleteResult {
   success: boolean
   message: string
 }
 
-export interface HermesFile {
-  filename: string
-  size: number
-  modified: string | null
+export interface UploadResult {
+  doc: KnowledgeDoc
+  message: string
+}
+
+export interface AllTagsResponse {
+  tags: string[]
+  total: number
+}
+
+export interface AllCategoriesResponse {
+  categories: string[]
+  total: number
+}
+
+export interface FileSystemInfo {
+  base_path: string
+  total_files: number
+  total_size: number
+  free_space: number
+}
+
+export interface StatisticsResponse {
+  total_docs: number
+  total_size: number
+  total_categories: number
+  total_tags: number
+  public_docs: number
+  recent_uploads: number
 }

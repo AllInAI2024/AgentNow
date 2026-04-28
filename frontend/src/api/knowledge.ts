@@ -1,12 +1,16 @@
 import http from './http'
 import type { 
   KnowledgeDoc, 
+  KnowledgeDocDetail,
   KnowledgeDocList, 
   KnowledgeConfig,
-  SyncStatus,
   DeleteResult,
-  HermesFile,
+  AllTagsResponse,
+  AllCategoriesResponse,
+  FileSystemInfo,
+  StatisticsResponse,
   UpdateKnowledgeDocParams,
+  UpdateKnowledgeDocContentParams,
   APIResponse 
 } from '@/types'
 
@@ -16,14 +20,22 @@ export const knowledgeApi = {
     page_size?: number
     keyword?: string
     category?: string
-    status?: number
-    sync_status?: number
+    tag?: string
+    is_public?: boolean
+    created_by?: number
+    sort_by?: string
+    sort_order?: string
   }): Promise<APIResponse<KnowledgeDocList>> => {
     return http.get('/knowledge/docs', { params })
   },
 
-  getDocById: (id: number): Promise<APIResponse<KnowledgeDoc>> => {
-    return http.get(`/knowledge/docs/${id}`)
+  getDocById: (
+    id: number,
+    includeContent: boolean = false
+  ): Promise<APIResponse<KnowledgeDocDetail>> => {
+    return http.get(`/knowledge/docs/${id}`, {
+      params: { include_content: includeContent }
+    })
   },
 
   uploadDoc: (
@@ -38,12 +50,54 @@ export const knowledgeApi = {
     })
   },
 
-  updateDoc: (id: number, params: UpdateKnowledgeDocParams): Promise<APIResponse<KnowledgeDoc>> => {
+  createMarkdownDoc: (
+    params: {
+      title: string
+      description?: string
+      tags?: string
+      category?: string
+      is_public?: boolean
+      content?: string
+      filename?: string
+    }
+  ): Promise<APIResponse<KnowledgeDoc>> => {
+    const formData = new FormData()
+    formData.append('title', params.title)
+    if (params.description) formData.append('description', params.description)
+    if (params.tags) formData.append('tags', params.tags)
+    if (params.category) formData.append('category', params.category)
+    formData.append('is_public', String(params.is_public ?? true))
+    formData.append('content', params.content ?? '')
+    if (params.filename) formData.append('filename', params.filename)
+
+    return http.post('/knowledge/docs/markdown', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
+
+  updateDoc: (
+    id: number,
+    params: UpdateKnowledgeDocParams
+  ): Promise<APIResponse<KnowledgeDoc>> => {
     return http.put(`/knowledge/docs/${id}`, params)
   },
 
-  deleteDoc: (id: number): Promise<APIResponse<DeleteResult>> => {
-    return http.delete(`/knowledge/docs/${id}`)
+  updateDocContent: (
+    id: number,
+    params: UpdateKnowledgeDocContentParams
+  ): Promise<APIResponse<KnowledgeDoc>> => {
+    return http.put(`/knowledge/docs/${id}/content`, params)
+  },
+
+  deleteDoc: (
+    id: number,
+    hardDelete: boolean = false
+  ): Promise<APIResponse<DeleteResult>> => {
+    return http.delete(`/knowledge/docs/${id}`, {
+      params: { hard_delete: hardDelete }
+    })
   },
 
   downloadDoc: (id: number): Promise<Blob> => {
@@ -52,25 +106,32 @@ export const knowledgeApi = {
     })
   },
 
-  syncDoc: (id: number): Promise<APIResponse<SyncStatus>> => {
-    return http.post(`/knowledge/docs/${id}/sync`)
+  getCategories: (): Promise<APIResponse<AllCategoriesResponse>> => {
+    return http.get('/knowledge/categories')
   },
 
-  getCategories: (): Promise<APIResponse<string[]>> => {
-    return http.get('/knowledge/categories')
+  getTags: (): Promise<APIResponse<AllTagsResponse>> => {
+    return http.get('/knowledge/tags')
+  },
+
+  getStatistics: (): Promise<APIResponse<StatisticsResponse>> => {
+    return http.get('/knowledge/statistics')
+  },
+
+  getStorageInfo: (): Promise<APIResponse<FileSystemInfo>> => {
+    return http.get('/knowledge/storage')
   },
 
   getConfigs: (): Promise<APIResponse<KnowledgeConfig[]>> => {
     return http.get('/knowledge/configs')
   },
 
-  updateConfig: (id: number, configValue: string): Promise<APIResponse<KnowledgeConfig>> => {
+  updateConfig: (
+    id: number,
+    configValue: string
+  ): Promise<APIResponse<KnowledgeConfig>> => {
     return http.put(`/knowledge/configs/${id}`, {
       config_value: configValue,
     })
-  },
-
-  getHermesFiles: (): Promise<APIResponse<HermesFile[]>> => {
-    return http.get('/knowledge/hermes-files')
   },
 }

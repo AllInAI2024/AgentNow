@@ -24,20 +24,22 @@ class KnowledgeDocUpdate(BaseModel):
     is_public: Optional[bool] = None
 
 
+class KnowledgeDocContentUpdate(BaseModel):
+    content: str = Field(..., description="文档内容（Markdown 或文本）")
+
+
 class KnowledgeDocResponse(KnowledgeDocBase):
     id: int
     file_name: str
+    file_path: str
     file_size: int
     file_type: Optional[str] = None
     mime_type: Optional[str] = None
     content_hash: Optional[str] = None
-    status: int
-    sync_status: int
-    sync_error: Optional[str] = None
-    synced_at: Optional[datetime] = None
     created_by: int
-    embedding_id: Optional[str] = None
-    embedding_info: Optional[Dict[str, Any]] = None
+    updated_by: Optional[int] = None
+    word_count: Optional[int] = None
+    file_modified_at: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -46,31 +48,16 @@ class KnowledgeDocResponse(KnowledgeDocBase):
         from_attributes = True
 
 
+class KnowledgeDocDetailResponse(KnowledgeDocResponse):
+    content: Optional[str] = None
+
+
 class KnowledgeDocListResponse(BaseModel):
     items: List[KnowledgeDocResponse]
     total: int
     page: int
     page_size: int
     total_pages: int
-
-
-class KnowledgeDocChunkResponse(BaseModel):
-    id: int
-    doc_id: int
-    chunk_index: Optional[int] = None
-    chunk_content: Optional[str] = None
-    chunk_hash: Optional[str] = None
-    start_position: Optional[int] = None
-    end_position: Optional[int] = None
-    char_count: Optional[int] = None
-    token_count: Optional[int] = None
-    hermes_embedding_id: Optional[str] = None
-    embedding_info: Optional[Dict[str, Any]] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
 
 
 class KnowledgeConfigBase(BaseModel):
@@ -92,19 +79,43 @@ class KnowledgeConfigResponse(KnowledgeConfigBase):
         from_attributes = True
 
 
-class SyncStatusResponse(BaseModel):
-    doc_id: int
-    sync_status: int
-    synced_at: Optional[datetime] = None
+class DeleteResult(BaseModel):
+    success: bool
     message: str
 
 
 class UploadResult(BaseModel):
     doc: KnowledgeDocResponse
-    sync_status: int
     message: str = "上传成功"
 
 
-class DeleteResult(BaseModel):
-    success: bool
-    message: str
+class ContentUpdateResult(BaseModel):
+    doc: KnowledgeDocResponse
+    content: str
+    message: str = "内容更新成功"
+
+
+class AllTagsResponse(BaseModel):
+    tags: List[str]
+    total: int
+
+
+class AllCategoriesResponse(BaseModel):
+    categories: List[str]
+    total: int
+
+
+class FileSystemInfo(BaseModel):
+    base_path: str
+    total_files: int
+    total_size: int
+    free_space: int
+
+
+class StatisticsResponse(BaseModel):
+    total_docs: int
+    total_size: int
+    total_categories: int
+    total_tags: int
+    public_docs: int
+    recent_uploads: int
