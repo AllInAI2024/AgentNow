@@ -8,23 +8,9 @@
               <RobotOutlined class="logo-robot" />
             </div>
             <div class="logo-text">
-              <span class="logo-brand">智现</span>
-              <span class="logo-name">AgentNow</span>
+              <span class="logo-primary">AgentNow</span>
+              <span class="logo-secondary">智现</span>
             </div>
-          </div>
-        </div>
-
-        <div class="header-center">
-          <div class="search-bar">
-            <SearchOutlined class="search-icon" />
-            <input
-              type="text"
-              class="search-input"
-              placeholder="搜索智能体、文档或功能..."
-              @focus="handleSearchFocus"
-              @blur="handleSearchBlur"
-            />
-            <span class="search-hint">⌘K</span>
           </div>
         </div>
 
@@ -351,7 +337,6 @@ import {
   AppstoreOutlined,
   BellOutlined,
   QuestionCircleOutlined,
-  SearchOutlined,
   SettingOutlined,
   ArrowRightOutlined,
   ArrowUpOutlined,
@@ -388,14 +373,6 @@ const getCurrentDate = () => {
   const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   const weekday = weekdays[now.getDay()]
   return `${month}月${day}日 ${weekday}`
-}
-
-const handleSearchFocus = () => {
-  console.log('Search focus')
-}
-
-const handleSearchBlur = () => {
-  console.log('Search blur')
 }
 
 const handleGoHome = () => {
@@ -477,22 +454,40 @@ const handleAgents = () => {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.logo-wrapper:hover {
+  background: rgba(22, 93, 255, 0.05);
 }
 
 .logo-icon {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
-  border-radius: 10px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(22, 93, 255, 0.25);
+  box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3);
+  position: relative;
+}
+
+.logo-icon::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 50%);
 }
 
 .logo-robot {
-  font-size: 20px;
+  font-size: 22px;
   color: white;
+  position: relative;
+  z-index: 1;
 }
 
 .logo-text {
@@ -501,66 +496,24 @@ const handleAgents = () => {
   gap: 2px;
 }
 
-.logo-brand {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1d2129;
+.logo-primary {
+  font-size: 18px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
 }
 
-.logo-name {
-  font-size: 12px;
-  font-weight: 500;
-  color: #86909c;
-}
-
-.header-center {
-  flex: 1;
-  max-width: 480px;
-  padding: 0 32px;
-}
-
-.search-bar {
-  display: flex;
-  align-items: center;
-  padding: 8px 16px;
-  background: #f7f8fa;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  transition: all 0.2s ease;
-}
-
-.search-bar:focus-within {
-  background: #ffffff;
-  border-color: #165DFF;
-  box-shadow: 0 0 0 3px rgba(22, 93, 255, 0.08);
-}
-
-.search-icon {
-  color: #86909c;
-  font-size: 16px;
-  margin-right: 8px;
-}
-
-.search-input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  font-size: 14px;
-  color: #1d2129;
-  outline: none;
-}
-
-.search-input::placeholder {
-  color: #c9cdd4;
-}
-
-.search-hint {
+.logo-secondary {
   font-size: 11px;
-  color: #86909c;
-  background: rgba(0, 0, 0, 0.04);
-  padding: 2px 8px;
-  border-radius: 4px;
   font-weight: 500;
+  color: #86909c;
+  padding: 2px 6px;
+  background: rgba(22, 93, 255, 0.06);
+  border-radius: 4px;
+  width: fit-content;
 }
 
 .header-right {
