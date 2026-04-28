@@ -37,9 +37,6 @@ class KnowledgeConfig(Base):
     def get_config_keys():
         return {
             "storage.base_path": "./data/knowledge_docs",
-            "hermes.workspace_path": "~/.hermes/workspace/docs",
-            "sync.auto_sync": "true",
             "file.max_size": "104857600",
             "file.allowed_types": ".pdf,.doc,.docx,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.html,.htm,.xml",
-            "embedding.enabled": "false",
         }
