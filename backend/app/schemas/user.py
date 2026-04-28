@@ -20,7 +20,7 @@ class UserLogin(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=6, max_length=100, description="密码")
+    password: Optional[str] = Field(None, min_length=6, max_length=100, description="密码（可选，不填则使用默认密码）")
     avatar_url: Optional[str] = Field(None, max_length=500, description="头像URL")
     hermes_profile: Optional[str] = Field(None, max_length=100, description="对应的 Hermes Profile 名称")
     hermes_profile_config: Optional[str] = Field(None, description="Hermes Profile 配置(JSON)")

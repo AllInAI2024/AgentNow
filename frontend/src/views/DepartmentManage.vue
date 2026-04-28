@@ -234,7 +234,16 @@ const flattenTree = (items: DepartmentTree[], level: number = 0): DepartmentList
   const result: DepartmentListItem[] = []
   items.forEach(item => {
     result.push({
-      ...item,
+      id: item.id,
+      parent_id: item.parent_id,
+      name: item.name,
+      code: item.code,
+      description: item.description,
+      sort: item.sort,
+      status: item.status,
+      leader_id: item.leader_id,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
       level,
       hasChildren: item.children && item.children.length > 0,
     })
