@@ -271,3 +271,109 @@ class ProfileMemoryListItem(BaseModel):
 class ProfileMemoryListResponse(BaseModel):
     items: List[ProfileMemoryListItem] = Field(default_factory=list, description="Profile 记忆列表")
     total: int = Field(0, description="总数量")
+
+
+class ConfigItem(BaseModel):
+    key: str = Field(..., description="配置项键名")
+    value: Optional[str] = Field(None, description="配置项值（已脱敏）")
+    display_value: Optional[str] = Field(None, description="显示值（已脱敏处理）")
+    description: Optional[str] = Field(None, description="配置项描述")
+    category: str = Field(..., description="配置分类")
+    is_sensitive: bool = Field(False, description="是否为敏感配置")
+    is_editable: bool = Field(False, description="是否可编辑")
+    source: str = Field("config.yaml", description="配置来源: config.yaml 或 .env")
+
+
+class ConfigCategory(str, Enum):
+    MODEL = "model"
+    TERMINAL = "terminal"
+    API_SERVER = "api_server"
+    MEMORY = "memory"
+    COMPRESSION = "compression"
+    TOOLS = "tools"
+    GENERAL = "general"
+
+
+class ModelConfig(BaseModel):
+    default_model: Optional[str] = Field(None, description="默认模型")
+    model_provider: Optional[str] = Field(None, description="模型提供商")
+    context_window: Optional[int] = Field(None, description="上下文窗口大小(tokens)")
+    temperature: Optional[float] = Field(None, description="温度参数")
+    max_tokens: Optional[int] = Field(None, description="最大输出tokens")
+
+
+class TerminalConfig(BaseModel):
+    backend: Optional[str] = Field(None, description="终端后端: local/docker/ssh/modal/daytona/singularity")
+    cwd: Optional[str] = Field(None, description="工作目录")
+    timeout: Optional[int] = Field(None, description="命令超时时间(秒)")
+    env_passthrough: List[str] = Field(default_factory=list, description="允许传递的环境变量")
+
+
+class APIServerConfig(BaseModel):
+    enabled: bool = Field(False, description="是否启用API Server")
+    port: Optional[int] = Field(None, description="服务端口")
+    host: Optional[str] = Field(None, description="绑定地址")
+    cors_origins: List[str] = Field(default_factory=list, description="CORS允许的来源")
+    model_name: Optional[str] = Field(None, description="模型名称显示")
+
+
+class MemoryConfig(BaseModel):
+    memory_char_limit: int = Field(2200, description="MEMORY.md字符限制")
+    user_char_limit: int = Field(1375, description="USER.md字符限制")
+    auto_save: bool = Field(True, description="是否自动保存记忆")
+
+
+class CompressionConfig(BaseModel):
+    enabled: bool = Field(True, description="是否启用压缩")
+    strategy: Optional[str] = Field(None, description="压缩策略")
+    threshold_tokens: Optional[int] = Field(None, description="触发压缩的token阈值")
+
+
+class ToolsConfig(BaseModel):
+    enabled_tools: List[str] = Field(default_factory=list, description="启用的工具列表")
+    disabled_tools: List[str] = Field(default_factory=list, description="禁用的工具列表")
+
+
+class GeneralConfig(BaseModel):
+    log_level: Optional[str] = Field(None, description="日志级别")
+    auto_update: bool = Field(False, description="是否自动更新")
+    telemetry_enabled: bool = Field(True, description="是否启用遥测")
+
+
+class ConfigResponse(BaseModel):
+    profile_name: str = Field("global", description="Profile名称，global表示全局配置")
+    model: ModelConfig = Field(default_factory=ModelConfig, description="模型配置")
+    terminal: TerminalConfig = Field(default_factory=TerminalConfig, description="终端配置")
+    api_server: APIServerConfig = Field(default_factory=APIServerConfig, description="API Server配置")
+    memory: MemoryConfig = Field(default_factory=MemoryConfig, description="记忆配置")
+    compression: CompressionConfig = Field(default_factory=CompressionConfig, description="压缩配置")
+    tools: ToolsConfig = Field(default_factory=ToolsConfig, description="工具配置")
+    general: GeneralConfig = Field(default_factory=GeneralConfig, description="通用配置")
+    raw_config: Optional[str] = Field(None, description="原始配置内容（仅供调试，敏感信息已脱敏）")
+    config_file_path: Optional[str] = Field(None, description="配置文件路径")
+    env_file_path: Optional[str] = Field(None, description="环境变量文件路径")
+    last_updated: Optional[datetime] = Field(None, description="配置最后更新时间")
+
+
+class ConfigUpdateRequest(BaseModel):
+    category: str = Field(..., description="配置分类")
+    key: str = Field(..., description="配置项键名")
+    value: str = Field(..., description="配置值")
+
+
+class ConfigUpdateResponse(BaseModel):
+    success: bool = Field(..., description="是否更新成功")
+    message: str = Field(..., description="结果消息")
+    updated_key: Optional[str] = Field(None, description="更新的配置项")
+
+
+class ConfigProfileItem(BaseModel):
+    name: str = Field(..., description="Profile名称")
+    display_name: str = Field(..., description="显示名称")
+    has_config: bool = Field(True, description="是否有配置文件")
+    is_global: bool = Field(False, description="是否为全局配置")
+
+
+class ConfigProfileListResponse(BaseModel):
+    items: List[ConfigProfileItem] = Field(default_factory=list, description="Profile列表")
+    total: int = Field(0, description="总数量")

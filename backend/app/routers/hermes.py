@@ -21,6 +21,8 @@ from app.schemas.hermes import (
     BuiltinToolListResponse,
     MemoryResponse,
     ProfileMemoryListResponse,
+    ConfigResponse,
+    ConfigProfileListResponse,
 )
 from app.schemas.user import APIResponse
 from app.services.auth_service import get_db, get_current_user
@@ -629,4 +631,78 @@ async def get_profile_memory(
         code=200,
         message="获取成功",
         data=memory
+    )
+
+
+@router.get(
+    "/config/profiles",
+    response_model=APIResponse[ConfigProfileListResponse],
+    summary="获取配置 Profile 列表",
+    description="获取所有可用的配置 Profile 列表，包括全局配置和各 Profile 配置"
+)
+async def get_config_profiles(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    profiles = hermes_service.list_config_profiles(db)
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=profiles
+    )
+
+
+@router.get(
+    "/config",
+    response_model=APIResponse[ConfigResponse],
+    summary="获取全局配置",
+    description="获取 Hermes 全局配置信息（config.yaml 和 .env），敏感信息已脱敏"
+)
+async def get_global_config(
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    config = hermes_service.get_config("global")
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=config
+    )
+
+
+@router.get(
+    "/config/{profile_name}",
+    response_model=APIResponse[ConfigResponse],
+    summary="获取指定 Profile 的配置",
+    description="获取指定 Profile 的配置信息，敏感信息已脱敏"
+)
+async def get_profile_config(
+    profile_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    config = hermes_service.get_config(profile_name)
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=config
     )
