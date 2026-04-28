@@ -944,9 +944,7 @@ const searchAvailableSkills = () => {
 const handleInstallAvailableSkill = async (skill: AvailableSkill) => {
   try {
     const res = await hermesApi.installSkill({
-      skill_name: skill.name,
-      category: skill.category,
-      version: skill.version,
+      identifier: skill.identifier,
     })
     if (res.code === 200) {
       message.success('安装成功')

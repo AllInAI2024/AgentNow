@@ -1312,13 +1312,25 @@ class HermesService:
         
         return installed
 
+    def _parse_table_row(self, line: str) -> Optional[List[str]]:
+        if "│" in line:
+            parts = [p.strip() for p in line.split("│")]
+            if len(parts) >= 6:
+                return parts
+        if "┃" in line:
+            parts = [p.strip() for p in line.split("┃")]
+            if len(parts) >= 6:
+                return parts
+        return None
+
     def search_available_skills(self, query: Optional[str] = None) -> List[Dict[str, Any]]:
-        cmd = [self._hermes_path, "skills", "browse", "--size", "50"]
+        search_query = query or "."
+        cmd = [self._hermes_path, "skills", "search", search_query, "--limit", "100"]
 
         returncode, stdout, stderr = self._run_command(cmd, timeout=60)
 
         if returncode != 0:
-            logger.warning(f"Failed to browse skills: {stderr}")
+            logger.warning(f"Failed to search skills: {stderr}")
             return []
 
         installed_skills = self._get_installed_skill_names()
@@ -1328,40 +1340,43 @@ class HermesService:
         
         in_table = False
         current_skill: Optional[Dict[str, Any]] = None
-        col_positions = []
         
         for line in lines:
-            if "Name" in line and "Description" in line and "│" in line:
-                in_table = True
-                col_positions = [i for i, c in enumerate(line) if c == "│"]
-                continue
+            parts = self._parse_table_row(line)
+            
+            if parts and len(parts) >= 6:
+                if "Name" in parts and "Description" in parts:
+                    in_table = True
+                    continue
             
             if not in_table:
                 continue
             
-            if line.startswith("└") or line.startswith("Sources:") or line.startswith("Tip:"):
+            if line.startswith("└") or line.startswith("Use:") or line.startswith("Tip:"):
                 if current_skill:
                     results.append(current_skill)
                 break
             
-            if line.startswith("┡") or line.startswith("┏") or line.startswith("─"):
+            if (line.startswith("┡") or line.startswith("┏") or 
+                line.startswith("┃") or line.startswith("─") or 
+                line.startswith("╒") or line.startswith("╞")):
                 continue
             
             if "│" not in line:
                 continue
             
-            parts = [p.strip() for p in line.split("│")]
+            parts = self._parse_table_row(line)
             
-            if len(parts) < 6:
+            if not parts or len(parts) < 6:
                 continue
             
-            first_col = parts[1] if len(parts) > 1 else ""
-            name_col = parts[2] if len(parts) > 2 else ""
-            desc_col = parts[3] if len(parts) > 3 else ""
-            source_col = parts[4] if len(parts) > 4 else ""
-            trust_col = parts[5] if len(parts) > 5 else ""
+            name_col = parts[1] if len(parts) > 1 else ""
+            desc_col = parts[2] if len(parts) > 2 else ""
+            source_col = parts[3] if len(parts) > 3 else ""
+            trust_col = parts[4] if len(parts) > 4 else ""
+            identifier_col = parts[5] if len(parts) > 5 else ""
             
-            if first_col.isdigit():
+            if name_col:
                 if current_skill:
                     results.append(current_skill)
                 
@@ -1369,6 +1384,13 @@ class HermesService:
                 description = desc_col
                 source = source_col
                 trust = trust_col
+                identifier = identifier_col
+                
+                if identifier and "…" in identifier:
+                    last_slash_pos = identifier.rfind("/")
+                    if last_slash_pos != -1:
+                        prefix = identifier[:last_slash_pos + 1]
+                        identifier = prefix + name
                 
                 is_installed = name in installed_skills
                 
@@ -1377,6 +1399,7 @@ class HermesService:
                     "description": description,
                     "source": source,
                     "trust": trust,
+                    "identifier": identifier,
                     "is_installed": is_installed,
                 }
             else:

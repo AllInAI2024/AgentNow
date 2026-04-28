@@ -342,9 +342,10 @@ export interface SkillDetailResponse extends Skill {
 }
 
 export interface SkillInstallParams {
-  skill_name: string
+  identifier: string
+  name?: string
   category?: string
-  version?: string
+  force?: boolean
 }
 
 export interface SkillCreateParams {
@@ -364,5 +365,6 @@ export interface AvailableSkill {
   description: string
   source: string
   trust: string
+  identifier: string
   is_installed: boolean
 }
