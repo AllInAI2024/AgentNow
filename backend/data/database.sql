@@ -26,11 +26,11 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 -- 初始化默认管理员账号
--- 默认手机号: admin (作为特殊账号处理)
+-- 默认手机号: 13651165117
 -- 默认密码: 123456 (bcrypt加密后的值)
 -- 注意: 实际插入时需要使用Python的bcrypt库生成真实的哈希值
 -- 这里使用占位符，实际在应用启动时初始化
 
 -- 插入管理员记录的示例SQL (实际密码哈希需要在应用中生成)
- INSERT INTO users (phone, password_hash, username, role, is_active, is_default_password)
- VALUES ('admin', '$2b$12$...', '系统管理员', 'admin', TRUE, TRUE);
+-- INSERT INTO users (phone, password_hash, username, role, is_active, is_default_password)
+-- VALUES ('13651165117', '实际的bcrypt哈希值', '系统管理员', 'admin', TRUE, TRUE);

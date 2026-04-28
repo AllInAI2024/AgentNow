@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     
-    DEFAULT_ADMIN_PHONE: str = "admin"
+    DEFAULT_ADMIN_PHONE: str = "13651165117"
     DEFAULT_ADMIN_PASSWORD: str = "123456"
     DEFAULT_ADMIN_USERNAME: str = "系统管理员"
     
