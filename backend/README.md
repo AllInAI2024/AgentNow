@@ -92,7 +92,7 @@ mysql -u root -p < data/database.sql
 ### 5. 启动开发服务器
 
 ```bash
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5116
 ```
 
 ### 6. 访问 API 文档
@@ -222,9 +222,9 @@ RUN pip install uv && uv sync --frozen
 
 COPY . .
 
-EXPOSE 8000
+EXPOSE 5116
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5116"]
 ```
 
 ## 许可证
