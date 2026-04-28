@@ -49,6 +49,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '功能点管理', requiresAuth: true },
   },
   {
+    path: '/role/manage',
+    name: 'RoleManage',
+    component: () => import('@/views/RoleManage.vue'),
+    meta: { title: '角色管理', requiresAuth: true },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/dashboard',
   },

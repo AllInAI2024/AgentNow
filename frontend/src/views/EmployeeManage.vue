@@ -66,6 +66,9 @@
                 <a-button type="link" size="small" @click="handleEdit(record)">
                   编辑
                 </a-button>
+                <a-button type="link" size="small" @click="handleAssignRole(record)">
+                  分配角色
+                </a-button>
                 <a-popconfirm
                   title="确定要重置密码吗？重置后密码为123456。"
                   ok-text="确定"
@@ -195,6 +198,27 @@
           </a-row>
         </a-form>
       </a-modal>
+
+      <a-modal
+        v-model:open="roleModalVisible"
+        title="分配角色"
+        :width="640"
+        @ok="handleSubmitRole"
+        @cancel="handleCancelRole"
+        :confirmLoading="submittingRole"
+      >
+        <div class="role-select-container">
+          <a-checkbox-group v-model:value="selectedRoleIds">
+            <a-space direction="vertical" size="middle" style="width: 100%">
+              <a-checkbox v-for="role in roleList" :key="role.id" :value="role.id">
+                <span class="role-name">{{ role.name }}</span>
+                <span class="role-code">({{ role.code }})</span>
+                <span v-if="role.description" class="role-desc">- {{ role.description }}</span>
+              </a-checkbox>
+            </a-space>
+          </a-checkbox-group>
+        </div>
+      </a-modal>
     </div>
   </MainLayout>
 </template>
@@ -206,6 +230,7 @@ import type { FormInstance } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { employeeApi } from '@/api/employee'
 import { departmentApi } from '@/api/department'
+import { roleApi, type Role } from '@/api/role'
 import type { User, DepartmentTree } from '@/types'
 import MainLayout from '@/components/MainLayout.vue'
 
@@ -217,6 +242,12 @@ const editId = ref<number | null>(null)
 const employeeList = ref<User[]>([])
 const departmentTree = ref<DepartmentTree[]>([])
 const formRef = ref<FormInstance>()
+
+const roleModalVisible = ref(false)
+const submittingRole = ref(false)
+const currentEmployeeId = ref<number | null>(null)
+const roleList = ref<Role[]>([])
+const selectedRoleIds = ref<number[]>([])
 
 const searchForm = reactive({
   department_id: undefined as number | undefined,
@@ -247,7 +278,7 @@ const columns = [
   { title: '邮箱', dataIndex: 'email', key: 'email', ellipsis: true },
   { title: '状态', dataIndex: 'is_active', key: 'is_active', width: 100 },
   { title: '密码状态', dataIndex: 'is_default_password', key: 'is_default_password', width: 100 },
-  { title: '操作', key: 'action', width: 240, fixed: 'right' as const },
+  { title: '操作', key: 'action', width: 300, fixed: 'right' as const },
 ]
 
 const getAllDepartments = (items: DepartmentTree[]): DepartmentTree[] => {
@@ -451,9 +482,59 @@ const handleSubmit = async () => {
   }
 }
 
+const fetchRoles = async () => {
+  try {
+    const res = await roleApi.getList()
+    if (res.code === 200) {
+      roleList.value = res.data
+    }
+  } catch (error) {
+    console.error('获取角色列表失败:', error)
+  }
+}
+
+const handleAssignRole = async (record: User) => {
+  currentEmployeeId.value = record.id
+  selectedRoleIds.value = []
+  
+  try {
+    const res = await roleApi.getUserRoles(record.id)
+    if (res.code === 200) {
+      selectedRoleIds.value = res.data
+    }
+    roleModalVisible.value = true
+  } catch (error) {
+    console.error('获取用户角色失败:', error)
+  }
+}
+
+const handleCancelRole = () => {
+  roleModalVisible.value = false
+  currentEmployeeId.value = null
+  selectedRoleIds.value = []
+}
+
+const handleSubmitRole = async () => {
+  if (!currentEmployeeId.value) return
+
+  submittingRole.value = true
+  try {
+    const res = await roleApi.assignUserRoles(currentEmployeeId.value, selectedRoleIds.value)
+    if (res.code === 200) {
+      message.success('角色分配成功')
+      roleModalVisible.value = false
+    }
+  } catch (error) {
+    console.error('角色分配失败:', error)
+  } finally {
+    submittingRole.value = false
+  }
+}
+
 onMounted(() => {
   fetchDepartments()
   fetchEmployees()
+  fetchRoles()
 })
 </script>
 
@@ -482,5 +563,27 @@ onMounted(() => {
 
 .search-bar {
   margin-bottom: 16px;
+}
+
+.role-select-container {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.role-name {
+  font-weight: 500;
+  color: #1d2129;
+}
+
+.role-code {
+  color: #86909c;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.role-desc {
+  color: #86909c;
+  font-size: 12px;
+  margin-left: 8px;
 }
 </style>

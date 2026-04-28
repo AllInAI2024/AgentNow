@@ -64,6 +64,19 @@
                 <div class="nav-submenu">
                   <div 
                     class="submenu-item" 
+                    :class="{ 'submenu-item-active': isActiveRoute('/role/manage') }"
+                    @click="handleNavigate('/role/manage')"
+                  >
+                    <div class="submenu-icon-wrapper">
+                      <SafetyCertificateOutlined class="submenu-icon" />
+                    </div>
+                    <div class="submenu-content">
+                      <span class="submenu-title">角色管理</span>
+                      <span class="submenu-desc">管理系统角色与权限分配</span>
+                    </div>
+                  </div>
+                  <div 
+                    class="submenu-item" 
                     :class="{ 'submenu-item-active': isActiveRoute('/permission/manage') }"
                     @click="handleNavigate('/permission/manage')"
                   >
