@@ -3563,8 +3563,8 @@ class HermesService:
     def list_profiles(
         self,
         db: Optional[Session] = None,
-        status_filter: Optional[str] = None,
-        user_filter: Optional[str] = None,
+        status: Optional[str] = None,
+        user_id: Optional[int] = None,
         search: Optional[str] = None,
     ) -> ProfileListResponse:
         profiles = self.get_profile_list()
@@ -3578,21 +3578,23 @@ class HermesService:
         error_count = 0
         
         for profile_name in profiles:
-            status = self._get_profile_status(profile_name)
+            profile_status = self._get_profile_status(profile_name)
             
-            if status == ProfileStatus.RUNNING:
+            if profile_status == ProfileStatus.RUNNING:
                 running_count += 1
-            elif status == ProfileStatus.STOPPED:
+            elif profile_status == ProfileStatus.STOPPED:
                 stopped_count += 1
             else:
                 error_count += 1
             
-            if status_filter:
-                if status_filter == "running" and status != ProfileStatus.RUNNING:
+            if status:
+                if status == "running" and profile_status != ProfileStatus.RUNNING:
                     continue
-                elif status_filter == "stopped" and status != ProfileStatus.STOPPED:
+                elif status == "starting" and profile_status != ProfileStatus.STARTING:
                     continue
-                elif status_filter == "error" and status != ProfileStatus.ERROR:
+                elif status == "stopped" and profile_status != ProfileStatus.STOPPED:
+                    continue
+                elif status == "error" and profile_status != ProfileStatus.ERROR:
                     continue
             
             process_info = self._get_profile_process_info(profile_name)
@@ -3602,7 +3604,7 @@ class HermesService:
                 port = self._get_profile_port_from_config(profile_name)
             
             display_name = profile_name
-            user_id = None
+            profile_user_id = None
             user_name = None
             
             if db:
@@ -3613,13 +3615,13 @@ class HermesService:
                     
                     if user:
                         display_name = user.username
-                        user_id = user.id
+                        profile_user_id = user.id
                         user_name = user.username
                 except Exception as e:
                     logger.error(f"Failed to get user info for profile {profile_name}: {e}")
             
-            if user_filter:
-                if not user_name or user_filter.lower() not in user_name.lower():
+            if user_id is not None:
+                if profile_user_id != user_id:
                     continue
             
             if search:
@@ -3641,8 +3643,8 @@ class HermesService:
             items.append(ProfileListItem(
                 profile_name=profile_name,
                 display_name=display_name,
-                status=status,
-                user_id=user_id,
+                status=profile_status,
+                user_id=profile_user_id,
                 user_name=user_name,
                 port=port,
                 api_url=api_url,
