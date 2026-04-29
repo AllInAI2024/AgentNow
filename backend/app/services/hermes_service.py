@@ -83,7 +83,24 @@ class HermesService:
         self._system: str = platform.system().lower()
         self._python_path: str = sys.executable
         self._pip_path: str = os.path.join(os.path.dirname(self._python_path), "pip")
+        self._hermes_home: Path = self._get_hermes_home()
+        self._hermes_profiles_home: Path = self._get_hermes_profiles_home()
         self._find_hermes_path()
+        
+        logger.info(f"Hermes home: {self._hermes_home}")
+        logger.info(f"Hermes profiles home: {self._hermes_profiles_home}")
+    
+    def _get_hermes_home(self) -> Path:
+        hermes_home = os.environ.get("HERMES_HOME")
+        if hermes_home:
+            return Path(hermes_home)
+        return Path.home() / ".hermes"
+    
+    def _get_hermes_profiles_home(self) -> Path:
+        profiles_home = os.environ.get("HERMES_PROFILES_HOME")
+        if profiles_home:
+            return Path(profiles_home)
+        return Path.home() / ".hermes-profiles"
 
     def _find_hermes_path(self) -> None:
         possible_paths = [
@@ -300,6 +317,107 @@ class HermesService:
         if not parts:
             return "刚刚启动"
         return " ".join(parts)
+
+    def _get_skills_from_dir(self, skills_dir: Path) -> int:
+        if not skills_dir.exists():
+            return 0
+        
+        try:
+            count = 0
+            for item in skills_dir.iterdir():
+                if item.is_dir():
+                    count += 1
+                elif item.is_file() and item.suffix in [".md", ".yaml", ".yml", ".py"]:
+                    if item.name not in ["README.md", "README"]:
+                        count += 1
+            return count
+        except Exception as e:
+            logger.error(f"Failed to count skills in {skills_dir}: {e}")
+            return 0
+
+    def get_total_skills(self) -> int:
+        total = 0
+        
+        default_skills_dir = self._hermes_home / "skills"
+        default_count = self._get_skills_from_dir(default_skills_dir)
+        total += default_count
+        logger.debug(f"Default profile skills: {default_count}")
+        
+        if self._hermes_profiles_home.exists():
+            try:
+                for profile_dir in self._hermes_profiles_home.iterdir():
+                    if profile_dir.is_dir():
+                        skills_dir = profile_dir / "skills"
+                        count = self._get_skills_from_dir(skills_dir)
+                        total += count
+                        logger.debug(f"Profile {profile_dir.name} skills: {count}")
+            except Exception as e:
+                logger.error(f"Failed to iterate profiles: {e}")
+        
+        logger.info(f"Total skills across all profiles: {total}")
+        return total
+
+    def _get_mcp_services_from_config(self, config_path: Path) -> int:
+        if not config_path.exists():
+            return 0
+        
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f)
+            
+            if not config:
+                return 0
+            
+            count = 0
+            
+            if "mcp" in config:
+                mcp_config = config["mcp"]
+                if "servers" in mcp_config and isinstance(mcp_config["servers"], dict):
+                    count = len(mcp_config["servers"])
+            
+            if "mcpServers" in config and isinstance(config["mcpServers"], dict):
+                count = max(count, len(config["mcpServers"]))
+            
+            logger.debug(f"MCP services in {config_path}: {count}")
+            return count
+        except yaml.YAMLError as e:
+            logger.error(f"Failed to parse YAML config {config_path}: {e}")
+            return 0
+        except Exception as e:
+            logger.error(f"Failed to read MCP config {config_path}: {e}")
+            return 0
+
+    def get_total_mcp_services(self) -> int:
+        total = 0
+        
+        default_config = self._hermes_home / "config.yaml"
+        default_count = self._get_mcp_services_from_config(default_config)
+        total += default_count
+        logger.debug(f"Default profile MCP services: {default_count}")
+        
+        env_config = self._hermes_home / ".env"
+        try:
+            if env_config.exists():
+                with open(env_config, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    mcp_env_count = content.count("MCP_")
+                    logger.debug(f"Env MCP config entries: {mcp_env_count}")
+        except Exception as e:
+            logger.debug(f"Failed to read .env: {e}")
+        
+        if self._hermes_profiles_home.exists():
+            try:
+                for profile_dir in self._hermes_profiles_home.iterdir():
+                    if profile_dir.is_dir():
+                        config_path = profile_dir / "config.yaml"
+                        count = self._get_mcp_services_from_config(config_path)
+                        total += count
+                        logger.debug(f"Profile {profile_dir.name} MCP services: {count}")
+            except Exception as e:
+                logger.error(f"Failed to iterate profiles: {e}")
+        
+        logger.info(f"Total MCP services across all profiles: {total}")
+        return total
 
     def check_hermes_available(self) -> tuple[bool, str]:
         returncode, stdout, stderr = self._run_command(
@@ -716,6 +834,9 @@ class HermesService:
         total_profiles = self.get_profile_count()
         running_profiles = gateway_status.get("running", 0)
         
+        total_skills = self.get_total_skills()
+        total_mcp = self.get_total_mcp_services()
+        
         stats = HermesStatistics(
             total_profiles=total_profiles,
             running_profiles=running_profiles,
@@ -723,12 +844,12 @@ class HermesService:
             total_users=self.get_total_users(db),
             today_conversations=0,
             total_conversations=0,
-            total_skills=0,
-            total_mcp_services=0,
+            total_skills=total_skills,
+            total_mcp_services=total_mcp,
             total_documents=0
         )
         
-        logger.debug(f"Statistics: {stats.model_dump()}")
+        logger.info(f"Statistics: profiles={total_profiles}, running={running_profiles}, skills={total_skills}, mcp={total_mcp}")
         return stats
 
     def get_recent_activities(self) -> List[RecentActivity]:
