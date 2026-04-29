@@ -20,22 +20,28 @@
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'action'">
-              <a-space>
-                <a-button type="link" size="small" @click="handleEdit(record)">
-                  编辑
-                </a-button>
-                <a-button type="link" size="small" @click="handleAssignPermission(record)">
-                  权限配置
-                </a-button>
+              <a-space size="small">
+                <a-tooltip title="编辑">
+                  <a-button type="text" size="middle" @click="handleEdit(record)">
+                    <EditOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="权限配置">
+                  <a-button type="text" size="middle" @click="handleAssignPermission(record)">
+                    <SafetyCertificateOutlined />
+                  </a-button>
+                </a-tooltip>
                 <a-popconfirm
                   title="确定要删除该角色吗？"
                   ok-text="确定"
                   cancel-text="取消"
                   @confirm="handleDelete(record)"
                 >
-                  <a-button type="link" size="small" danger>
-                    删除
-                  </a-button>
+                  <a-tooltip title="删除">
+                    <a-button type="text" size="middle" danger>
+                      <DeleteOutlined />
+                    </a-button>
+                  </a-tooltip>
                 </a-popconfirm>
               </a-space>
             </template>
@@ -107,7 +113,12 @@
 import { ref, reactive, onMounted, computed, h } from 'vue'
 import { message } from 'ant-design-vue'
 import type { FormInstance } from 'ant-design-vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import {
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  SafetyCertificateOutlined,
+} from '@ant-design/icons-vue'
 import { roleApi, type Role } from '@/api/role'
 import { permissionApi, type PermissionTree } from '@/api/permission'
 import MainLayout from '@/components/MainLayout.vue'

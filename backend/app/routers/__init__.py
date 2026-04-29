@@ -4,5 +4,6 @@ from app.routers.department import router as department_router
 from app.routers.employee import router as employee_router
 from app.routers.role import router as role_router
 from app.routers.knowledge import router as knowledge_router
+from app.routers.hermes import router as hermes_router
 
-__all__ = ["auth_router", "permission_router", "department_router", "employee_router", "role_router", "knowledge_router"]
+__all__ = ["auth_router", "permission_router", "department_router", "employee_router", "role_router", "knowledge_router", "hermes_router"]

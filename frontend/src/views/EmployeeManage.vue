@@ -64,12 +64,12 @@
             <template v-else-if="column.key === 'action'">
               <a-space size="small">
                 <a-tooltip title="编辑">
-                  <a-button type="text" size="small" @click="handleEdit(record)">
+                  <a-button type="text" size="middle" @click="handleEdit(record)">
                     <EditOutlined />
                   </a-button>
                 </a-tooltip>
                 <a-tooltip title="分配角色">
-                  <a-button type="text" size="small" @click="handleAssignRole(record)">
+                  <a-button type="text" size="middle" @click="handleAssignRole(record)">
                     <SafetyCertificateOutlined />
                   </a-button>
                 </a-tooltip>
@@ -80,7 +80,7 @@
                   @confirm="handleResetPassword(record)"
                 >
                   <a-tooltip title="重置密码">
-                    <a-button type="text" size="small">
+                    <a-button type="text" size="middle">
                       <KeyOutlined />
                     </a-button>
                   </a-tooltip>
@@ -92,7 +92,7 @@
                   @confirm="handleToggleStatus(record)"
                 >
                   <a-tooltip :title="record.is_active ? '禁用' : '启用'">
-                    <a-button type="text" size="small" :danger="record.is_active">
+                    <a-button type="text" size="middle" :danger="record.is_active">
                       <component :is="record.is_active ? StopOutlined : PlayCircleOutlined" />
                     </a-button>
                   </a-tooltip>
@@ -104,7 +104,7 @@
                   @confirm="handleDelete(record)"
                 >
                   <a-tooltip title="删除">
-                    <a-button type="text" size="small" danger>
+                    <a-button type="text" size="middle" danger>
                       <DeleteOutlined />
                     </a-button>
                   </a-tooltip>

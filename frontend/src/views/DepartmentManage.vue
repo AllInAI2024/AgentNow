@@ -34,7 +34,7 @@
             <template v-else-if="column.key === 'action'">
               <a-space size="small">
                 <a-tooltip title="编辑">
-                  <a-button type="text" size="small" @click="handleEdit(record)">
+                  <a-button type="text" size="middle" @click="handleEdit(record)">
                     <EditOutlined />
                   </a-button>
                 </a-tooltip>
@@ -45,7 +45,7 @@
                   @confirm="handleDelete(record)"
                 >
                   <a-tooltip title="删除">
-                    <a-button type="text" size="small" danger>
+                    <a-button type="text" size="middle" danger>
                       <DeleteOutlined />
                     </a-button>
                   </a-tooltip>

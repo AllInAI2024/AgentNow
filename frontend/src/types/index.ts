@@ -225,3 +225,271 @@ export interface StatisticsResponse {
   public_docs: number
   recent_uploads: number
 }
+
+export type HealthStatus = 'healthy' | 'unhealthy' | 'warning'
+
+export type SkillType = 'bundled' | 'community' | 'agent_created' | 'user_uploaded'
+
+export interface HermesSystemInfo {
+  version: string
+  latest_version: string | null
+  has_update: boolean
+  status: HealthStatus
+  uptime: string
+  start_time: string | null
+  api_server_port: number | null
+}
+
+export interface HermesStatistics {
+  total_profiles: number
+  running_profiles: number
+  stopped_profiles: number
+  total_users: number
+  today_conversations: number
+  total_conversations: number
+  total_skills: number
+  total_mcp_services: number
+  total_documents: number
+}
+
+export interface HealthCheckItem {
+  name: string
+  status: HealthStatus
+  message: string
+  value: string | null
+}
+
+export interface HermesHealthStatus {
+  overall: HealthStatus
+  items: HealthCheckItem[]
+  checked_at: string
+}
+
+export interface RecentActivity {
+  time: string
+  user_name: string
+  event: string
+  details: string | null
+}
+
+export interface HermesOverviewResponse {
+  system_info: HermesSystemInfo
+  statistics: HermesStatistics
+  health_status: HermesHealthStatus
+  recent_activities: RecentActivity[]
+}
+
+export interface VersionCheckResponse {
+  current_version: string
+  latest_version: string
+  has_update: boolean
+  changelog: string | null
+  release_url: string | null
+}
+
+export interface UpdateProgress {
+  status: 'checking' | 'downloading' | 'installing' | 'completed' | 'failed'
+  progress: number
+  message: string
+  error: string | null
+}
+
+export interface HermesSkillMetadata {
+  tags: string[]
+  related_skills: string[]
+}
+
+export interface SkillMetadata {
+  hermes: HermesSkillMetadata
+}
+
+export interface Skill {
+  name: string
+  description: string
+  version: string
+  author: string
+  license: string
+  metadata: SkillMetadata
+  content: string
+  category: string
+  category_name: string
+  path: string
+  is_bundled: boolean
+  is_installed: boolean
+  skill_type: SkillType
+  created_at: string | null
+  updated_at: string | null
+  usage_count: number
+}
+
+export interface SkillCategory {
+  name: string
+  display_name: string
+  skill_count: number
+  installed_count: number
+}
+
+export interface SkillListResponse {
+  total: number
+  categories: SkillCategory[]
+  items: Skill[]
+  bundled_count: number
+  installed_count: number
+}
+
+export interface SkillDetailResponse extends Skill {
+  description_html: string | null
+}
+
+export interface SkillInstallParams {
+  identifier: string
+  name?: string
+  category?: string
+  force?: boolean
+}
+
+export interface SkillCreateParams {
+  name: string
+  description: string
+  content: string
+  category?: string
+  version?: string
+  author?: string
+  license?: string
+  tags?: string[]
+  skill_type?: SkillType
+}
+
+export interface AvailableSkill {
+  name: string
+  description: string
+  source: string
+  trust: string
+  identifier: string
+  is_installed: boolean
+}
+
+export type HealthStatus = 'healthy' | 'warning' | 'unhealthy'
+
+export interface MCPTool {
+  name: string
+  description: string
+  input_schema?: Record<string, any>
+}
+
+export interface MCPService {
+  name: string
+  type: 'stdio' | 'sse'
+  type_display: string
+  status: HealthStatus
+  command?: string
+  args?: string[]
+  url?: string
+  tool_count: number
+  tools: MCPTool[]
+  last_check?: string
+  error_message?: string
+  config_raw?: string
+}
+
+export interface MCPServiceListResponse {
+  items: MCPService[]
+  total: number
+  running_count: number
+  warning_count: number
+  stopped_count: number
+}
+
+export interface MCPServiceDetailResponse {
+  service: MCPService
+}
+
+export interface MCPServiceTestResult {
+  success: boolean
+  message: string
+  tool_count?: number
+  tools: MCPTool[]
+  error?: string
+}
+
+export interface BuiltinToolParameter {
+  name: string
+  type: string
+  description: string
+  required: boolean
+  default: string | null
+}
+
+export interface BuiltinTool {
+  name: string
+  display_name: string
+  description: string
+  category: string
+  parameters: BuiltinToolParameter[]
+  return_description: string | null
+  examples: string[]
+  notes: string | null
+}
+
+export interface BuiltinToolCategory {
+  name: string
+  display_name: string
+  icon: string
+  description: string
+  tool_count: number
+}
+
+export interface BuiltinToolListResponse {
+  categories: BuiltinToolCategory[]
+  tools: BuiltinTool[]
+  total_tools: number
+}
+
+export type MemoryType = 'memory' | 'user'
+
+export interface MemoryItem {
+  id: number
+  type: string
+  content: string
+  raw: string
+  line_number: number
+}
+
+export interface MemoryFile {
+  type: MemoryType
+  name: string
+  display_name: string
+  description: string
+  char_limit: number
+  current_chars: number
+  progress: number
+  item_count: number
+  last_updated: string | null
+  exists: boolean
+  raw_content: string | null
+  items: MemoryItem[]
+}
+
+export interface MemoryResponse {
+  profile_name: string
+  memory_file: MemoryFile
+  user_file: MemoryFile
+}
+
+export interface ProfileMemoryListItem {
+  profile_name: string
+  display_name: string
+  user_id: number | null
+  user_name: string | null
+  memory_exists: boolean
+  user_exists: boolean
+  memory_chars: number
+  user_chars: number
+  memory_limit: number
+  user_limit: number
+}
+
+export interface ProfileMemoryListResponse {
+  items: ProfileMemoryListItem[]
+  total: number
+}

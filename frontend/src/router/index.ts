@@ -61,6 +61,73 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '文档列表', requiresAuth: true },
   },
   {
+    path: '/hermes',
+    redirect: '/hermes/overview',
+    meta: { title: 'Hermes 系统管理', requiresAuth: true },
+    children: [
+      {
+        path: 'overview',
+        name: 'HermesOverview',
+        component: () => import('@/views/hermes/Overview.vue'),
+        meta: { title: '系统概览', requiresAuth: true },
+      },
+      {
+        path: 'profiles',
+        name: 'HermesProfiles',
+        component: () => import('@/views/hermes/Profiles.vue'),
+        meta: { title: 'Profiles 管理', requiresAuth: true },
+      },
+      {
+        path: 'conversations',
+        name: 'HermesConversations',
+        component: () => import('@/views/hermes/Conversations.vue'),
+        meta: { title: '对话日志管理', requiresAuth: true },
+      },
+      {
+        path: 'skills',
+        name: 'HermesSkills',
+        component: () => import('@/views/hermes/Skills.vue'),
+        meta: { title: '技能管理', requiresAuth: true },
+      },
+      {
+        path: 'mcp',
+        name: 'HermesMCP',
+        component: () => import('@/views/hermes/MCP.vue'),
+        meta: { title: 'MCP 服务', requiresAuth: true },
+      },
+      {
+        path: 'tools',
+        name: 'HermesTools',
+        component: () => import('@/views/hermes/Tools.vue'),
+        meta: { title: '工具集', requiresAuth: true },
+      },
+      {
+        path: 'memory',
+        name: 'HermesMemory',
+        component: () => import('@/views/hermes/Memory.vue'),
+        meta: { title: '记忆系统', requiresAuth: true },
+      },
+      {
+        path: 'config',
+        name: 'HermesConfig',
+        component: () => import('@/views/hermes/Config.vue'),
+        meta: { title: '配置管理', requiresAuth: true },
+      },
+      {
+        path: 'knowledge',
+        name: 'HermesKnowledge',
+        component: () => import('@/views/hermes/Knowledge.vue'),
+        meta: { title: '知识库管理', requiresAuth: true },
+      },
+      {
+        path: 'audit',
+        name: 'HermesAudit',
+        component: () => import('@/views/hermes/Audit.vue'),
+        meta: { title: '操作审计', requiresAuth: true },
+      },
+    ],
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/dashboard',
   },

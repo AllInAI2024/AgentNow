@@ -53,6 +53,17 @@ from app.schemas.knowledge import (
     FileSystemInfo,
     StatisticsResponse,
 )
+from app.schemas.hermes import (
+    HealthStatus,
+    HermesSystemInfo,
+    HermesStatistics,
+    HealthCheckItem,
+    HermesHealthStatus,
+    RecentActivity,
+    HermesOverviewResponse,
+    VersionCheckResponse,
+    UpdateProgress,
+)
 
 __all__ = [
     "UserBase",
@@ -100,4 +111,13 @@ __all__ = [
     "AllCategoriesResponse",
     "FileSystemInfo",
     "StatisticsResponse",
+    "HealthStatus",
+    "HermesSystemInfo",
+    "HermesStatistics",
+    "HealthCheckItem",
+    "HermesHealthStatus",
+    "RecentActivity",
+    "HermesOverviewResponse",
+    "VersionCheckResponse",
+    "UpdateProgress",
 ]
