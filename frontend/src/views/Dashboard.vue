@@ -227,7 +227,6 @@
 
 <script setup lang="ts">
 import { reactive } from 'vue'
-import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   RocketOutlined,
@@ -245,7 +244,6 @@ import {
 import { useUserStore } from '@/stores/user'
 import MainLayout from '@/components/MainLayout.vue'
 
-const router = useRouter()
 const userStore = useUserStore()
 
 const stats = reactive({

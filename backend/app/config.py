@@ -1,10 +1,11 @@
+import os
 from pydantic_settings import BaseSettings
 from typing import Optional
 
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "智现 AgentNow 企业智能体平台"
-    PROJECT_VERSION: str = "0.1.0"
+    PROJECT_VERSION: str = "0.2.0"
     API_PREFIX: str = "/api/v1"
     
     SERVER_HOST: str = "0.0.0.0"
@@ -21,6 +22,10 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_USERNAME: str = "系统管理员"
     
     HERMES_BASE_URL: Optional[str] = None
+    
+    KNOWLEDGE_BASE_PATH: str = os.path.expanduser("~/.agentnow/knowledge/docs")
+    KNOWLEDGE_MAX_FILE_SIZE: int = 100 * 1024 * 1024
+    KNOWLEDGE_ALLOWED_TYPES: str = ".pdf,.doc,.docx,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.html,.htm,.xml"
     
     class Config:
         env_file = ".env"

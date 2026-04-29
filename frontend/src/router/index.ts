@@ -31,10 +31,34 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '工作台', requiresAuth: true },
   },
   {
+    path: '/organization/department',
+    name: 'DepartmentManage',
+    component: () => import('@/views/DepartmentManage.vue'),
+    meta: { title: '部门管理', requiresAuth: true },
+  },
+  {
+    path: '/organization/employee',
+    name: 'EmployeeManage',
+    component: () => import('@/views/EmployeeManage.vue'),
+    meta: { title: '员工管理', requiresAuth: true },
+  },
+  {
     path: '/permission/manage',
     name: 'PermissionManage',
     component: () => import('@/views/PermissionManage.vue'),
     meta: { title: '功能点管理', requiresAuth: true },
+  },
+  {
+    path: '/role/manage',
+    name: 'RoleManage',
+    component: () => import('@/views/RoleManage.vue'),
+    meta: { title: '角色管理', requiresAuth: true },
+  },
+  {
+    path: '/knowledge/document',
+    name: 'KnowledgeDocument',
+    component: () => import('@/views/KnowledgeDocument.vue'),
+    meta: { title: '文档列表', requiresAuth: true },
   },
   {
     path: '/:pathMatch(.*)*',

@@ -1,7 +1,7 @@
 -- 智现 AgentNow 智能体平台数据库初始化脚本
 -- 数据库: agentnow
--- 版本: v5.0 (支持登录名和手机号双登录方式)
--- 日期: 2026-04-27
+-- 版本: v8.0 (知识库管理 v2.0 - 集成 mcp-markdown-vault)
+-- 日期: 2026-04-28
 
 -- 创建数据库
 CREATE DATABASE IF NOT EXISTS agentnow DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -9,13 +9,30 @@ CREATE DATABASE IF NOT EXISTS agentnow DEFAULT CHARACTER SET utf8mb4 COLLATE utf
 USE agentnow;
 
 -- ============================================
--- 一、用户表
+-- 一、部门表
 -- ============================================
--- 用户可以用 login_name（登录名）或 phone（手机号）登录
--- login_name 是必填的唯一登录账号
--- phone 是可选的，但如果设置了必须唯一
+CREATE TABLE IF NOT EXISTS departments (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '部门ID',
+    parent_id BIGINT DEFAULT 0 COMMENT '父部门ID（0表示顶级部门）',
+    name VARCHAR(100) NOT NULL COMMENT '部门名称',
+    code VARCHAR(50) COMMENT '部门编码',
+    description VARCHAR(500) COMMENT '部门描述',
+    sort INT DEFAULT 0 COMMENT '排序号',
+    status TINYINT DEFAULT 1 COMMENT '状态：1-启用，0-禁用',
+    leader_id BIGINT COMMENT '部门负责人ID（关联用户表）',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_parent_id (parent_id),
+    INDEX idx_code (code),
+    INDEX idx_sort (sort)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='部门表';
+
+-- ============================================
+-- 二、用户表（员工表）
+-- ============================================
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '用户ID',
+    department_id BIGINT COMMENT '所属部门ID',
     login_name VARCHAR(50) NOT NULL COMMENT '登录账号（唯一，用于登录）',
     phone VARCHAR(20) COMMENT '手机号（可选，可用于登录）',
     email VARCHAR(100) COMMENT '邮箱',
@@ -35,12 +52,13 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE KEY uk_login_name (login_name),
     UNIQUE KEY uk_phone (phone),
     UNIQUE KEY uk_email (email),
+    INDEX idx_department_id (department_id),
     INDEX idx_hermes_profile (hermes_profile),
     INDEX idx_is_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 -- ============================================
--- 二、角色表
+-- 三、角色表
 -- ============================================
 CREATE TABLE IF NOT EXISTS roles (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '角色ID',
@@ -53,7 +71,7 @@ CREATE TABLE IF NOT EXISTS roles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色表';
 
 -- ============================================
--- 三、权限表
+-- 四、权限表
 -- ============================================
 CREATE TABLE IF NOT EXISTS permissions (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '权限ID',
@@ -63,15 +81,18 @@ CREATE TABLE IF NOT EXISTS permissions (
     type TINYINT DEFAULT 1 COMMENT '类型：1-菜单，2-按钮，3-API接口',
     path VARCHAR(255) COMMENT '路由路径/接口路径',
     icon VARCHAR(100) COMMENT '菜单图标',
+    sort INT DEFAULT 0 COMMENT '排序号',
+    divider TINYINT DEFAULT 0 COMMENT '是否是菜单分割线：0-否，1-是',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     INDEX idx_parent_id (parent_id),
     INDEX idx_code (code),
-    INDEX idx_type (type)
+    INDEX idx_type (type),
+    INDEX idx_sort (sort)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='权限表';
 
 -- ============================================
--- 四、角色-权限关联表
+-- 五、角色-权限关联表
 -- ============================================
 CREATE TABLE IF NOT EXISTS role_permissions (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '关联ID',
@@ -86,7 +107,7 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色-权限关联表';
 
 -- ============================================
--- 五、用户-角色关联表
+-- 六、用户-角色关联表
 -- ============================================
 CREATE TABLE IF NOT EXISTS user_roles (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '关联ID',
@@ -101,7 +122,51 @@ CREATE TABLE IF NOT EXISTS user_roles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户-角色关联表';
 
 -- ============================================
--- 六、初始化数据
+-- 七、知识库配置表
+-- ============================================
+CREATE TABLE IF NOT EXISTS knowledge_configs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '配置ID',
+    config_key VARCHAR(100) NOT NULL UNIQUE COMMENT '配置键',
+    config_value TEXT COMMENT '配置值',
+    description VARCHAR(500) COMMENT '配置描述',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_config_key (config_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库配置表';
+
+-- ============================================
+-- 八、知识库文档表
+-- ============================================
+CREATE TABLE IF NOT EXISTS knowledge_docs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '文档ID',
+    title VARCHAR(500) NOT NULL COMMENT '文档标题',
+    file_name VARCHAR(500) NOT NULL COMMENT '文件名',
+    file_path VARCHAR(1000) NOT NULL COMMENT '相对存储路径（相对于知识库根目录）',
+    file_size BIGINT DEFAULT 0 COMMENT '文件大小（字节）',
+    file_type VARCHAR(50) COMMENT '文件类型/扩展名',
+    mime_type VARCHAR(100) COMMENT 'MIME类型',
+    content_hash VARCHAR(64) COMMENT '文件内容哈希值（SHA256）',
+    description TEXT COMMENT '文档描述/摘要',
+    tags JSON COMMENT '标签列表，JSON数组格式',
+    category VARCHAR(100) COMMENT '文档分类',
+    created_by BIGINT COMMENT '创建者用户ID',
+    updated_by BIGINT COMMENT '最后更新者用户ID',
+    is_public BOOLEAN DEFAULT TRUE COMMENT '是否公开',
+    word_count BIGINT DEFAULT 0 COMMENT '字数统计（仅文本文件）',
+    file_modified_at DATETIME COMMENT '文件最后修改时间',
+    deleted_at DATETIME COMMENT '删除时间（软删除）',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_title (title),
+    INDEX idx_file_name (file_name),
+    INDEX idx_category (category),
+    INDEX idx_created_by (created_by),
+    INDEX idx_created_at (created_at),
+    INDEX idx_deleted_at (deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库文档表';
+
+-- ============================================
+-- 九、初始化数据
 -- ============================================
 
 -- 插入系统内置角色
@@ -112,77 +177,119 @@ VALUES
 ('普通用户', 'user', '普通用户，拥有基本操作权限');
 
 -- 插入系统权限/功能点（菜单结构）
--- 一级菜单
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
-(0, '工作台', 'dashboard', 1, '/dashboard', 'dashboard'),
-(0, '系统管理', 'system', 1, '/system', 'setting'),
-(0, '用户管理', 'user', 1, '/user', 'user'),
-(0, '角色权限', 'role', 1, '/role', 'safety-certificate'),
-(0, '智能体管理', 'agent', 1, '/agent', 'robot'),
-(0, '知识库管理', 'knowledge', 1, '/knowledge', 'folder-open');
+(0, '工作台', 'dashboard', 1, '/dashboard', 'dashboard', 1),
+(0, '智能体管理', 'agent', 1, '/agent', 'robot', 2),
+(0, '知识库管理', 'knowledge', 1, '/knowledge', 'folder-open', 3),
+(0, '系统管理', 'system', 1, '/system', 'setting', 4);
 
 -- 获取父权限ID
 SET @dashboard_id = (SELECT id FROM permissions WHERE code = 'dashboard');
-SET @system_id = (SELECT id FROM permissions WHERE code = 'system');
-SET @user_id = (SELECT id FROM permissions WHERE code = 'user');
-SET @role_id = (SELECT id FROM permissions WHERE code = 'role');
 SET @agent_id = (SELECT id FROM permissions WHERE code = 'agent');
 SET @knowledge_id = (SELECT id FROM permissions WHERE code = 'knowledge');
-
--- 二级菜单 - 系统管理
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
-VALUES 
-(@system_id, '系统设置', 'system:setting', 1, '/system/setting', 'tool'),
-(@system_id, '系统监控', 'system:monitor', 1, '/system/monitor', 'monitor');
-
--- 二级菜单 - 用户管理
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
-VALUES 
-(@user_id, '用户列表', 'user:list', 1, '/user/list', 'list');
-
--- 二级菜单 - 角色权限
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
-VALUES 
-(@role_id, '角色列表', 'role:list', 1, '/role/list', 'list'),
-(@role_id, '权限配置', 'role:permission', 1, '/role/permission', 'key');
+SET @system_id = (SELECT id FROM permissions WHERE code = 'system');
 
 -- 二级菜单 - 智能体管理
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
-(@agent_id, '智能体列表', 'agent:list', 1, '/agent/list', 'list'),
-(@agent_id, '智能体配置', 'agent:config', 1, '/agent/config', 'setting'),
-(@agent_id, '对话管理', 'agent:conversation', 1, '/agent/conversation', 'message');
+(@agent_id, '智能体列表', 'agent:list', 1, '/agent/list', 'list', 1),
+(@agent_id, '智能体配置', 'agent:config', 1, '/agent/config', 'setting', 2),
+(@agent_id, '对话管理', 'agent:conversation', 1, '/agent/conversation', 'message', 3);
 
 -- 二级菜单 - 知识库管理
-INSERT INTO permissions (parent_id, name, code, type, path, icon)
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
-(@knowledge_id, '文档列表', 'knowledge:document', 1, '/knowledge/document', 'file'),
-(@knowledge_id, '知识库设置', 'knowledge:setting', 1, '/knowledge/setting', 'setting');
+(@knowledge_id, '文档列表', 'knowledge:document', 1, '/knowledge/document', 'file', 1),
+(@knowledge_id, '知识库设置', 'knowledge:setting', 1, '/knowledge/setting', 'setting', 2);
+
+-- 二级菜单 - 系统管理
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(@system_id, '部门管理', 'department', 1, '/organization/department', 'apartment', 1),
+(@system_id, '员工管理', 'employee', 1, '/organization/employee', 'user', 2);
+
+-- 分割线（组织管理和角色权限之间）
+INSERT INTO permissions (parent_id, name, code, type, sort, divider)
+VALUES 
+(@system_id, '---', 'divider:1', 1, 3, 1);
+
+-- 角色权限部分
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(@system_id, '角色管理', 'role:manage', 1, '/role/manage', 'list', 4),
+(@system_id, '功能点管理', 'permission:manage', 1, '/permission/manage', 'unordered-list', 5);
+
+-- 分割线（角色权限和系统设置之间）
+INSERT INTO permissions (parent_id, name, code, type, sort, divider)
+VALUES 
+(@system_id, '---', 'divider:2', 1, 6, 1);
+
+-- 系统设置部分
+INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
+VALUES 
+(@system_id, '系统设置', 'system:setting', 1, '/system/setting', 'tool', 7),
+(@system_id, '系统监控', 'system:monitor', 1, '/system/monitor', 'monitor', 8);
 
 -- 插入按钮/接口级权限
 -- 获取一些二级菜单的ID
-SET @user_list_id = (SELECT id FROM permissions WHERE code = 'user:list');
-SET @role_list_id = (SELECT id FROM permissions WHERE code = 'role:list');
+SET @department_id = (SELECT id FROM permissions WHERE code = 'department');
+SET @employee_id = (SELECT id FROM permissions WHERE code = 'employee');
+SET @role_manage_id = (SELECT id FROM permissions WHERE code = 'role:manage');
 
--- 用户管理相关按钮权限
+-- 部门管理相关按钮权限
 INSERT INTO permissions (parent_id, name, code, type, path)
 VALUES 
-(@user_list_id, '用户查询', 'user:query', 3, '/api/v1/users'),
-(@user_list_id, '用户创建', 'user:create', 3, '/api/v1/users'),
-(@user_list_id, '用户编辑', 'user:update', 3, '/api/v1/users/:id'),
-(@user_list_id, '用户删除', 'user:delete', 3, '/api/v1/users/:id'),
-(@user_list_id, '用户重置密码', 'user:reset_password', 3, '/api/v1/users/:id/reset-password'),
-(@user_list_id, '用户启用/禁用', 'user:toggle_status', 3, '/api/v1/users/:id/status');
+(@department_id, '部门查询', 'department:query', 3, '/api/v1/departments'),
+(@department_id, '部门创建', 'department:create', 3, '/api/v1/departments'),
+(@department_id, '部门编辑', 'department:update', 3, '/api/v1/departments/:id'),
+(@department_id, '部门删除', 'department:delete', 3, '/api/v1/departments/:id');
+
+-- 员工管理相关按钮权限
+INSERT INTO permissions (parent_id, name, code, type, path)
+VALUES 
+(@employee_id, '员工查询', 'employee:query', 3, '/api/v1/employees'),
+(@employee_id, '员工创建', 'employee:create', 3, '/api/v1/employees'),
+(@employee_id, '员工编辑', 'employee:update', 3, '/api/v1/employees/:id'),
+(@employee_id, '员工删除', 'employee:delete', 3, '/api/v1/employees/:id'),
+(@employee_id, '员工重置密码', 'employee:reset_password', 3, '/api/v1/employees/:id/reset-password'),
+(@employee_id, '员工启用/禁用', 'employee:toggle_status', 3, '/api/v1/employees/:id/status');
 
 -- 角色管理相关按钮权限
 INSERT INTO permissions (parent_id, name, code, type, path)
 VALUES 
-(@role_list_id, '角色查询', 'role:query', 3, '/api/v1/roles'),
-(@role_list_id, '角色创建', 'role:create', 3, '/api/v1/roles'),
-(@role_list_id, '角色编辑', 'role:update', 3, '/api/v1/roles/:id'),
-(@role_list_id, '角色删除', 'role:delete', 3, '/api/v1/roles/:id'),
-(@role_list_id, '角色权限配置', 'role:assign_permission', 3, '/api/v1/roles/:id/permissions');
+(@role_manage_id, '角色查询', 'role:query', 3, '/api/v1/roles'),
+(@role_manage_id, '角色创建', 'role:create', 3, '/api/v1/roles'),
+(@role_manage_id, '角色编辑', 'role:update', 3, '/api/v1/roles/:id'),
+(@role_manage_id, '角色删除', 'role:delete', 3, '/api/v1/roles/:id'),
+(@role_manage_id, '角色权限配置', 'role:assign_permission', 3, '/api/v1/roles/:id/permissions');
+
+-- 获取知识库文档列表菜单ID
+SET @knowledge_doc_id = (SELECT id FROM permissions WHERE code = 'knowledge:document');
+SET @knowledge_setting_id = (SELECT id FROM permissions WHERE code = 'knowledge:setting');
+
+-- 知识库文档管理相关按钮权限
+INSERT INTO permissions (parent_id, name, code, type, path)
+VALUES 
+(@knowledge_doc_id, '文档查询', 'knowledge:doc:query', 3, '/api/v1/knowledge/docs'),
+(@knowledge_doc_id, '文档详情', 'knowledge:doc:detail', 3, '/api/v1/knowledge/docs/:id'),
+(@knowledge_doc_id, '文档上传', 'knowledge:doc:create', 3, '/api/v1/knowledge/docs'),
+(@knowledge_doc_id, '文档编辑', 'knowledge:doc:update', 3, '/api/v1/knowledge/docs/:id'),
+(@knowledge_doc_id, '文档删除', 'knowledge:doc:delete', 3, '/api/v1/knowledge/docs/:id'),
+(@knowledge_doc_id, '文档下载', 'knowledge:doc:download', 3, '/api/v1/knowledge/docs/:id/download');
+
+-- 知识库设置相关按钮权限
+INSERT INTO permissions (parent_id, name, code, type, path)
+VALUES 
+(@knowledge_setting_id, '配置查看', 'knowledge:config:view', 3, '/api/v1/knowledge/configs'),
+(@knowledge_setting_id, '配置编辑', 'knowledge:config:edit', 3, '/api/v1/knowledge/configs');
+
+-- 初始化知识库配置
+INSERT INTO knowledge_configs (config_key, config_value, description) VALUES
+('storage.base_path', '~/.agentnow/knowledge/docs', '知识库文档存储根目录'),
+('file.max_size', '104857600', '单文件最大大小（字节，默认100MB）'),
+('file.allowed_types', '.pdf,.doc,.docx,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.html,.htm,.xml', '允许上传的文件类型'),
+('mcp.enabled', 'true', '是否启用MCP服务（供Hermes调用）');
 
 -- 为超级管理员角色分配所有权限
 SET @super_admin_role_id = (SELECT id FROM roles WHERE code = 'super_admin');
@@ -197,13 +304,18 @@ INSERT INTO role_permissions (role_id, permission_id)
 SELECT @system_admin_role_id, id FROM permissions 
 WHERE code IN (
     'dashboard', 
-    'system', 'system:setting', 'system:monitor',
-    'user', 'user:list',
-    'user:query', 'user:create', 'user:update', 'user:delete', 'user:reset_password', 'user:toggle_status',
-    'role', 'role:list', 'role:permission',
+    'system', 'department', 'employee',
+    'department:query', 'department:create', 'department:update', 'department:delete',
+    'employee:query', 'employee:create', 'employee:update', 'employee:delete', 
+    'employee:reset_password', 'employee:toggle_status',
+    'system:setting', 'system:monitor',
+    'role:manage', 'permission:manage',
     'role:query', 'role:create', 'role:update', 'role:delete', 'role:assign_permission',
     'agent', 'agent:list', 'agent:config', 'agent:conversation',
-    'knowledge', 'knowledge:document', 'knowledge:setting'
+    'knowledge', 'knowledge:document', 'knowledge:setting',
+    'knowledge:doc:query', 'knowledge:doc:detail', 'knowledge:doc:create',
+    'knowledge:doc:update', 'knowledge:doc:delete', 'knowledge:doc:download',
+    'knowledge:config:view', 'knowledge:config:edit'
 );
 
 -- 为普通用户角色分配权限
@@ -214,11 +326,13 @@ SELECT @user_role_id, id FROM permissions
 WHERE code IN (
     'dashboard',
     'agent:list', 'agent:conversation',
-    'knowledge:document'
+    'knowledge:document',
+    'knowledge:doc:query', 'knowledge:doc:detail', 
+    'knowledge:doc:create', 'knowledge:doc:download'
 );
 
 -- ============================================
--- 七、初始化默认管理员用户
+-- 十、初始化默认管理员用户
 -- ============================================
 -- 默认管理员账号：
 -- 登录名: admin
@@ -246,7 +360,7 @@ VALUES (
     'admin',
     '13651165117',
     NULL,
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/XewdhYfU/xBBbq/2K',
+    '$2b$12$kRHVDsTios01SXRdfW.HSOAHSKH84lJXUkTQf/PeGZKMlPpkucdi2',
     '系统管理员',
     NULL,
     NULL,
@@ -275,3 +389,24 @@ VALUES (@admin_user_id, @super_admin_role_id);
 -- 手机号: 13651165117
 -- 密码: 123456
 -- 注意: 首次登录后必须修改密码
+
+-- ============================================
+-- 知识库目录创建提示
+-- ============================================
+-- 创建知识库存储目录：
+-- mkdir -p ~/.agentnow/knowledge/docs
+-- chmod -R 755 ~/.agentnow/knowledge/
+
+-- ============================================
+-- MCP Server 配置提示
+-- ============================================
+-- 在 ~/.hermes/config.yaml 中添加：
+--
+-- mcp_servers:
+--   agentnow_knowledge:
+--     command: npx
+--     args:
+--       - "-y"
+--       - "@wirux/mcp-markdown-vault"
+--     env:
+--       VAULT_PATH: "/Users/yourname/.agentnow/knowledge/docs"

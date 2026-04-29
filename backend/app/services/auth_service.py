@@ -118,6 +118,11 @@ def get_user_roles(db: Session, user_id: int) -> List[Role]:
 
 
 def get_user_permissions(db: Session, user_id: int) -> List[Permission]:
+    user = db.query(User).filter(User.id == user_id).first()
+    
+    if user and user.is_super_admin:
+        return db.query(Permission).order_by(Permission.sort, Permission.id).all()
+    
     permissions = db.query(Permission).distinct().join(
         RolePermission, RolePermission.permission_id == Permission.id
     ).join(
@@ -126,22 +131,74 @@ def get_user_permissions(db: Session, user_id: int) -> List[Permission]:
         UserRole, UserRole.role_id == Role.id
     ).filter(
         UserRole.user_id == user_id
-    ).order_by(Permission.parent_id).all()
+    ).order_by(Permission.sort, Permission.id).all()
     return permissions
 
 
 def get_user_menu_permissions(db: Session, user_id: int) -> List[Permission]:
-    permissions = db.query(Permission).distinct().join(
+    user = db.query(User).filter(User.id == user_id).first()
+    
+    if user and user.is_super_admin:
+        return db.query(Permission).filter(
+            Permission.type.in_([1, 2])
+        ).order_by(Permission.sort, Permission.id).all()
+    
+    all_permissions = db.query(Permission).distinct().join(
         RolePermission, RolePermission.permission_id == Permission.id
     ).join(
         Role, Role.id == RolePermission.role_id
     ).join(
         UserRole, UserRole.role_id == Role.id
     ).filter(
-        UserRole.user_id == user_id,
-        Permission.type.in_([1, 2])
-    ).order_by(Permission.parent_id).all()
-    return permissions
+        UserRole.user_id == user_id
+    ).all()
+    
+    if not all_permissions:
+        return []
+    
+    menu_ids = set()
+    permission_map = {}
+    
+    all_db_permissions = db.query(Permission).all()
+    for p in all_db_permissions:
+        permission_map[p.id] = p
+    
+    for perm in all_permissions:
+        current_id = perm.id
+        while current_id > 0:
+            current_perm = permission_map.get(current_id)
+            if current_perm and current_perm.type in [1, 2]:
+                menu_ids.add(current_id)
+            if current_perm:
+                current_id = current_perm.parent_id
+            else:
+                break
+    
+    if not menu_ids:
+        return []
+    
+    return db.query(Permission).filter(
+        Permission.id.in_(menu_ids)
+    ).order_by(Permission.sort, Permission.id).all()
+
+
+def get_user_all_permission_codes(db: Session, user_id: int) -> List[str]:
+    user = db.query(User).filter(User.id == user_id).first()
+    
+    if user and user.is_super_admin:
+        permissions = db.query(Permission.code).all()
+        return [p[0] for p in permissions]
+    
+    permissions = db.query(Permission.code).distinct().join(
+        RolePermission, RolePermission.permission_id == Permission.id
+    ).join(
+        Role, Role.id == RolePermission.role_id
+    ).join(
+        UserRole, UserRole.role_id == Role.id
+    ).filter(
+        UserRole.user_id == user_id
+    ).all()
+    return [p[0] for p in permissions]
 
 
 def check_user_permission(db: Session, user_id: int, permission_code: str) -> bool:
@@ -170,6 +227,23 @@ def require_permission(db: Session, user_id: int, permission_code: str):
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"没有权限: {permission_code}"
         )
+
+
+class PermissionChecker:
+    def __init__(self, permission_code: str):
+        self.permission_code = permission_code
+
+    def __call__(
+        self,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ) -> User:
+        require_permission(db, current_user.id, self.permission_code)
+        return current_user
+
+
+def permission_required(permission_code: str):
+    return PermissionChecker(permission_code)
 
 
 def get_super_admin_role(db: Session) -> Optional[Role]:

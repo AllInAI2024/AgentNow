@@ -16,25 +16,57 @@
 
         <div class="header-center">
           <div class="nav-menu">
-            <a-dropdown :trigger="['hover']" placement="bottom">
-              <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/permission') }">
-                <SafetyCertificateOutlined class="nav-icon" />
-                <span>权限管理</span>
-                <DownOutlined class="nav-arrow" />
-              </div>
-              <template #overlay>
-                <a-menu class="nav-submenu">
-                  <a-menu-item 
-                    key="/permission/manage" 
-                    @click="handleNavigate('/permission/manage')"
-                    :class="{ 'ant-menu-item-selected': isActiveRoute('/permission/manage') }"
-                  >
-                    <UnorderedListOutlined class="submenu-icon" />
-                    <span>功能点管理</span>
-                  </a-menu-item>
-                </a-menu>
+            <div
+              v-for="menu in topLevelMenus"
+              :key="menu.id"
+            >
+              <template v-if="!menu.children || menu.children.length === 0">
+                <div
+                  class="nav-menu-item"
+                  :class="{ 'nav-menu-item-active': isActiveRoute(menu.path || '') }"
+                  @click="handleNavigate(menu.path || '/')"
+                >
+                  <component :is="getIconComponent(menu.icon || '')" class="nav-icon" />
+                  <span class="nav-text">{{ menu.name }}</span>
+                </div>
               </template>
-            </a-dropdown>
+              <template v-else>
+                <a-dropdown :trigger="['hover']" placement="bottom">
+                  <div
+                    class="nav-menu-item"
+                    :class="{ 'nav-menu-item-active': isMenuActive(menu) }"
+                  >
+                    <component :is="getIconComponent(menu.icon || '')" class="nav-icon" />
+                    <span class="nav-text">{{ menu.name }}</span>
+                    <DownOutlined class="nav-arrow" />
+                  </div>
+                  <template #overlay>
+                    <div class="nav-submenu">
+                      <template v-for="child in menu.children" :key="child.id">
+                        <div
+                          v-if="child.divider"
+                          class="submenu-divider"
+                        />
+                        <div
+                          v-else
+                          class="submenu-item"
+                          :class="{ 'submenu-item-active': isActiveRoute(child.path || '') }"
+                          @click="handleNavigate(child.path || '/')"
+                        >
+                          <div class="submenu-icon-wrapper">
+                            <component :is="getIconComponent(child.icon || '')" class="submenu-icon" />
+                          </div>
+                          <div class="submenu-content">
+                            <span class="submenu-title">{{ child.name }}</span>
+                            <span class="submenu-desc">{{ getMenuDescription(child) }}</span>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </a-dropdown>
+              </template>
+            </div>
           </div>
         </div>
 
@@ -124,6 +156,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -136,18 +169,80 @@ import {
   QuestionCircleOutlined,
   SettingOutlined,
   SafetyCertificateOutlined,
+  TeamOutlined,
+  ApartmentOutlined,
   UnorderedListOutlined,
+  DashboardOutlined,
+  ToolOutlined,
+  MonitorOutlined,
+  OrderedListOutlined,
+  KeyOutlined,
+  FolderOpenOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons-vue'
+import type { PermissionTree } from '@/types'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const userStore = useUserStore()
+
+const iconMap: Record<string, unknown> = {
+  'dashboard': DashboardOutlined,
+  'team': TeamOutlined,
+  'setting': SettingOutlined,
+  'safety-certificate': SafetyCertificateOutlined,
+  'robot': RobotOutlined,
+  'folder-open': FolderOpenOutlined,
+  'apartment': ApartmentOutlined,
+  'user': UserOutlined,
+  'tool': ToolOutlined,
+  'monitor': MonitorOutlined,
+  'list': OrderedListOutlined,
+  'key': KeyOutlined,
+  'file': FileTextOutlined,
+  'unordered-list': UnorderedListOutlined,
+}
+
+const defaultIcon = QuestionCircleOutlined
+
+const getIconComponent = (iconName: string) => {
+  return iconMap[iconName] || defaultIcon
+}
+
+const topLevelMenus = computed<PermissionTree[]>(() => {
+  return userStore.menuPermissions || []
+})
+
+const getMenuDescription = (menu: PermissionTree): string => {
+  const descMap: Record<string, string> = {
+    'department': '管理组织架构与层级',
+    'employee': '管理员工账号与信息',
+    'role:manage': '管理系统角色',
+    'permission:manage': '配置系统功能与权限',
+    'system:setting': '系统参数配置',
+    'system:monitor': '系统运行监控',
+    'agent:list': '管理智能体列表',
+    'agent:config': '配置智能体参数',
+    'agent:conversation': '查看对话记录',
+    'knowledge:document': '管理知识库文档',
+    'knowledge:setting': '知识库配置',
+  }
+  return descMap[menu.code] || `进入${menu.name}`
+}
+
+const isMenuActive = (menu: PermissionTree): boolean => {
+  if (!menu.children || menu.children.length === 0) {
+    return isActiveRoute(menu.path || '')
+  }
+  return menu.children.some(child => isActiveRoute(child.path || ''))
+}
 
 const handleGoHome = () => {
   router.push({ name: 'Dashboard' })
 }
 
 const isActiveRoute = (path: string) => {
+  if (!path) return false
   return router.currentRoute.value.path.startsWith(path)
 }
 
@@ -198,12 +293,12 @@ const handleLogout = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 32px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  height: 64px;
+  padding: 0 40px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(229, 230, 235, 0.8);
+  height: 68px;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -221,24 +316,25 @@ const handleLogout = () => {
   cursor: pointer;
   padding: 8px 16px;
   border-radius: 12px;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .logo-wrapper:hover {
   background: rgba(22, 93, 255, 0.06);
+  transform: translateY(-1px);
 }
 
 .logo-icon {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   background: linear-gradient(135deg, #165DFF 0%, #4080FF 50%, #722ED1 100%);
-  border-radius: 14px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 
-    0 8px 24px rgba(22, 93, 255, 0.35),
-    0 2px 8px rgba(22, 93, 255, 0.2);
+    0 6px 20px rgba(22, 93, 255, 0.3),
+    0 2px 6px rgba(22, 93, 255, 0.15);
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
@@ -251,16 +347,16 @@ const handleLogout = () => {
   left: 0;
   right: 0;
   height: 50%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, transparent 100%);
-  border-radius: 14px 14px 0 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.25) 0%, transparent 100%);
+  border-radius: 12px 12px 0 0;
 }
 
 .logo-robot {
-  font-size: 26px;
+  font-size: 22px;
   color: white;
   position: relative;
   z-index: 1;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.15));
 }
 
 .logo-brand {
@@ -271,21 +367,21 @@ const handleLogout = () => {
 }
 
 .logo-chinese {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: #1d2129;
-  letter-spacing: 2px;
+  letter-spacing: 1.5px;
   line-height: 1.2;
 }
 
 .logo-english {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   line-height: 1.2;
 }
 
@@ -293,24 +389,25 @@ const handleLogout = () => {
   flex: 1;
   display: flex;
   justify-content: flex-start;
-  padding-left: 40px;
+  padding-left: 48px;
 }
 
 .nav-menu {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .nav-menu-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  color: #4e5969;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  color: #646a73;
+  position: relative;
 }
 
 .nav-menu-item:hover {
@@ -319,53 +416,168 @@ const handleLogout = () => {
 }
 
 .nav-menu-item-active {
-  background: rgba(22, 93, 255, 0.1);
+  background: rgba(22, 93, 255, 0.12);
   color: #165DFF;
   font-weight: 500;
 }
 
+.nav-menu-item-active::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 3px;
+  background: linear-gradient(90deg, #165DFF 0%, #722ED1 100%);
+  border-radius: 2px;
+}
+
 .nav-icon {
-  font-size: 16px;
+  font-size: 18px;
+}
+
+.nav-text {
+  font-size: 14px;
+  letter-spacing: 0.3px;
 }
 
 .nav-arrow {
-  font-size: 12px;
-  transition: transform 0.2s ease;
+  font-size: 11px;
+  color: #86909c;
+  transition: all 0.25s ease;
+  margin-left: 2px;
 }
 
 .nav-menu-item:hover .nav-arrow {
   transform: rotate(180deg);
-}
-
-:deep(.nav-submenu) {
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-  border: 1px solid #e5e6eb;
-  padding: 8px;
-  min-width: 220px;
-}
-
-:deep(.nav-submenu .ant-menu-item) {
-  border-radius: 8px;
-  margin: 4px 0;
-  padding: 8px 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-:deep(.nav-submenu .ant-menu-item:hover) {
-  background: rgba(22, 93, 255, 0.06);
-}
-
-:deep(.nav-submenu .ant-menu-item-selected) {
-  background: rgba(22, 93, 255, 0.1);
   color: #165DFF;
 }
 
+.nav-submenu {
+  border-radius: 16px;
+  box-shadow: 
+    0 24px 64px rgba(0, 0, 0, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(229, 230, 235, 0.9);
+  padding: 8px;
+  min-width: 360px;
+  backdrop-filter: blur(24px);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.submenu-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(229, 230, 235, 0.8) 20%, rgba(229, 230, 235, 0.8) 80%, transparent 100%);
+  margin: 8px 16px;
+}
+
+.submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  margin: 2px 0;
+}
+
+.submenu-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: linear-gradient(180deg, #165DFF 0%, #722ED1 100%);
+  border-radius: 0 12px 12px 0;
+  transition: all 0.3s ease;
+  opacity: 0.1;
+}
+
+.submenu-item:hover {
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.06) 0%, rgba(114, 46, 209, 0.03) 100%);
+}
+
+.submenu-item:hover::before {
+  width: 3px;
+  opacity: 1;
+}
+
+.submenu-item-active {
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.1) 0%, rgba(114, 46, 209, 0.05) 100%);
+}
+
+.submenu-item-active::before {
+  width: 3px;
+  opacity: 1;
+}
+
+.submenu-icon-wrapper {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(247, 248, 250, 0.9) 0%, rgba(242, 243, 245, 0.9) 100%);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.submenu-item:hover .submenu-icon-wrapper {
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.12) 0%, rgba(114, 46, 209, 0.08) 100%);
+  transform: scale(1.05);
+}
+
+.submenu-item-active .submenu-icon-wrapper {
+  background: linear-gradient(135deg, rgba(22, 93, 255, 0.15) 0%, rgba(114, 46, 209, 0.1) 100%);
+}
+
 .submenu-icon {
+  font-size: 20px;
+  color: #646a73;
+  transition: all 0.3s ease;
+}
+
+.submenu-item:hover .submenu-icon {
+  color: #165DFF;
+}
+
+.submenu-item-active .submenu-icon {
+  color: #165DFF;
+}
+
+.submenu-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.submenu-title {
   font-size: 14px;
+  font-weight: 500;
+  color: #1d2129;
+  transition: all 0.3s ease;
+}
+
+.submenu-item:hover .submenu-title {
+  color: #165DFF;
+}
+
+.submenu-item-active .submenu-title {
+  color: #165DFF;
+  font-weight: 600;
+}
+
+.submenu-desc {
+  font-size: 12px;
   color: #86909c;
+  line-height: 1.4;
 }
 
 .header-right {

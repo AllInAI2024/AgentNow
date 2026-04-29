@@ -11,6 +11,8 @@ class PermissionBase(BaseModel):
     parent_id: int = Field(0, description="父权限ID（0表示顶级）")
     path: Optional[str] = Field(None, max_length=255, description="路由路径/接口路径")
     icon: Optional[str] = Field(None, max_length=100, description="菜单图标")
+    sort: int = Field(0, description="排序号")
+    divider: bool = Field(False, description="是否是菜单分割线")
 
 
 class PermissionCreate(PermissionBase):
@@ -24,6 +26,8 @@ class PermissionUpdate(BaseModel):
     parent_id: Optional[int] = Field(None, description="父权限ID（0表示顶级）")
     path: Optional[str] = Field(None, max_length=255, description="路由路径/接口路径")
     icon: Optional[str] = Field(None, max_length=100, description="菜单图标")
+    sort: Optional[int] = Field(None, description="排序号")
+    divider: Optional[bool] = Field(None, description="是否是菜单分割线")
 
 
 class PermissionResponse(PermissionBase):
