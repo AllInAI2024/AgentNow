@@ -27,6 +27,9 @@ from app.schemas.hermes import (
     HermesKnowledgeListResponse,
     HermesKnowledgeDocDetail,
     HermesAuditLogListResponse,
+    ProfileListResponse,
+    ProfileDetailResponse,
+    ProfileActionResult,
 )
 from app.schemas.user import APIResponse
 from app.services.auth_service import get_db, get_current_user
@@ -864,4 +867,147 @@ async def get_audit_logs(
         code=200,
         message="获取成功",
         data=audit_logs
+    )
+
+
+@router.get(
+    "/profiles",
+    response_model=APIResponse[ProfileListResponse],
+    summary="获取 Profile 列表",
+    description="获取 Hermes 系统所有 Profile 列表，支持搜索、状态筛选和用户筛选"
+)
+async def get_profiles(
+    search: Optional[str] = Query(None, description="搜索关键词（profile_name 或 display_name）"),
+    status: Optional[str] = Query(None, description="状态筛选（running/starting/stopped/error）"),
+    user_id: Optional[int] = Query(None, description="用户ID筛选"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    profiles = hermes_service.list_profiles(
+        db=db,
+        search=search,
+        status=status,
+        user_id=user_id
+    )
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=profiles
+    )
+
+
+@router.get(
+    "/profiles/{profile_name}",
+    response_model=APIResponse[ProfileDetailResponse],
+    summary="获取 Profile 详情",
+    description="获取指定 Profile 的详细信息"
+)
+async def get_profile_detail(
+    profile_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    profile = hermes_service.get_profile_detail(
+        profile_name=profile_name,
+        db=db
+    )
+    
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile 不存在"
+        )
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=profile
+    )
+
+
+@router.post(
+    "/profiles/{profile_name}/start",
+    response_model=APIResponse[ProfileActionResult],
+    summary="启动 Profile",
+    description="启动指定的 Profile"
+)
+async def start_profile(
+    profile_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    result = hermes_service.start_profile(profile_name)
+    
+    return APIResponse(
+        code=200,
+        message="启动命令已发送",
+        data=result
+    )
+
+
+@router.post(
+    "/profiles/{profile_name}/stop",
+    response_model=APIResponse[ProfileActionResult],
+    summary="停止 Profile",
+    description="停止指定的 Profile"
+)
+async def stop_profile(
+    profile_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    result = hermes_service.stop_profile(profile_name)
+    
+    return APIResponse(
+        code=200,
+        message="停止命令已发送",
+        data=result
+    )
+
+
+@router.post(
+    "/profiles/{profile_name}/restart",
+    response_model=APIResponse[ProfileActionResult],
+    summary="重启 Profile",
+    description="重启指定的 Profile"
+)
+async def restart_profile(
+    profile_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    result = hermes_service.restart_profile(profile_name)
+    
+    return APIResponse(
+        code=200,
+        message="重启命令已发送",
+        data=result
     )

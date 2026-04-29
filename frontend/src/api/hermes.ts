@@ -21,6 +21,9 @@ import type {
   HermesKnowledgeDocDetail,
   FileTypeStat,
   HermesAuditLogListResponse,
+  ProfileListResponse,
+  ProfileDetailResponse,
+  ProfileActionResult,
   APIResponse 
 } from '@/types'
 
@@ -180,5 +183,34 @@ export const hermesApi = {
     if (params?.end_time) queryParams.append('end_time', params.end_time)
     const queryString = queryParams.toString()
     return http.get(`/hermes/audit${queryString ? `?${queryString}` : ''}`)
+  },
+
+  getProfiles: (params?: {
+    search?: string
+    status?: string
+    user_id?: number
+  }): Promise<APIResponse<ProfileListResponse>> => {
+    const queryParams = new URLSearchParams()
+    if (params?.search) queryParams.append('search', params.search)
+    if (params?.status) queryParams.append('status', params.status)
+    if (params?.user_id) queryParams.append('user_id', String(params.user_id))
+    const queryString = queryParams.toString()
+    return http.get(`/hermes/profiles${queryString ? `?${queryString}` : ''}`)
+  },
+
+  getProfileDetail: (profileName: string): Promise<APIResponse<ProfileDetailResponse>> => {
+    return http.get(`/hermes/profiles/${encodeURIComponent(profileName)}`)
+  },
+
+  startProfile: (profileName: string): Promise<APIResponse<ProfileActionResult>> => {
+    return http.post(`/hermes/profiles/${encodeURIComponent(profileName)}/start`)
+  },
+
+  stopProfile: (profileName: string): Promise<APIResponse<ProfileActionResult>> => {
+    return http.post(`/hermes/profiles/${encodeURIComponent(profileName)}/stop`)
+  },
+
+  restartProfile: (profileName: string): Promise<APIResponse<ProfileActionResult>> => {
+    return http.post(`/hermes/profiles/${encodeURIComponent(profileName)}/restart`)
   },
 }
