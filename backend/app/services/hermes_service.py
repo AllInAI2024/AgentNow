@@ -2462,5 +2462,263 @@ class HermesService:
             total=len(items)
         )
 
+    def _get_profile_config_path(self, profile_name: Optional[str] = None) -> tuple[Path, Path]:
+        if profile_name and profile_name != "default" and profile_name != "global":
+            hermes_profiles_dir = Path.home() / ".hermes-profiles" / profile_name
+            config_path = hermes_profiles_dir / "config.yaml"
+            env_path = hermes_profiles_dir / ".env"
+            if config_path.exists() or hermes_profiles_dir.exists():
+                return config_path, env_path
+        
+        hermes_dir = Path.home() / ".hermes"
+        config_path = hermes_dir / "config.yaml"
+        env_path = hermes_dir / ".env"
+        return config_path, env_path
+
+    def _mask_sensitive_value(self, key: str, value: str) -> str:
+        sensitive_keywords = [
+            "api_key", "apikey", "api-key",
+            "secret", "password", "pwd",
+            "token", "auth", "credential",
+            "private_key", "privatekey",
+            "access_key", "accesskey",
+        ]
+        
+        key_lower = key.lower()
+        is_sensitive = any(kw in key_lower for kw in sensitive_keywords)
+        
+        if not is_sensitive:
+            return value
+        
+        if not value:
+            return value
+        
+        if len(value) <= 8:
+            return "****"
+        
+        visible_chars = min(4, len(value) // 4)
+        return value[:visible_chars] + "****" + value[-visible_chars:]
+
+    def _parse_model_provider(self, model: str) -> str:
+        if not model:
+            return "未配置"
+        
+        provider_map = {
+            "anthropic": "Anthropic",
+            "claude": "Anthropic",
+            "openai": "OpenAI",
+            "gpt": "OpenAI",
+            "google": "Google",
+            "gemini": "Google",
+            "mistral": "Mistral",
+            "openrouter": "OpenRouter",
+        }
+        
+        model_lower = model.lower()
+        for key, provider in provider_map.items():
+            if key in model_lower:
+                return provider
+        
+        return model.split("/")[0] if "/" in model else "未知"
+
+    def _get_model_context_window(self, model: str) -> int:
+        if not model:
+            return 0
+        
+        model_lower = model.lower()
+        
+        if "claude-opus" in model_lower or "claude-4" in model_lower:
+            return 200000
+        elif "claude-sonnet" in model_lower:
+            return 200000
+        elif "claude-haiku" in model_lower:
+            return 200000
+        elif "gpt-4o" in model_lower:
+            return 128000
+        elif "gpt-4-turbo" in model_lower:
+            return 128000
+        elif "gpt-4" in model_lower:
+            return 8192
+        elif "gpt-3.5" in model_lower:
+            return 16384
+        elif "gemini-1.5-pro" in model_lower:
+            return 1048576
+        elif "gemini-1.5-flash" in model_lower:
+            return 1048576
+        
+        return 8192
+
+    def _read_env_file(self, env_path: Path) -> Dict[str, str]:
+        if not env_path.exists():
+            return {}
+        
+        env_vars = {}
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        if value.startswith('"') and value.endswith('"'):
+                            value = value[1:-1]
+                        elif value.startswith("'") and value.endswith("'"):
+                            value = value[1:-1]
+                        
+                        env_vars[key] = value
+        except Exception as e:
+            logger.error(f"Failed to read .env file {env_path}: {e}")
+        
+        return env_vars
+
+    def list_config_profiles(self, db: Optional[Session] = None) -> ConfigProfileListResponse:
+        profiles = self.get_profile_list()
+        
+        items: List[ConfigProfileItem] = []
+        
+        items.append(ConfigProfileItem(
+            name="global",
+            display_name="全局配置",
+            has_config=True,
+            is_global=True
+        ))
+        
+        for profile_name in profiles:
+            if profile_name == "default":
+                continue
+                
+            config_path, env_path = self._get_profile_config_path(profile_name)
+            has_config = config_path.exists() or env_path.exists()
+            
+            display_name = profile_name
+            user_name = None
+            
+            if db:
+                try:
+                    from app.models import User
+                    if profile_name.startswith("user_"):
+                        try:
+                            user_id = int(profile_name.replace("user_", ""))
+                            user = db.query(User).filter(User.id == user_id).first()
+                            if user:
+                                display_name = user.username
+                                user_name = user.username
+                        except ValueError:
+                            pass
+                except Exception as e:
+                    logger.error(f"Failed to get user info for profile {profile_name}: {e}")
+            
+            items.append(ConfigProfileItem(
+                name=profile_name,
+                display_name=display_name,
+                has_config=has_config,
+                is_global=False
+            ))
+        
+        return ConfigProfileListResponse(
+            items=items,
+            total=len(items)
+        )
+
+    def get_config(self, profile_name: str = "global") -> ConfigResponse:
+        config_path, env_path = self._get_profile_config_path(profile_name)
+        
+        config_data = {}
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config_data = yaml.safe_load(f) or {}
+            except Exception as e:
+                logger.error(f"Failed to read config.yaml {config_path}: {e}")
+        
+        env_vars = self._read_env_file(env_path)
+        
+        last_updated = None
+        if config_path.exists():
+            try:
+                stat = config_path.stat()
+                last_updated = datetime.fromtimestamp(stat.st_mtime)
+            except Exception:
+                pass
+        
+        model = ModelConfig()
+        terminal = TerminalConfig()
+        api_server = APIServerConfig()
+        memory = MemoryConfig()
+        compression = CompressionConfig()
+        tools = ToolsConfig()
+        general = GeneralConfig()
+        
+        model_config = config_data.get("model", {})
+        if isinstance(model_config, dict):
+            model.default_model = model_config.get("model") or model_config.get("default")
+            model.temperature = model_config.get("temperature")
+            model.max_tokens = model_config.get("max_tokens") or model_config.get("max_output_tokens")
+        
+        if model.default_model:
+            model.model_provider = self._parse_model_provider(model.default_model)
+            model.context_window = self._get_model_context_window(model.default_model)
+        
+        terminal_config = config_data.get("terminal", {})
+        if isinstance(terminal_config, dict):
+            terminal.backend = terminal_config.get("backend", "local")
+            terminal.cwd = terminal_config.get("cwd")
+            terminal.timeout = terminal_config.get("timeout")
+            terminal.env_passthrough = terminal_config.get("env_passthrough", [])
+        
+        api_server.enabled = env_vars.get("API_SERVER_ENABLED", "false").lower() in ("true", "1", "yes")
+        try:
+            api_server.port = int(env_vars.get("API_SERVER_PORT", 8642))
+        except (ValueError, TypeError):
+            api_server.port = 8642
+        api_server.host = env_vars.get("API_SERVER_HOST", "127.0.0.1")
+        
+        cors_origins = env_vars.get("API_SERVER_CORS_ORIGINS", "")
+        if cors_origins:
+            api_server.cors_origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
+        api_server.model_name = env_vars.get("API_SERVER_MODEL_NAME")
+        
+        memory_config = config_data.get("memory", {})
+        if isinstance(memory_config, dict):
+            memory.auto_save = memory_config.get("auto_save", True)
+            memory.memory_char_limit = memory_config.get("memory_char_limit", 2200)
+            memory.user_char_limit = memory_config.get("user_char_limit", 1375)
+        
+        compression_config = config_data.get("compression", {})
+        if isinstance(compression_config, dict):
+            compression.enabled = compression_config.get("enabled", True)
+            compression.strategy = compression_config.get("strategy")
+            compression.threshold_tokens = compression_config.get("threshold_tokens")
+        
+        tools_config = config_data.get("tools", {}) or config_data.get("tool", {})
+        if isinstance(tools_config, dict):
+            tools.enabled_tools = tools_config.get("enabled", [])
+            tools.disabled_tools = tools_config.get("disabled", [])
+        
+        general_config = config_data.get("general", {})
+        if isinstance(general_config, dict):
+            general.log_level = general_config.get("log_level")
+            general.auto_update = general_config.get("auto_update", False)
+            general.telemetry_enabled = general_config.get("telemetry_enabled", True)
+        
+        return ConfigResponse(
+            profile_name=profile_name,
+            model=model,
+            terminal=terminal,
+            api_server=api_server,
+            memory=memory,
+            compression=compression,
+            tools=tools,
+            general=general,
+            config_file_path=str(config_path) if config_path.exists() else None,
+            env_file_path=str(env_path) if env_path.exists() else None,
+            last_updated=last_updated
+        )
+
 
 hermes_service = HermesService()

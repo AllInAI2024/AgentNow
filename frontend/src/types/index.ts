@@ -493,3 +493,76 @@ export interface ProfileMemoryListResponse {
   items: ProfileMemoryListItem[]
   total: number
 }
+
+export interface ConfigProfileItem {
+  name: string
+  display_name: string
+  has_config: boolean
+  is_global: boolean
+}
+
+export interface ConfigProfileListResponse {
+  items: ConfigProfileItem[]
+  total: number
+}
+
+export interface ModelConfig {
+  default_model: string | null
+  model_provider: string | null
+  context_window: number | null
+  temperature: number | null
+  max_tokens: number | null
+}
+
+export interface TerminalConfig {
+  backend: string | null
+  cwd: string | null
+  timeout: number | null
+  env_passthrough: string[]
+}
+
+export interface APIServerConfig {
+  enabled: boolean
+  port: number | null
+  host: string | null
+  cors_origins: string[]
+  model_name: string | null
+}
+
+export interface MemoryConfig {
+  memory_char_limit: number
+  user_char_limit: number
+  auto_save: boolean
+}
+
+export interface CompressionConfig {
+  enabled: boolean
+  strategy: string | null
+  threshold_tokens: number | null
+}
+
+export interface ToolsConfig {
+  enabled_tools: string[]
+  disabled_tools: string[]
+}
+
+export interface GeneralConfig {
+  log_level: string | null
+  auto_update: boolean
+  telemetry_enabled: boolean
+}
+
+export interface ConfigResponse {
+  profile_name: string
+  model: ModelConfig
+  terminal: TerminalConfig
+  api_server: APIServerConfig
+  memory: MemoryConfig
+  compression: CompressionConfig
+  tools: ToolsConfig
+  general: GeneralConfig
+  raw_config: string | null
+  config_file_path: string | null
+  env_file_path: string | null
+  last_updated: string | null
+}

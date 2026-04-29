@@ -14,6 +14,8 @@ import type {
   BuiltinToolListResponse,
   MemoryResponse,
   ProfileMemoryListResponse,
+  ConfigResponse,
+  ConfigProfileListResponse,
   APIResponse 
 } from '@/types'
 
@@ -109,5 +111,17 @@ export const hermesApi = {
 
   getProfileMemory: (profileName: string): Promise<APIResponse<MemoryResponse>> => {
     return http.get(`/hermes/profiles/${encodeURIComponent(profileName)}/memory`)
+  },
+
+  getConfigProfiles: (): Promise<APIResponse<ConfigProfileListResponse>> => {
+    return http.get('/hermes/config/profiles')
+  },
+
+  getGlobalConfig: (): Promise<APIResponse<ConfigResponse>> => {
+    return http.get('/hermes/config')
+  },
+
+  getProfileConfig: (profileName: string): Promise<APIResponse<ConfigResponse>> => {
+    return http.get(`/hermes/config/${encodeURIComponent(profileName)}`)
   },
 }
