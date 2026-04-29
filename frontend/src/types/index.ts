@@ -624,3 +624,82 @@ export interface FileTypeStat {
   type: string
   count: number
 }
+
+export interface HermesAuditLog {
+  id: number
+  user_id: number
+  user_name: string
+  action: string
+  action_name: string
+  target_type?: string
+  target_id?: string
+  details: Record<string, unknown>
+  ip_address: string
+  user_agent: string
+  timestamp: string
+}
+
+export const HermesActionType = {
+  VIEW_OVERVIEW: 'hermes:view:overview',
+  VIEW_PROFILES: 'hermes:view:profiles',
+  VIEW_PROFILE_DETAIL: 'hermes:view:profile_detail',
+  VIEW_CONVERSATIONS: 'hermes:view:conversations',
+  VIEW_CONVERSATION_DETAIL: 'hermes:view:conversation_detail',
+  VIEW_SKILLS: 'hermes:view:skills',
+  VIEW_MCP: 'hermes:view:mcp',
+  VIEW_TOOLS: 'hermes:view:tools',
+  VIEW_MEMORY: 'hermes:view:memory',
+  VIEW_CONFIG: 'hermes:view:config',
+  VIEW_KNOWLEDGE: 'hermes:view:knowledge',
+  
+  RESTART_PROFILE: 'hermes:action:restart_profile',
+  STOP_PROFILE: 'hermes:action:stop_profile',
+  START_PROFILE: 'hermes:action:start_profile',
+  
+  EXPORT_CONVERSATION: 'hermes:action:export_conversation',
+  DELETE_CONVERSATION: 'hermes:action:delete_conversation',
+  
+  UPLOAD_DOCUMENT: 'hermes:action:upload_document',
+  DELETE_DOCUMENT: 'hermes:action:delete_document',
+  REBUILD_INDEX: 'hermes:action:rebuild_index',
+} as const
+
+export type HermesActionTypeKey = typeof HermesActionType[keyof typeof HermesActionType]
+
+export interface HermesAuditLogListResponse {
+  items: HermesAuditLog[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface HermesAuditActionTypeOption {
+  value: string
+  label: string
+}
+
+export const HermesActionTypeOptions: HermesAuditActionTypeOption[] = [
+  { value: '', label: '全部操作' },
+  { value: 'view', label: '查看类' },
+  { value: 'action', label: '操作类' },
+  { value: HermesActionType.VIEW_OVERVIEW, label: '查看系统概览' },
+  { value: HermesActionType.VIEW_PROFILES, label: '查看Profile列表' },
+  { value: HermesActionType.VIEW_PROFILE_DETAIL, label: '查看Profile详情' },
+  { value: HermesActionType.VIEW_CONVERSATIONS, label: '查看对话列表' },
+  { value: HermesActionType.VIEW_CONVERSATION_DETAIL, label: '查看对话详情' },
+  { value: HermesActionType.VIEW_SKILLS, label: '查看技能列表' },
+  { value: HermesActionType.VIEW_MCP, label: '查看MCP服务' },
+  { value: HermesActionType.VIEW_TOOLS, label: '查看工具集' },
+  { value: HermesActionType.VIEW_MEMORY, label: '查看记忆' },
+  { value: HermesActionType.VIEW_CONFIG, label: '查看配置' },
+  { value: HermesActionType.VIEW_KNOWLEDGE, label: '查看知识库' },
+  { value: HermesActionType.RESTART_PROFILE, label: '重启Profile' },
+  { value: HermesActionType.STOP_PROFILE, label: '停止Profile' },
+  { value: HermesActionType.START_PROFILE, label: '启动Profile' },
+  { value: HermesActionType.EXPORT_CONVERSATION, label: '导出对话' },
+  { value: HermesActionType.DELETE_CONVERSATION, label: '删除对话' },
+  { value: HermesActionType.UPLOAD_DOCUMENT, label: '上传文档' },
+  { value: HermesActionType.DELETE_DOCUMENT, label: '删除文档' },
+  { value: HermesActionType.REBUILD_INDEX, label: '重建索引' },
+]
