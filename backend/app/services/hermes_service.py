@@ -5,7 +5,7 @@ import asyncio
 import platform
 import sys
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -3083,7 +3083,7 @@ class HermesService:
         ]
 
     def _generate_audit_logs(self) -> List[HermesAuditLog]:
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         
         action_mappings = [
             ("hermes:view:overview", "查看系统概览"),
@@ -3217,6 +3217,8 @@ class HermesService:
         if start_time:
             try:
                 start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
                 filtered_logs = [log for log in filtered_logs if log.timestamp >= start_dt]
             except ValueError:
                 logger.warning(f"Invalid start_time format: {start_time}")
@@ -3224,6 +3226,8 @@ class HermesService:
         if end_time:
             try:
                 end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
                 filtered_logs = [log for log in filtered_logs if log.timestamp <= end_dt]
             except ValueError:
                 logger.warning(f"Invalid end_time format: {end_time}")
