@@ -56,218 +56,220 @@
           </a-card>
         </div>
 
-        <div class="content-layout">
-          <div class="main-area">
-            <a-card :bordered="false" class="content-card">
-              <template #title>
-                <div class="card-header">
-                  <div class="card-title-left">
-                    <AppstoreOutlined class="card-icon" />
-                    <span>MCP 服务列表</span>
-                  </div>
-                </div>
-              </template>
-
-              <div v-if="loading" class="loading-container">
-                <a-spin size="large" />
-              </div>
-
-              <div v-else-if="!mcpList || mcpList.items.length === 0" class="empty-container">
-                <a-empty description="暂无 MCP 服务">
-                  <a-button type="primary" @click="handleRefresh">
-                    <ReloadOutlined /> 刷新
-                  </a-button>
-                </a-empty>
-              </div>
-
-              <a-table
-                v-else
-                :columns="columns"
-                :data-source="mcpList.items"
-                :pagination="{ pageSize: 10, showSizeChanger: true, showTotal: (total: number) => `共 ${total} 个服务` }"
-                row-key="name"
-                :loading="loading"
-              >
-                <template #bodyCell="{ column, record }">
-                  <template v-if="column.key === 'name'">
-                    <div class="service-name" @click="handleViewDetail(record)">
-                      <AppstoreOutlined class="service-icon" />
-                      <span>{{ record.name }}</span>
-                    </div>
-                  </template>
-                  <template v-else-if="column.key === 'type'">
-                    <a-tag :color="record.type === 'stdio' ? 'blue' : 'purple'">
-                      <template v-if="record.type === 'stdio'">
-                        <DesktopOutlined />
-                      </template>
-                      <template v-else>
-                        <GlobalOutlined />
-                      </template>
-                      {{ record.type_display }}
-                    </a-tag>
-                  </template>
-                  <template v-else-if="column.key === 'status'">
-                    <a-tag :color="getStatusColor(record.status)">
-                      <component :is="getStatusIcon(record.status)" />
-                      {{ getStatusText(record.status) }}
-                    </a-tag>
-                  </template>
-                  <template v-else-if="column.key === 'tools'">
-                    <div class="tool-count">
-                      <ToolOutlined class="tool-icon" />
-                      <span>{{ record.tool_count }} 个工具</span>
-                    </div>
-                  </template>
-                  <template v-else-if="column.key === 'last_check'">
-                    <span>{{ record.last_check ? formatTime(record.last_check) : '-' }}</span>
-                  </template>
-                  <template v-else-if="column.key === 'actions'">
-                    <div class="action-buttons">
-                      <a-button type="link" size="small" @click.stop="handleViewDetail(record)">
-                        <EyeOutlined /> 详情
-                      </a-button>
-                      <a-button type="link" size="small" @click.stop="handleTestConnection(record)">
-                        <PlayCircleOutlined /> 测试
-                      </a-button>
-                    </div>
-                  </template>
-                </template>
-              </a-table>
-            </a-card>
-          </div>
-
-          <div class="detail-panel" v-if="selectedService">
-            <a-card :bordered="false" class="detail-card">
-              <div class="detail-header">
-                <div class="detail-icon-wrapper">
-                  <AppstoreOutlined class="detail-icon" :class="selectedService.status" />
-                </div>
-                <div class="detail-header-info">
-                  <div class="detail-name">{{ selectedService.name }}</div>
-                  <div class="detail-meta">
-                    <a-tag :color="selectedService.type === 'stdio' ? 'blue' : 'purple'">
-                      {{ selectedService.type_display }}
-                    </a-tag>
-                    <a-tag :color="getStatusColor(selectedService.status)">
-                      {{ getStatusText(selectedService.status) }}
-                    </a-tag>
-                  </div>
-                </div>
-                <a-button type="text" class="close-btn" @click="handleCloseDetail">
-                  <CloseOutlined />
-                </a-button>
-              </div>
-
-              <a-divider />
-
-              <div class="detail-content">
-                <div class="detail-section">
-                  <div class="section-title">
-                    <InfoCircleOutlined class="section-icon" />
-                    基本信息
-                  </div>
-                  <div class="info-list">
-                    <div class="info-item">
-                      <div class="info-label">服务类型</div>
-                      <div class="info-value">
-                        <component :is="selectedService.type === 'stdio' ? 'DesktopOutlined' : 'GlobalOutlined'" class="info-icon" />
-                        {{ selectedService.type_display }}
-                      </div>
-                    </div>
-                    <div class="info-item" v-if="selectedService.command">
-                      <div class="info-label">启动命令</div>
-                      <div class="info-value">
-                        <code class="command-text">{{ selectedService.command }} {{ selectedService.args?.join(' ') || '' }}</code>
-                      </div>
-                    </div>
-                    <div class="info-item" v-if="selectedService.url">
-                      <div class="info-label">服务 URL</div>
-                      <div class="info-value url-value">
-                        <LinkOutlined class="link-icon" />
-                        <a :href="selectedService.url" target="_blank" rel="noopener noreferrer">
-                          {{ selectedService.url }}
-                        </a>
-                      </div>
-                    </div>
-                    <div class="info-item">
-                      <div class="info-label">工具数量</div>
-                      <div class="info-value">
-                        <ToolOutlined class="info-icon" />
-                        {{ selectedService.tool_count }} 个工具
-                      </div>
-                    </div>
-                    <div class="info-item" v-if="selectedService.last_check">
-                      <div class="info-label">最后检查</div>
-                      <div class="info-value">
-                        <ClockCircleOutlined class="info-icon" />
-                        {{ formatTime(selectedService.last_check) }}
-                      </div>
-                    </div>
-                    <div class="info-item error-item" v-if="selectedService.error_message">
-                      <div class="info-label">错误信息</div>
-                      <div class="info-value error-value">
-                        <AlertOutlined class="error-icon" />
-                        {{ selectedService.error_message }}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <a-divider />
-
-                <div class="detail-section">
-                  <div class="section-title">
-                    <ToolOutlined class="section-icon" />
-                    提供的工具 ({{ selectedService.tools.length }})
-                  </div>
-                  <div v-if="selectedService.tools.length === 0" class="empty-tools">
-                    <a-empty description="该服务暂无工具" />
-                  </div>
-                  <div v-else class="tools-list">
-                    <a-collapse v-model:activeKey="activeToolKeys">
-                      <a-collapse-panel
-                        v-for="tool in selectedService.tools"
-                        :key="tool.name"
-                        :header="getToolHeader(tool)"
-                      >
-                        <div class="tool-detail">
-                          <div class="tool-desc">{{ tool.description || '暂无描述' }}</div>
-                          <div class="tool-schema" v-if="tool.input_schema">
-                            <div class="schema-title">输入参数:</div>
-                            <pre class="schema-content"><code>{{ JSON.stringify(tool.input_schema, null, 2) }}</code></pre>
-                          </div>
-                        </div>
-                      </a-collapse-panel>
-                    </a-collapse>
-                  </div>
-                </div>
-
-                <a-divider v-if="selectedService.config_raw" />
-
-                <div class="detail-section" v-if="selectedService.config_raw">
-                  <div class="section-title">
-                    <SettingOutlined class="section-icon" />
-                    配置原文
-                  </div>
-                  <div class="config-raw">
-                    <pre><code>{{ selectedService.config_raw }}</code></pre>
-                  </div>
+        <div class="main-area">
+          <a-card :bordered="false" class="content-card">
+            <template #title>
+              <div class="card-header">
+                <div class="card-title-left">
+                  <AppstoreOutlined class="card-icon" />
+                  <span>MCP 服务列表</span>
                 </div>
               </div>
+            </template>
 
-              <div class="detail-actions">
-                <a-button type="primary" @click="handleTestConnection(selectedService)" :loading="testingService">
-                  <PlayCircleOutlined /> 测试连接
-                </a-button>
-                <a-button @click="handleRefresh">
+            <div v-if="loading" class="loading-container">
+              <a-spin size="large" />
+            </div>
+
+            <div v-else-if="!mcpList || mcpList.items.length === 0" class="empty-container">
+              <a-empty description="暂无 MCP 服务">
+                <a-button type="primary" @click="handleRefresh">
                   <ReloadOutlined /> 刷新
                 </a-button>
-              </div>
-            </a-card>
-          </div>
+              </a-empty>
+            </div>
+
+            <a-table
+              v-else
+              :columns="columns"
+              :data-source="mcpList.items"
+              :pagination="{ pageSize: 10, showSizeChanger: true, showTotal: (total: number) => `共 ${total} 个服务` }"
+              row-key="name"
+              :loading="loading"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'name'">
+                  <div class="service-name" @click="handleViewDetail(record)">
+                    <AppstoreOutlined class="service-icon" />
+                    <span>{{ record.name }}</span>
+                  </div>
+                </template>
+                <template v-else-if="column.key === 'type'">
+                  <a-tag :color="record.type === 'stdio' ? 'blue' : 'purple'">
+                    <template v-if="record.type === 'stdio'">
+                      <DesktopOutlined />
+                    </template>
+                    <template v-else>
+                      <GlobalOutlined />
+                    </template>
+                    {{ record.type_display }}
+                  </a-tag>
+                </template>
+                <template v-else-if="column.key === 'status'">
+                  <a-tag :color="getStatusColor(record.status)">
+                    <component :is="getStatusIcon(record.status)" />
+                    {{ getStatusText(record.status) }}
+                  </a-tag>
+                </template>
+                <template v-else-if="column.key === 'tools'">
+                  <div class="tool-count">
+                    <ToolOutlined class="tool-icon" />
+                    <span>{{ record.tool_count }} 个工具</span>
+                  </div>
+                </template>
+                <template v-else-if="column.key === 'last_check'">
+                  <span>{{ record.last_check ? formatTime(record.last_check) : '-' }}</span>
+                </template>
+                <template v-else-if="column.key === 'actions'">
+                  <div class="action-buttons">
+                    <a-button type="link" size="small" @click.stop="handleViewDetail(record)">
+                      <EyeOutlined /> 详情
+                    </a-button>
+                    <a-button type="link" size="small" @click.stop="handleTestConnection(record)">
+                      <PlayCircleOutlined /> 测试
+                    </a-button>
+                  </div>
+                </template>
+              </template>
+            </a-table>
+          </a-card>
         </div>
       </div>
     </div>
+
+    <a-modal
+      v-model:open="detailModalVisible"
+      :title="null"
+      :footer="null"
+      width="600px"
+      :closable="true"
+      class="mcp-detail-modal"
+    >
+      <div v-if="selectedService" class="detail-modal-content">
+        <div class="detail-header">
+          <div class="detail-icon-wrapper">
+            <AppstoreOutlined class="detail-icon" :class="selectedService.status" />
+          </div>
+          <div class="detail-header-info">
+            <div class="detail-name">{{ selectedService.name }}</div>
+            <div class="detail-meta">
+              <a-tag :color="selectedService.type === 'stdio' ? 'blue' : 'purple'">
+                {{ selectedService.type_display }}
+              </a-tag>
+              <a-tag :color="getStatusColor(selectedService.status)">
+                {{ getStatusText(selectedService.status) }}
+              </a-tag>
+            </div>
+          </div>
+        </div>
+
+        <a-divider />
+
+        <div class="detail-content">
+          <div class="detail-section">
+            <div class="section-title">
+              <InfoCircleOutlined class="section-icon" />
+              基本信息
+            </div>
+            <div class="info-list">
+              <div class="info-item">
+                <div class="info-label">服务类型</div>
+                <div class="info-value">
+                  <component :is="selectedService.type === 'stdio' ? 'DesktopOutlined' : 'GlobalOutlined'" class="info-icon" />
+                  {{ selectedService.type_display }}
+                </div>
+              </div>
+              <div class="info-item" v-if="selectedService.command">
+                <div class="info-label">启动命令</div>
+                <div class="info-value">
+                  <code class="command-text">{{ selectedService.command }} {{ selectedService.args?.join(' ') || '' }}</code>
+                </div>
+              </div>
+              <div class="info-item" v-if="selectedService.url">
+                <div class="info-label">服务 URL</div>
+                <div class="info-value url-value">
+                  <LinkOutlined class="link-icon" />
+                  <a :href="selectedService.url" target="_blank" rel="noopener noreferrer">
+                    {{ selectedService.url }}
+                  </a>
+                </div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">工具数量</div>
+                <div class="info-value">
+                  <ToolOutlined class="info-icon" />
+                  {{ selectedService.tool_count }} 个工具
+                </div>
+              </div>
+              <div class="info-item" v-if="selectedService.last_check">
+                <div class="info-label">最后检查</div>
+                <div class="info-value">
+                  <ClockCircleOutlined class="info-icon" />
+                  {{ formatTime(selectedService.last_check) }}
+                </div>
+              </div>
+              <div class="info-item error-item" v-if="selectedService.error_message">
+                <div class="info-label">错误信息</div>
+                <div class="info-value error-value">
+                  <AlertOutlined class="error-icon" />
+                  {{ selectedService.error_message }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <a-divider />
+
+          <div class="detail-section">
+            <div class="section-title">
+              <ToolOutlined class="section-icon" />
+              提供的工具 ({{ selectedService.tools.length }})
+            </div>
+            <div v-if="selectedService.tools.length === 0" class="empty-tools">
+              <a-empty description="该服务暂无工具" />
+            </div>
+            <div v-else class="tools-list">
+              <a-collapse v-model:activeKey="activeToolKeys">
+                <a-collapse-panel
+                  v-for="tool in selectedService.tools"
+                  :key="tool.name"
+                  :header="getToolHeader(tool)"
+                >
+                  <div class="tool-detail">
+                    <div class="tool-desc">{{ tool.description || '暂无描述' }}</div>
+                    <div class="tool-schema" v-if="tool.input_schema">
+                      <div class="schema-title">输入参数:</div>
+                      <pre class="schema-content"><code>{{ JSON.stringify(tool.input_schema, null, 2) }}</code></pre>
+                    </div>
+                  </div>
+                </a-collapse-panel>
+              </a-collapse>
+            </div>
+          </div>
+
+          <a-divider v-if="selectedService.config_raw" />
+
+          <div class="detail-section" v-if="selectedService.config_raw">
+            <div class="section-title">
+              <SettingOutlined class="section-icon" />
+              配置原文
+            </div>
+            <div class="config-raw">
+              <pre><code>{{ selectedService.config_raw }}</code></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-actions">
+          <a-button type="primary" @click="handleTestConnection(selectedService)" :loading="testingService">
+            <PlayCircleOutlined /> 测试连接
+          </a-button>
+          <a-button @click="handleCloseDetail">
+            <CloseOutlined /> 关闭
+          </a-button>
+        </div>
+      </div>
+    </a-modal>
 
     <a-modal
       v-model:open="testModalVisible"
@@ -337,6 +339,7 @@ const mcpList = ref<MCPServiceListResponse | null>(null)
 const selectedService = ref<MCPService | null>(null)
 const activeToolKeys = ref<string[]>([])
 
+const detailModalVisible = ref(false)
 const testModalVisible = ref(false)
 const testResult = ref<MCPServiceTestResult | null>(null)
 
@@ -431,11 +434,16 @@ const handleViewDetail = (service: MCPService) => {
   selectedService.value = service
   if (service.tools.length > 0) {
     activeToolKeys.value = [service.tools[0].name]
+  } else {
+    activeToolKeys.value = []
   }
+  detailModalVisible.value = true
 }
 
 const handleCloseDetail = () => {
+  detailModalVisible.value = false
   selectedService.value = null
+  activeToolKeys.value = []
 }
 
 const handleTestConnection = async (service: MCPService) => {
@@ -563,18 +571,12 @@ onMounted(() => {
   margin-top: 4px;
 }
 
-.content-layout {
-  display: flex;
-  gap: 24px;
-}
-
 .main-area {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
 }
 
 .content-card {
-  height: 100%;
+  width: 100%;
 }
 
 .card-header {
@@ -624,22 +626,14 @@ onMounted(() => {
   gap: 4px;
 }
 
-.detail-panel {
-  width: 420px;
-  flex-shrink: 0;
-}
-
-.detail-card {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+.detail-modal-content {
+  padding: 0;
 }
 
 .detail-header {
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  position: relative;
 }
 
 .detail-icon-wrapper {
@@ -685,15 +679,8 @@ onMounted(() => {
   margin-top: 8px;
 }
 
-.close-btn {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  color: #86909c;
-}
-
 .detail-content {
-  flex: 1;
+  max-height: 500px;
   overflow-y: auto;
 }
 
@@ -874,6 +861,7 @@ onMounted(() => {
 
 .detail-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 12px;
   margin-top: 16px;
   padding-top: 16px;
