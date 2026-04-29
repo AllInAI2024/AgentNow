@@ -65,6 +65,8 @@ from app.schemas.hermes import (
     HermesKnowledgeDocDetail,
     HermesKnowledgeStatus,
     HermesKnowledgeListResponse,
+    HermesAuditLog,
+    HermesAuditLogListResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -3079,6 +3081,167 @@ class HermesService:
             {"type": ft, "count": count}
             for ft, count in sorted(type_counts.items(), key=lambda x: (-x[1], x[0]))
         ]
+
+    def _generate_audit_logs(self) -> List[HermesAuditLog]:
+        now = datetime.now()
+        
+        action_mappings = [
+            ("hermes:view:overview", "查看系统概览"),
+            ("hermes:view:profiles", "查看Profile列表"),
+            ("hermes:view:profile_detail", "查看Profile详情"),
+            ("hermes:view:conversations", "查看对话列表"),
+            ("hermes:view:conversation_detail", "查看对话详情"),
+            ("hermes:view:skills", "查看技能列表"),
+            ("hermes:view:mcp", "查看MCP服务"),
+            ("hermes:view:tools", "查看工具集"),
+            ("hermes:view:memory", "查看记忆"),
+            ("hermes:view:config", "查看配置"),
+            ("hermes:view:knowledge", "查看知识库"),
+            ("hermes:action:restart_profile", "重启Profile"),
+            ("hermes:action:stop_profile", "停止Profile"),
+            ("hermes:action:start_profile", "启动Profile"),
+            ("hermes:action:export_conversation", "导出对话"),
+            ("hermes:action:delete_conversation", "删除对话"),
+            ("hermes:action:upload_document", "上传文档"),
+            ("hermes:action:delete_document", "删除文档"),
+            ("hermes:action:rebuild_index", "重建索引"),
+        ]
+        
+        user_mappings = [
+            (1, "admin"),
+            (2, "victor"),
+            (3, "alice"),
+            (4, "bob"),
+        ]
+        
+        ip_addresses = [
+            "127.0.0.1",
+            "192.168.1.100",
+            "192.168.1.101",
+            "10.0.0.5",
+        ]
+        
+        user_agents = [
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        ]
+        
+        target_types = ["profile", "conversation", "skill", "document", "config", "memory"]
+        
+        logs: List[HermesAuditLog] = []
+        
+        for i in range(50):
+            action, action_name = action_mappings[i % len(action_mappings)]
+            user_id, user_name = user_mappings[i % len(user_mappings)]
+            
+            minutes_ago = i * 30
+            timestamp = now - timedelta(minutes=minutes_ago)
+            
+            target_type = None
+            target_id = None
+            details: Dict[str, Any] = {}
+            
+            if "profile" in action:
+                target_type = "profile"
+                profile_names = ["default", "work", "personal", "coding"]
+                target_id = profile_names[i % len(profile_names)]
+                details["profile_name"] = target_id
+            elif "conversation" in action:
+                target_type = "conversation"
+                target_id = f"conv_{1000 + i}"
+                details["conversation_id"] = target_id
+            elif "skill" in action:
+                target_type = "skill"
+                skill_names = ["find-skills", "skill-creator", "http-api-cloudbase"]
+                target_id = skill_names[i % len(skill_names)]
+                details["skill_name"] = target_id
+            elif "document" in action:
+                target_type = "document"
+                target_id = f"doc_{2000 + i}"
+                details["document_id"] = target_id
+                details["file_name"] = f"document_{i}.md"
+            elif "knowledge" in action or "index" in action:
+                target_type = "knowledge"
+                details["action"] = action_name
+            
+            logs.append(HermesAuditLog(
+                id=i + 1,
+                user_id=user_id,
+                user_name=user_name,
+                action=action,
+                action_name=action_name,
+                target_type=target_type,
+                target_id=target_id,
+                details=details,
+                ip_address=ip_addresses[i % len(ip_addresses)],
+                user_agent=user_agents[i % len(user_agents)],
+                timestamp=timestamp,
+            ))
+        
+        return logs
+
+    def get_audit_logs(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        action: Optional[str] = None,
+        user_id: Optional[int] = None,
+        user_name: Optional[str] = None,
+        target_type: Optional[str] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+    ) -> HermesAuditLogListResponse:
+        logs = self._generate_audit_logs()
+        
+        filtered_logs = logs
+        
+        if action:
+            if action == "view":
+                filtered_logs = [log for log in filtered_logs if log.action.startswith("hermes:view")]
+            elif action == "action":
+                filtered_logs = [log for log in filtered_logs if log.action.startswith("hermes:action")]
+            else:
+                filtered_logs = [log for log in filtered_logs if log.action == action]
+        
+        if user_id:
+            filtered_logs = [log for log in filtered_logs if log.user_id == user_id]
+        
+        if user_name:
+            user_name_lower = user_name.lower()
+            filtered_logs = [log for log in filtered_logs if user_name_lower in log.user_name.lower()]
+        
+        if target_type:
+            filtered_logs = [log for log in filtered_logs if log.target_type == target_type]
+        
+        if start_time:
+            try:
+                start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+                filtered_logs = [log for log in filtered_logs if log.timestamp >= start_dt]
+            except ValueError:
+                logger.warning(f"Invalid start_time format: {start_time}")
+        
+        if end_time:
+            try:
+                end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+                filtered_logs = [log for log in filtered_logs if log.timestamp <= end_dt]
+            except ValueError:
+                logger.warning(f"Invalid end_time format: {end_time}")
+        
+        total = len(filtered_logs)
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+        
+        start_index = (page - 1) * page_size
+        end_index = start_index + page_size
+        paged_logs = filtered_logs[start_index:end_index]
+        
+        return HermesAuditLogListResponse(
+            items=paged_logs,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
 
 
 hermes_service = HermesService()

@@ -435,3 +435,25 @@ class HermesKnowledgeListResponse(BaseModel):
 
 class HermesKnowledgeStatusResponse(BaseModel):
     status: HermesKnowledgeStatus = Field(..., description="知识库状态")
+
+
+class HermesAuditLog(BaseModel):
+    id: int = Field(..., description="审计日志ID")
+    user_id: int = Field(..., description="操作人ID")
+    user_name: str = Field(..., description="操作人名称")
+    action: str = Field(..., description="操作类型标识")
+    action_name: str = Field(..., description="操作类型名称")
+    target_type: Optional[str] = Field(None, description="目标类型")
+    target_id: Optional[str] = Field(None, description="目标ID")
+    details: Dict[str, Any] = Field(default_factory=dict, description="详细信息")
+    ip_address: str = Field(..., description="IP地址")
+    user_agent: Optional[str] = Field(None, description="用户代理")
+    timestamp: datetime = Field(default_factory=datetime.now, description="操作时间")
+
+
+class HermesAuditLogListResponse(BaseModel):
+    items: List[HermesAuditLog] = Field(default_factory=list, description="审计日志列表")
+    total: int = Field(0, description="总数量")
+    page: int = Field(1, description="当前页码")
+    page_size: int = Field(20, description="每页数量")
+    total_pages: int = Field(0, description="总页数")
