@@ -465,48 +465,52 @@
           <ReloadOutlined /> 刷新
         </a-button>
       </div>
-      <div class="available-skills-list" v-if="availableLoading">
-        <a-spin size="large" />
-      </div>
-      <div class="available-skills-list" v-else-if="availableSkills.length === 0">
-        <a-empty description="暂无可用技能" />
-      </div>
-      <div class="available-skills-list" v-else>
-        <a-card 
-          v-for="skill in filteredAvailableSkills" 
-          :key="skill.name"
-          :bordered="false"
-          class="available-skill-card"
-        >
-          <div class="available-skill-header">
-            <div class="available-skill-icon">
-              <ToolOutlined />
-            </div>
-            <div class="available-skill-info">
-              <div class="available-skill-name">{{ skill.name }}</div>
-              <div class="available-skill-meta">
-                <a-tag :color="skill.source === 'official' ? 'blue' : 'orange'">
-                  {{ skill.source }}
-                </a-tag>
-                <span class="available-skill-trust">{{ skill.trust }}</span>
+      <div class="available-skills-list">
+        <div v-if="availableLoading" class="available-skills-loading">
+          <a-spin size="large" />
+        </div>
+        <template v-else>
+          <div v-if="availableSkills.length === 0" class="available-skills-empty">
+            <a-empty description="暂无可用技能" />
+          </div>
+          <template v-else>
+            <a-card 
+              v-for="skill in filteredAvailableSkills" 
+              :key="skill.name"
+              :bordered="false"
+              class="available-skill-card"
+            >
+              <div class="available-skill-header">
+                <div class="available-skill-icon">
+                  <ToolOutlined />
+                </div>
+                <div class="available-skill-info">
+                  <div class="available-skill-name">{{ skill.name }}</div>
+                  <div class="available-skill-meta">
+                    <a-tag :color="skill.source === 'official' ? 'blue' : 'orange'">
+                      {{ skill.source }}
+                    </a-tag>
+                    <span class="available-skill-trust">{{ skill.trust }}</span>
+                  </div>
+                </div>
+                <div class="available-skill-action">
+                  <a-tag v-if="skill.is_installed" color="green">已安装</a-tag>
+                  <a-button 
+                    v-else
+                    type="primary" 
+                    size="small"
+                    @click="handleInstallAvailableSkill(skill)"
+                  >
+                    <CloudDownloadOutlined /> 安装
+                  </a-button>
+                </div>
               </div>
-            </div>
-            <div class="available-skill-action">
-              <a-tag v-if="skill.is_installed" color="green">已安装</a-tag>
-              <a-button 
-                v-else
-                type="primary" 
-                size="small"
-                @click="handleInstallAvailableSkill(skill)"
-              >
-                <CloudDownloadOutlined /> 安装
-              </a-button>
-            </div>
-          </div>
-          <div class="available-skill-description">
-            {{ skill.description || '暂无描述' }}
-          </div>
-        </a-card>
+              <div class="available-skill-description">
+                {{ skill.description || '暂无描述' }}
+              </div>
+            </a-card>
+          </template>
+        </template>
       </div>
     </a-modal>
   </MainLayout>
@@ -1536,7 +1540,22 @@ onMounted(() => {
   flex-direction: column;
   gap: 12px;
   max-height: 500px;
-  overflow-y: auto;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+.available-skills-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+
+.available-skills-empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
 }
 
 .available-skill-card {
