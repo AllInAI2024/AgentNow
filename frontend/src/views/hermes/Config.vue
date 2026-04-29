@@ -210,7 +210,7 @@
                     <a-progress
                       :percent="67"
                       status="normal"
-                      :stroke-color="#165DFF"
+                      stroke-color="#165DFF"
                     />
                     <p class="memory-info">
                       用于记录环境事实、项目约定、学到的知识等。<br />
@@ -223,7 +223,7 @@
                     <a-progress
                       :percent="35"
                       status="normal"
-                      :stroke-color="#722ED1"
+                      stroke-color="#722ED1"
                     />
                     <p class="memory-info">
                       用于记录用户偏好、沟通风格、期望等。<br />
