@@ -156,7 +156,7 @@
             </a-descriptions-item>
             <a-descriptions-item label="操作人">
               <div class="user-info">
-                <AvatarOutlined class="user-avatar" />
+                <UserOutlined class="user-avatar" />
                 <span class="user-name">{{ selectedLog.user_name }}</span>
                 <span class="user-id">(ID: {{ selectedLog.user_id }})</span>
               </div>
@@ -206,7 +206,7 @@ import {
   RedoOutlined,
   EyeOutlined,
   InfoCircleOutlined,
-  AvatarOutlined,
+  UserOutlined,
 } from '@ant-design/icons-vue'
 import type { Dayjs } from 'dayjs'
 import dayjs from 'dayjs'
