@@ -1,7 +1,9 @@
-from typing import Optional, List
+from typing import Optional, List, Generic, TypeVar
 from datetime import datetime, date
 
 from pydantic import BaseModel, Field, field_validator
+
+T = TypeVar('T')
 
 
 class UserBase(BaseModel):
@@ -107,7 +109,7 @@ class AssignRolesRequest(BaseModel):
     role_ids: List[int] = Field(..., description="角色ID列表")
 
 
-class APIResponse(BaseModel):
+class APIResponse(BaseModel, Generic[T]):
     code: int = Field(200, description="状态码")
     message: str = Field("success", description="消息")
-    data: Optional[dict] = Field(None, description="数据")
+    data: Optional[T] = Field(None, description="数据")
