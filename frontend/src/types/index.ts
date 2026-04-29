@@ -1,17 +1,21 @@
 export interface User {
   id: number
-  phone: string
+  login_name: string
+  phone: string | null
+  email: string | null
   username: string
-  role: 'admin' | 'user'
+  avatar_url: string | null
+  hermes_profile: string | null
+  hermes_profile_config: string | null
   is_active: boolean
   is_default_password: boolean
-  hermes_profile: string | null
+  is_super_admin: boolean
   created_at: string | null
   updated_at: string | null
 }
 
 export interface LoginParams {
-  phone: string
+  login_name: string
   password: string
 }
 

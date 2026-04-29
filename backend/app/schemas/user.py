@@ -7,13 +7,14 @@ T = TypeVar('T')
 
 
 class UserBase(BaseModel):
-    phone: str = Field(..., min_length=1, max_length=20, description="手机号/登录账号")
+    login_name: str = Field(..., min_length=1, max_length=50, description="登录账号（唯一，用于登录）")
     username: str = Field(..., min_length=1, max_length=50, description="用户姓名/昵称")
+    phone: Optional[str] = Field(None, max_length=20, description="手机号（可选，可用于登录）")
     email: Optional[str] = Field(None, max_length=100, description="邮箱")
 
 
 class UserLogin(BaseModel):
-    phone: str = Field(..., min_length=1, max_length=20, description="账号")
+    login_name: str = Field(..., min_length=1, max_length=50, description="登录账号（登录名或手机号）")
     password: str = Field(..., min_length=6, max_length=100, description="密码")
 
 
@@ -26,6 +27,7 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=1, max_length=50, description="用户姓名/昵称")
+    phone: Optional[str] = Field(None, max_length=20, description="手机号")
     email: Optional[str] = Field(None, max_length=100, description="邮箱")
     avatar_url: Optional[str] = Field(None, max_length=500, description="头像URL")
     hermes_profile: Optional[str] = Field(None, max_length=100, description="对应的 Hermes Profile 名称")
@@ -35,7 +37,8 @@ class UserUpdate(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    phone: str
+    login_name: str
+    phone: Optional[str] = None
     email: Optional[str] = None
     username: str
     avatar_url: Optional[str] = None
