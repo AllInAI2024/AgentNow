@@ -20,6 +20,7 @@ import type {
   HermesKnowledgeListResponse,
   HermesKnowledgeDocDetail,
   FileTypeStat,
+  HermesAuditLogListResponse,
   APIResponse 
 } from '@/types'
 
@@ -156,5 +157,28 @@ export const hermesApi = {
 
   getKnowledgeFileTypes: (): Promise<APIResponse<FileTypeStat[]>> => {
     return http.get('/hermes/knowledge/file-types')
+  },
+
+  getAuditLogs: (params?: {
+    page?: number
+    page_size?: number
+    action?: string
+    user_id?: number
+    user_name?: string
+    target_type?: string
+    start_time?: string
+    end_time?: string
+  }): Promise<APIResponse<HermesAuditLogListResponse>> => {
+    const queryParams = new URLSearchParams()
+    if (params?.page) queryParams.append('page', String(params.page))
+    if (params?.page_size) queryParams.append('page_size', String(params.page_size))
+    if (params?.action) queryParams.append('action', params.action)
+    if (params?.user_id) queryParams.append('user_id', String(params.user_id))
+    if (params?.user_name) queryParams.append('user_name', params.user_name)
+    if (params?.target_type) queryParams.append('target_type', params.target_type)
+    if (params?.start_time) queryParams.append('start_time', params.start_time)
+    if (params?.end_time) queryParams.append('end_time', params.end_time)
+    const queryString = queryParams.toString()
+    return http.get(`/hermes/audit${queryString ? `?${queryString}` : ''}`)
   },
 }
