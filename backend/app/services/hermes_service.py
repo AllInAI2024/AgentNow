@@ -67,6 +67,13 @@ from app.schemas.hermes import (
     HermesKnowledgeListResponse,
     HermesAuditLog,
     HermesAuditLogListResponse,
+    ProfileStatus,
+    ProfileListItem,
+    ProfileStats,
+    ProfileDetail,
+    ProfileListResponse,
+    ProfileDetailResponse,
+    ProfileActionResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -3402,6 +3409,516 @@ class HermesService:
             page_size=page_size,
             total_pages=total_pages,
         )
+
+    def _get_profile_process_info(self, profile_name: str) -> Optional[Dict[str, Any]]:
+        try:
+            if self._system in ["linux", "darwin"]:
+                returncode, stdout, stderr = self._run_command(
+                    ["ps", "aux"],
+                    timeout=10
+                )
+                
+                if returncode == 0:
+                    lines = stdout.strip().split("\n")
+                    for line in lines:
+                        if "hermes" in line.lower() and "gateway" in line.lower():
+                            if profile_name in line:
+                                parts = line.split()
+                                if len(parts) >= 2:
+                                    pid = parts[1]
+                                    port = None
+                                    for part in parts:
+                                        if "--port" in part or "-p" in part:
+                                            if "=" in part:
+                                                port = part.split("=")[1]
+                                            elif ":" in part:
+                                                port = part.split(":")[1]
+                                            elif part == "--port" or part == "-p":
+                                                idx = parts.index(part)
+                                                if idx + 1 < len(parts):
+                                                    port = parts[idx + 1]
+                                    
+                                    try:
+                                        port = int(port) if port else None
+                                    except (ValueError, TypeError):
+                                        port = None
+                                    
+                                    return {
+                                        "pid": pid,
+                                        "port": port,
+                                        "command": " ".join(parts[10:]) if len(parts) > 10 else line,
+                                    }
+            
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get process info for profile {profile_name}: {e}")
+            return None
+
+    def _get_profile_port_from_config(self, profile_name: str) -> Optional[int]:
+        try:
+            config_path, _ = self._get_profile_config_path(profile_name)
+            
+            if config_path.exists():
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f) or {}
+                
+                api_server_config = config.get("api_server", {})
+                if isinstance(api_server_config, dict):
+                    port = api_server_config.get("port")
+                    if port:
+                        try:
+                            return int(port)
+                        except (ValueError, TypeError):
+                            pass
+            
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get port from config for {profile_name}: {e}")
+            return None
+
+    def _get_profile_status(self, profile_name: str) -> ProfileStatus:
+        process_info = self._get_profile_process_info(profile_name)
+        
+        if process_info:
+            return ProfileStatus.RUNNING
+        
+        if self._system in ["linux", "darwin"]:
+            try:
+                returncode, stdout, stderr = self._run_command(
+                    ["pgrep", "-f", f"hermes.*{profile_name}"],
+                    timeout=10
+                )
+                
+                if returncode == 0 and stdout.strip():
+                    return ProfileStatus.RUNNING
+            except Exception:
+                pass
+        
+        return ProfileStatus.STOPPED
+
+    def _get_profile_last_activity(self, profile_name: str) -> Optional[datetime]:
+        try:
+            memory_dir = self._get_memory_dir(profile_name)
+            
+            memory_file = memory_dir / "MEMORY.md"
+            user_file = memory_dir / "USER.md"
+            
+            latest_time = None
+            
+            for file_path in [memory_file, user_file]:
+                if file_path.exists():
+                    stat = file_path.stat()
+                    mtime = datetime.fromtimestamp(stat.st_mtime)
+                    if latest_time is None or mtime > latest_time:
+                        latest_time = mtime
+            
+            profile_dir = self._get_profile_config_path(profile_name)[0].parent
+            if profile_dir.exists():
+                for item in profile_dir.iterdir():
+                    if item.is_file():
+                        stat = item.stat()
+                        mtime = datetime.fromtimestamp(stat.st_mtime)
+                        if latest_time is None or mtime > latest_time:
+                            latest_time = mtime
+            
+            return latest_time
+        except Exception as e:
+            logger.error(f"Failed to get last activity for {profile_name}: {e}")
+            return None
+
+    def _get_profile_created_at(self, profile_name: str) -> Optional[datetime]:
+        try:
+            config_path, _ = self._get_profile_config_path(profile_name)
+            
+            if config_path.exists():
+                stat = config_path.stat()
+                return datetime.fromtimestamp(stat.st_ctime)
+            
+            profile_dir = self._get_profile_config_path(profile_name)[0].parent
+            if profile_dir.exists():
+                stat = profile_dir.stat()
+                return datetime.fromtimestamp(stat.st_ctime)
+            
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get created time for {profile_name}: {e}")
+            return None
+
+    def _get_profile_skill_count(self, profile_name: str) -> int:
+        try:
+            profile_skills_dir = self._get_profile_config_path(profile_name)[0].parent / "skills"
+            
+            if profile_skills_dir.exists():
+                return self._get_skills_from_dir(profile_skills_dir)
+            
+            default_skills_dir = Path.home() / ".hermes" / "skills"
+            if default_skills_dir.exists():
+                return self._get_skills_from_dir(default_skills_dir)
+            
+            return 0
+        except Exception as e:
+            logger.error(f"Failed to get skill count for {profile_name}: {e}")
+            return 0
+
+    def list_profiles(
+        self,
+        db: Optional[Session] = None,
+        status_filter: Optional[str] = None,
+        user_filter: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> ProfileListResponse:
+        profiles = self.get_profile_list()
+        
+        if not profiles:
+            profiles = ["default"]
+        
+        items: List[ProfileListItem] = []
+        running_count = 0
+        stopped_count = 0
+        error_count = 0
+        
+        for profile_name in profiles:
+            status = self._get_profile_status(profile_name)
+            
+            if status == ProfileStatus.RUNNING:
+                running_count += 1
+            elif status == ProfileStatus.STOPPED:
+                stopped_count += 1
+            else:
+                error_count += 1
+            
+            if status_filter:
+                if status_filter == "running" and status != ProfileStatus.RUNNING:
+                    continue
+                elif status_filter == "stopped" and status != ProfileStatus.STOPPED:
+                    continue
+                elif status_filter == "error" and status != ProfileStatus.ERROR:
+                    continue
+            
+            process_info = self._get_profile_process_info(profile_name)
+            port = process_info.get("port") if process_info else None
+            
+            if not port:
+                port = self._get_profile_port_from_config(profile_name)
+            
+            display_name = profile_name
+            user_id = None
+            user_name = None
+            
+            if db:
+                try:
+                    user = db.query(User).filter(
+                        User.hermes_profile == profile_name
+                    ).first()
+                    
+                    if user:
+                        display_name = user.username
+                        user_id = user.id
+                        user_name = user.username
+                except Exception as e:
+                    logger.error(f"Failed to get user info for profile {profile_name}: {e}")
+            
+            if user_filter:
+                if not user_name or user_filter.lower() not in user_name.lower():
+                    continue
+            
+            if search:
+                search_lower = search.lower()
+                if (
+                    search_lower not in profile_name.lower()
+                    and (not user_name or search_lower not in user_name.lower())
+                    and (not display_name or search_lower not in display_name.lower())
+                ):
+                    continue
+            
+            api_url = None
+            if port:
+                api_url = f"http://127.0.0.1:{port}"
+            
+            last_activity = self._get_profile_last_activity(profile_name)
+            created_at = self._get_profile_created_at(profile_name)
+            
+            items.append(ProfileListItem(
+                profile_name=profile_name,
+                display_name=display_name,
+                status=status,
+                user_id=user_id,
+                user_name=user_name,
+                port=port,
+                api_url=api_url,
+                last_activity=last_activity,
+                session_count=0,
+                created_at=created_at,
+            ))
+        
+        return ProfileListResponse(
+            items=items,
+            total=len(items),
+            running_count=running_count,
+            stopped_count=stopped_count,
+            error_count=error_count,
+        )
+
+    def get_profile_detail(
+        self,
+        profile_name: str,
+        db: Optional[Session] = None,
+    ) -> Optional[ProfileDetail]:
+        profiles = self.get_profile_list()
+        
+        if not profiles:
+            profiles = ["default"]
+        
+        if profile_name not in profiles and profile_name != "default":
+            return None
+        
+        status = self._get_profile_status(profile_name)
+        
+        process_info = self._get_profile_process_info(profile_name)
+        port = process_info.get("port") if process_info else None
+        
+        if not port:
+            port = self._get_profile_port_from_config(profile_name)
+        
+        display_name = profile_name
+        user_id = None
+        user_name = None
+        
+        if db:
+            try:
+                user = db.query(User).filter(
+                    User.hermes_profile == profile_name
+                ).first()
+                
+                if user:
+                    display_name = user.username
+                    user_id = user.id
+                    user_name = user.username
+            except Exception as e:
+                logger.error(f"Failed to get user info for profile {profile_name}: {e}")
+        
+        api_url = None
+        if port:
+            api_url = f"http://127.0.0.1:{port}"
+        
+        last_activity = self._get_profile_last_activity(profile_name)
+        created_at = self._get_profile_created_at(profile_name)
+        
+        config_path, env_path = self._get_profile_config_path(profile_name)
+        memory_dir = self._get_memory_dir(profile_name)
+        
+        memory_chars = 0
+        memory_file = memory_dir / "MEMORY.md"
+        if memory_file.exists():
+            try:
+                with open(memory_file, "r", encoding="utf-8") as f:
+                    memory_chars = len(f.read())
+            except Exception:
+                pass
+        
+        memory_limit = 2200
+        memory_percent = min(100.0, (memory_chars / memory_limit * 100) if memory_limit > 0 else 0.0
+        
+        skill_count = self._get_profile_skill_count(profile_name)
+        
+        stats = ProfileStats(
+            total_sessions=0,
+            total_messages=0,
+            skill_count=skill_count,
+            memory_usage=memory_chars,
+            memory_limit=memory_limit,
+            memory_percent=memory_percent,
+        )
+        
+        return ProfileDetail(
+            profile_name=profile_name,
+            display_name=display_name,
+            status=status,
+            user_id=user_id,
+            user_name=user_name,
+            port=port,
+            api_url=api_url,
+            created_at=created_at,
+            last_activity=last_activity,
+            stats=stats,
+            config_path=str(config_path) if config_path.exists() else None,
+            memory_path=str(memory_dir) if memory_dir.exists() else None,
+        )
+
+    def restart_profile(self, profile_name: str) -> ProfileActionResult:
+        process_info = self._get_profile_process_info(profile_name)
+        
+        if process_info:
+            pid = process_info.get("pid")
+            if pid:
+                try:
+                    returncode, stdout, stderr = self._run_command(
+                        ["kill", "-TERM", str(pid)],
+                        timeout=10
+                    )
+                    
+                    if returncode != 0:
+                        logger.warning(f"Failed to stop profile {profile_name}: {stderr}")
+                except Exception as e:
+                    logger.error(f"Failed to stop profile {profile_name}: {e}")
+        
+        import asyncio
+        
+        try:
+            cmd = [self._hermes_path, "gateway", "--profile", profile_name, "--start"]
+            
+            env = os.environ.copy()
+            env["PATH"] = os.path.dirname(self._python_path) + os.pathsep + env.get("PATH", "")
+            
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env
+            )
+            
+            asyncio.sleep(2)
+            
+            if process.poll() is None:
+                return ProfileActionResult(
+                    success=True,
+                    message=f"Profile '{profile_name}' 已重启",
+                    profile_name=profile_name,
+                    action="restart",
+                    new_status=ProfileStatus.RUNNING,
+                )
+            else:
+                stdout, stderr = process.communicate(timeout=5)
+                return ProfileActionResult(
+                    success=False,
+                    message=f"Profile '{profile_name}' 启动失败: {stderr.decode() if stderr else '未知错误'}",
+                    profile_name=profile_name,
+                    action="restart",
+                    new_status=ProfileStatus.ERROR,
+                )
+        except Exception as e:
+            logger.error(f"Failed to restart profile {profile_name}: {e}")
+            return ProfileActionResult(
+                success=False,
+                message=f"Profile '{profile_name}' 重启失败: {str(e)}",
+                profile_name=profile_name,
+                action="restart",
+                new_status=ProfileStatus.ERROR,
+            )
+
+    def stop_profile(self, profile_name: str) -> ProfileActionResult:
+        process_info = self._get_profile_process_info(profile_name)
+        
+        if not process_info:
+            return ProfileActionResult(
+                success=True,
+                message=f"Profile '{profile_name}' 已经停止",
+                profile_name=profile_name,
+                action="stop",
+                new_status=ProfileStatus.STOPPED,
+            )
+        
+        pid = process_info.get("pid")
+        if not pid:
+            return ProfileActionResult(
+                success=False,
+                message=f"无法找到 Profile '{profile_name}' 的进程",
+                profile_name=profile_name,
+                action="stop",
+                new_status=ProfileStatus.ERROR,
+            )
+        
+        try:
+            returncode, stdout, stderr = self._run_command(
+                ["kill", "-TERM", str(pid)],
+                timeout=10
+            )
+            
+            if returncode == 0:
+                return ProfileActionResult(
+                    success=True,
+                    message=f"Profile '{profile_name}' 已停止",
+                    profile_name=profile_name,
+                    action="stop",
+                    new_status=ProfileStatus.STOPPED,
+                )
+            else:
+                return ProfileActionResult(
+                    success=False,
+                    message=f"Profile '{profile_name}' 停止失败: {stderr or stdout}",
+                    profile_name=profile_name,
+                    action="stop",
+                    new_status=ProfileStatus.ERROR,
+                )
+        except Exception as e:
+            logger.error(f"Failed to stop profile {profile_name}: {e}")
+            return ProfileActionResult(
+                success=False,
+                message=f"Profile '{profile_name}' 停止失败: {str(e)}",
+                profile_name=profile_name,
+                action="stop",
+                new_status=ProfileStatus.ERROR,
+            )
+
+    def start_profile(self, profile_name: str) -> ProfileActionResult:
+        process_info = self._get_profile_process_info(profile_name)
+        
+        if process_info:
+            return ProfileActionResult(
+                success=True,
+                message=f"Profile '{profile_name}' 已经在运行",
+                profile_name=profile_name,
+                action="start",
+                new_status=ProfileStatus.RUNNING,
+            )
+        
+        import asyncio
+        
+        try:
+            cmd = [self._hermes_path, "gateway", "--profile", profile_name, "--start"]
+            
+            env = os.environ.copy()
+            env["PATH"] = os.path.dirname(self._python_path) + os.pathsep + env.get("PATH", "")
+            
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env
+            )
+            
+            asyncio.sleep(2)
+            
+            if process.poll() is None:
+                return ProfileActionResult(
+                    success=True,
+                    message=f"Profile '{profile_name}' 已启动",
+                    profile_name=profile_name,
+                    action="start",
+                    new_status=ProfileStatus.RUNNING,
+                )
+            else:
+                try:
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    stderr = b"Process timed out"
+                
+                return ProfileActionResult(
+                    success=False,
+                    message=f"Profile '{profile_name}' 启动失败: {stderr.decode() if stderr else '未知错误'}",
+                    profile_name=profile_name,
+                    action="start",
+                    new_status=ProfileStatus.ERROR,
+                )
+        except Exception as e:
+            logger.error(f"Failed to start profile {profile_name}: {e}")
+            return ProfileActionResult(
+                success=False,
+                message=f"Profile '{profile_name}' 启动失败: {str(e)}",
+                profile_name=profile_name,
+                action="start",
+                new_status=ProfileStatus.ERROR,
+            )
 
 
 hermes_service = HermesService()

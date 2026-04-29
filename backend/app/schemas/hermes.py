@@ -457,3 +457,67 @@ class HermesAuditLogListResponse(BaseModel):
     page: int = Field(1, description="当前页码")
     page_size: int = Field(20, description="每页数量")
     total_pages: int = Field(0, description="总页数")
+
+
+class ProfileStatus(str, Enum):
+    RUNNING = "running"
+    STARTING = "starting"
+    STOPPED = "stopped"
+    ERROR = "error"
+
+
+class ProfileListItem(BaseModel):
+    profile_name: str = Field(..., description="Profile 名称")
+    display_name: str = Field(..., description="显示名称")
+    status: ProfileStatus = Field(..., description="运行状态")
+    user_id: Optional[int] = Field(None, description="关联用户ID")
+    user_name: Optional[str] = Field(None, description="关联用户名")
+    port: Optional[int] = Field(None, description="服务端口")
+    api_url: Optional[str] = Field(None, description="API 地址")
+    last_activity: Optional[datetime] = Field(None, description="最后活动时间")
+    session_count: int = Field(0, description="会话数量")
+    created_at: Optional[datetime] = Field(None, description="创建时间")
+
+
+class ProfileStats(BaseModel):
+    total_sessions: int = Field(0, description="会话总数")
+    total_messages: int = Field(0, description="消息总数")
+    skill_count: int = Field(0, description="技能数量")
+    memory_usage: int = Field(0, description="记忆使用字符数")
+    memory_limit: int = Field(2200, description="记忆字符限制")
+    memory_percent: float = Field(0.0, description="记忆使用百分比")
+
+
+class ProfileDetail(BaseModel):
+    profile_name: str = Field(..., description="Profile 名称")
+    display_name: str = Field(..., description="显示名称")
+    status: ProfileStatus = Field(..., description="运行状态")
+    user_id: Optional[int] = Field(None, description="关联用户ID")
+    user_name: Optional[str] = Field(None, description="关联用户名")
+    port: Optional[int] = Field(None, description="服务端口")
+    api_url: Optional[str] = Field(None, description="API 地址")
+    created_at: Optional[datetime] = Field(None, description="创建时间")
+    last_activity: Optional[datetime] = Field(None, description="最后活动时间")
+    stats: ProfileStats = Field(default_factory=ProfileStats, description="统计信息")
+    config_path: Optional[str] = Field(None, description="配置文件路径")
+    memory_path: Optional[str] = Field(None, description="记忆文件路径")
+
+
+class ProfileListResponse(BaseModel):
+    items: List[ProfileListItem] = Field(default_factory=list, description="Profile 列表")
+    total: int = Field(0, description="总数量")
+    running_count: int = Field(0, description="运行中数量")
+    stopped_count: int = Field(0, description="已停止数量")
+    error_count: int = Field(0, description="异常数量")
+
+
+class ProfileDetailResponse(BaseModel):
+    profile: ProfileDetail = Field(..., description="Profile 详情")
+
+
+class ProfileActionResult(BaseModel):
+    success: bool = Field(..., description="操作是否成功")
+    message: str = Field(..., description="结果消息")
+    profile_name: str = Field(..., description="Profile 名称")
+    action: str = Field(..., description="操作类型")
+    new_status: Optional[ProfileStatus] = Field(None, description="新状态")

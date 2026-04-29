@@ -703,3 +703,69 @@ export const HermesActionTypeOptions: HermesAuditActionTypeOption[] = [
   { value: HermesActionType.DELETE_DOCUMENT, label: '删除文档' },
   { value: HermesActionType.REBUILD_INDEX, label: '重建索引' },
 ]
+
+export type ProfileStatus = 'running' | 'starting' | 'stopped' | 'error'
+
+export interface ProfileStats {
+  total: number
+  running: number
+  stopped: number
+  error: number
+}
+
+export interface ProfileSkillItem {
+  name: string
+  display_name: string
+  path: string
+}
+
+export interface ProfileListItem {
+  profile_name: string
+  display_name: string
+  status: ProfileStatus
+  user_id: number | null
+  user_name: string | null
+  port: number | null
+  api_url: string | null
+  last_activity: string | null
+  session_count: number
+  created_at: string | null
+}
+
+export interface ProfileDetail {
+  profile_name: string
+  display_name: string
+  status: ProfileStatus
+  user_id: number | null
+  user_name: string | null
+  port: number | null
+  api_url: string | null
+  last_activity: string | null
+  session_count: number
+  created_at: string | null
+  config_path: string | null
+  is_default: boolean
+  skills: ProfileSkillItem[]
+  skill_count: number
+  config_raw: string | null
+}
+
+export interface ProfileListResponse {
+  items: ProfileListItem[]
+  total: number
+  running_count: number
+  stopped_count: number
+  error_count: number
+}
+
+export interface ProfileDetailResponse {
+  profile: ProfileDetail
+}
+
+export interface ProfileActionResult {
+  success: boolean
+  message: string
+  profile_name: string
+  new_status: ProfileStatus | null
+  error: string | null
+}
