@@ -2858,6 +2858,8 @@ class HermesService:
 
         try:
             for root, dirs, files in os.walk(base_path):
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d != ".markdown_vault_mcp"]
+                
                 for file_name in files:
                     file_path = Path(root) / file_name
                     
