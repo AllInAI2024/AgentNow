@@ -298,8 +298,11 @@ const fetchAuditLogs = async () => {
     let end_time: string | undefined
     
     if (dateRange.value) {
-      start_time = dateRange.value[0].startOf('day').toISOString()
-      end_time = dateRange.value[1].endOf('day').toISOString()
+      const startDate = dateRange.value[0].local()
+      const endDate = dateRange.value[1].local()
+      
+      start_time = startDate.startOf('day').toISOString()
+      end_time = endDate.endOf('day').toISOString()
     }
 
     const res = await hermesApi.getAuditLogs({
