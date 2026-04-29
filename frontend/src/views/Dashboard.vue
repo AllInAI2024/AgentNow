@@ -1,357 +1,235 @@
 <template>
-  <div class="dashboard-page">
-    <a-layout class="layout-container">
-      <a-layout-header class="layout-header">
-        <div class="header-left">
-          <div class="logo-wrapper" @click="handleGoHome">
-            <div class="logo-icon">
-              <RobotOutlined class="logo-robot" />
-            </div>
-            <div class="logo-brand">
-              <span class="logo-chinese">智现</span>
-              <span class="logo-english">AgentNow</span>
-            </div>
+  <MainLayout>
+    <div class="dashboard-content">
+      <div class="welcome-section animate-slide-up">
+        <div class="welcome-content">
+          <div class="welcome-time">
+            <span class="time-greeting">{{ getGreeting() }}</span>
+            <span class="time-divider">·</span>
+            <span class="time-date">{{ getCurrentDate() }}</span>
+          </div>
+          <h1 class="welcome-title">
+            欢迎回来，{{ userStore.userInfo?.username }}
+            <span class="welcome-wave">👋</span>
+          </h1>
+          <p class="welcome-subtitle">
+            智现 AgentNow 企业智能体平台，让智能体成为您的数字员工
+          </p>
+        </div>
+        <div class="welcome-visual">
+          <div class="visual-blob blob-1"></div>
+          <div class="visual-blob blob-2"></div>
+          <div class="visual-icon">
+            <RocketOutlined class="rocket-icon" />
           </div>
         </div>
+      </div>
 
-        <div class="header-center">
-          <div class="nav-menu">
-            <a-dropdown :trigger="['hover']" placement="bottom">
-              <div class="nav-menu-item" :class="{ 'nav-menu-item-active': isActiveRoute('/permission') }">
-                <SafetyCertificateOutlined class="nav-icon" />
-                <span>权限管理</span>
-                <DownOutlined class="nav-arrow" />
-              </div>
-              <template #overlay>
-                <a-menu class="nav-submenu">
-                  <a-menu-item 
-                    key="/permission/manage" 
-                    @click="handleNavigate('/permission/manage')"
-                    :class="{ 'ant-menu-item-selected': isActiveRoute('/permission/manage') }"
-                  >
-                    <UnorderedListOutlined class="submenu-icon" />
-                    <span>功能点管理</span>
-                  </a-menu-item>
-                </a-menu>
-              </template>
-            </a-dropdown>
-          </div>
+      <div class="stats-section animate-slide-up" style="animation-delay: 0.1s;">
+        <div class="section-header">
+          <h2 class="section-title">数据概览</h2>
+          <a-button type="link" class="section-more">
+            查看详情 <ArrowRightOutlined />
+          </a-button>
         </div>
-
-        <div class="header-right">
-          <div class="header-actions">
-            <a-tooltip title="消息通知">
-              <div class="action-btn notification-btn">
-                <BellOutlined class="action-icon" />
-                <span class="notification-badge"></span>
-              </div>
-            </a-tooltip>
-
-            <a-tooltip title="帮助中心">
-              <div class="action-btn">
-                <QuestionCircleOutlined class="action-icon" />
-              </div>
-            </a-tooltip>
-
-            <a-divider type="vertical" class="header-divider" />
-
-            <a-dropdown :trigger="['click']" placement="bottomRight">
-              <div class="user-dropdown-trigger">
-                <a-avatar class="user-avatar" :size="36">
-                  {{ userStore.userInfo?.username?.charAt(0) }}
-                </a-avatar>
-                <div class="user-info-text">
-                  <span class="user-name">{{ userStore.userInfo?.username }}</span>
-                  <span class="user-role">员工</span>
-                </div>
-                <DownOutlined class="dropdown-arrow" />
-              </div>
-              <template #overlay>
-                <a-menu class="user-dropdown-menu">
-                  <div class="dropdown-user-info">
-                    <a-avatar class="dropdown-avatar" :size="48">
-                      {{ userStore.userInfo?.username?.charAt(0) }}
-                    </a-avatar>
-                    <div class="dropdown-user-detail">
-                      <span class="dropdown-username">{{ userStore.userInfo?.username }}</span>
-                      <span class="dropdown-email">{{ userStore.userInfo?.phone }}</span>
-                    </div>
+        <a-row :gutter="[24, 24]">
+          <a-col :xs="24" :sm="12" :lg="6">
+            <div class="stat-card stat-card-primary hover-lift">
+              <div class="stat-card-inner">
+                <div class="stat-header">
+                  <div class="stat-icon-wrapper">
+                    <MessageOutlined class="stat-icon" />
                   </div>
-                  <a-menu-divider />
-                  <a-menu-item key="profile" @click="handleProfile">
-                    <UserOutlined class="menu-icon" />
-                    <span>个人中心</span>
-                  </a-menu-item>
-                  <a-menu-item key="changePassword" @click="handleChangePassword">
-                    <LockOutlined class="menu-icon" />
-                    <span>修改密码</span>
-                  </a-menu-item>
-                  <a-menu-item key="settings" @click="handleSettings">
-                    <SettingOutlined class="menu-icon" />
-                    <span>账户设置</span>
-                  </a-menu-item>
-                  <a-menu-divider />
-                  <a-menu-item key="logout" @click="handleLogout" class="menu-item-danger">
-                    <LogoutOutlined class="menu-icon" />
-                    <span>退出登录</span>
-                  </a-menu-item>
-                </a-menu>
-              </template>
-            </a-dropdown>
-          </div>
-        </div>
-      </a-layout-header>
-
-      <a-layout-content class="layout-content">
-        <div class="welcome-section animate-slide-up">
-          <div class="welcome-content">
-            <div class="welcome-time">
-              <span class="time-greeting">{{ getGreeting() }}</span>
-              <span class="time-divider">·</span>
-              <span class="time-date">{{ getCurrentDate() }}</span>
+                  <a-tag color="blue" class="stat-trend">
+                    <ArrowUpOutlined /> +12%
+                  </a-tag>
+                </div>
+                <div class="stat-body">
+                  <div class="stat-value">{{ stats.conversations }}</div>
+                  <div class="stat-label">对话次数</div>
+                </div>
+                <div class="stat-progress">
+                  <div class="progress-bar">
+                    <div class="progress-fill" :style="{ width: stats.conversations > 0 ? '65%' : '0%' }"></div>
+                  </div>
+                  <span class="progress-text">本周目标 65%</span>
+                </div>
+              </div>
             </div>
-            <h1 class="welcome-title">
-              欢迎回来，{{ userStore.userInfo?.username }}
-              <span class="welcome-wave">👋</span>
-            </h1>
-            <p class="welcome-subtitle">
-              智现 AgentNow 企业智能体平台，让智能体成为您的数字员工
-            </p>
-          </div>
-          <div class="welcome-visual">
-            <div class="visual-blob blob-1"></div>
-            <div class="visual-blob blob-2"></div>
-            <div class="visual-icon">
-              <RocketOutlined class="rocket-icon" />
+          </a-col>
+          <a-col :xs="24" :sm="12" :lg="6">
+            <div class="stat-card stat-card-success hover-lift">
+              <div class="stat-card-inner">
+                <div class="stat-header">
+                  <div class="stat-icon-wrapper">
+                    <FileTextOutlined class="stat-icon" />
+                  </div>
+                  <a-tag color="green" class="stat-trend">
+                    <ArrowUpOutlined /> +8%
+                  </a-tag>
+                </div>
+                <div class="stat-body">
+                  <div class="stat-value">{{ stats.documents }}</div>
+                  <div class="stat-label">知识文档</div>
+                </div>
+                <div class="stat-progress">
+                  <div class="progress-bar">
+                    <div class="progress-fill" :style="{ width: stats.documents > 0 ? '42%' : '0%' }"></div>
+                  </div>
+                  <span class="progress-text">新增文档 3 篇</span>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </a-col>
+          <a-col :xs="24" :sm="12" :lg="6">
+            <div class="stat-card stat-card-purple hover-lift">
+              <div class="stat-card-inner">
+                <div class="stat-header">
+                  <div class="stat-icon-wrapper">
+                    <RobotOutlined class="stat-icon" />
+                  </div>
+                  <a-tag color="purple" class="stat-trend">
+                    <ArrowUpOutlined /> +5%
+                  </a-tag>
+                </div>
+                <div class="stat-body">
+                  <div class="stat-value">{{ stats.agents }}</div>
+                  <div class="stat-label">智能体数量</div>
+                </div>
+                <div class="stat-progress">
+                  <div class="progress-bar">
+                    <div class="progress-fill" :style="{ width: stats.agents > 0 ? '78%' : '0%' }"></div>
+                  </div>
+                  <span class="progress-text">在线智能体 2 个</span>
+                </div>
+              </div>
+            </div>
+          </a-col>
+          <a-col :xs="24" :sm="12" :lg="6">
+            <div class="stat-card stat-card-orange hover-lift">
+              <div class="stat-card-inner">
+                <div class="stat-header">
+                  <div class="stat-icon-wrapper">
+                    <TeamOutlined class="stat-icon" />
+                  </div>
+                  <a-tag color="orange" class="stat-trend">
+                    <ArrowUpOutlined /> +15%
+                  </a-tag>
+                </div>
+                <div class="stat-body">
+                  <div class="stat-value">{{ stats.activeUsers }}</div>
+                  <div class="stat-label">活跃用户</div>
+                </div>
+                <div class="stat-progress">
+                  <div class="progress-bar">
+                    <div class="progress-fill" :style="{ width: stats.activeUsers > 0 ? '55%' : '0%' }"></div>
+                  </div>
+                  <span class="progress-text">今日活跃 8 人</span>
+                </div>
+              </div>
+            </div>
+          </a-col>
+        </a-row>
+      </div>
 
-        <div class="stats-section animate-slide-up" style="animation-delay: 0.1s;">
-          <div class="section-header">
-            <h2 class="section-title">数据概览</h2>
-            <a-button type="link" class="section-more">
-              查看详情 <ArrowRightOutlined />
+      <div class="features-section animate-slide-up" style="animation-delay: 0.2s;">
+        <div class="section-header">
+          <h2 class="section-title">快速入口</h2>
+          <p class="section-desc">点击下方卡片快速开始您的工作</p>
+        </div>
+        <a-row :gutter="[24, 24]">
+          <a-col :xs="24" :sm="12" :lg="8">
+            <div class="feature-card card-hover-lift" @click="handleStartChat">
+              <div class="feature-card-inner">
+                <div class="feature-icon-wrapper bg-gradient-chat">
+                  <WechatOutlined class="feature-icon" />
+                </div>
+                <div class="feature-content">
+                  <h3 class="feature-title">智能对话</h3>
+                  <p class="feature-desc">与智能体进行自然语言对话，获取专业解答</p>
+                  <div class="feature-tags">
+                    <a-tag color="blue" class="feature-tag">AI 驱动</a-tag>
+                    <a-tag color="default" class="feature-tag-coming">即将推出</a-tag>
+                  </div>
+                </div>
+                <div class="feature-arrow">
+                  <RightOutlined class="arrow-icon" />
+                </div>
+              </div>
+            </div>
+          </a-col>
+          <a-col :xs="24" :sm="12" :lg="8">
+            <div class="feature-card card-hover-lift" @click="handleKnowledge">
+              <div class="feature-card-inner">
+                <div class="feature-icon-wrapper bg-gradient-knowledge">
+                  <DatabaseOutlined class="feature-icon" />
+                </div>
+                <div class="feature-content">
+                  <h3 class="feature-title">知识库管理</h3>
+                  <p class="feature-desc">上传和管理企业知识文档，构建智能知识大脑</p>
+                  <div class="feature-tags">
+                    <a-tag color="green" class="feature-tag">RAG 技术</a-tag>
+                    <a-tag color="default" class="feature-tag-coming">即将推出</a-tag>
+                  </div>
+                </div>
+                <div class="feature-arrow">
+                  <RightOutlined class="arrow-icon" />
+                </div>
+              </div>
+            </div>
+          </a-col>
+          <a-col :xs="24" :sm="12" :lg="8">
+            <div class="feature-card card-hover-lift" @click="handleAgents">
+              <div class="feature-card-inner">
+                <div class="feature-icon-wrapper bg-gradient-agent">
+                  <AppstoreOutlined class="feature-icon" />
+                </div>
+                <div class="feature-content">
+                  <h3 class="feature-title">智能体管理</h3>
+                  <p class="feature-desc">为不同岗位配置专属智能体，提升工作效率</p>
+                  <div class="feature-tags">
+                    <a-tag color="purple" class="feature-tag">可定制</a-tag>
+                    <a-tag color="default" class="feature-tag-coming">即将推出</a-tag>
+                  </div>
+                </div>
+                <div class="feature-arrow">
+                  <RightOutlined class="arrow-icon" />
+                </div>
+              </div>
+            </div>
+          </a-col>
+        </a-row>
+      </div>
+
+      <div class="recent-section animate-slide-up" style="animation-delay: 0.3s;">
+        <div class="section-header">
+          <h2 class="section-title">最近活动</h2>
+          <a-button type="link" class="section-more">
+            查看全部 <ArrowRightOutlined />
+          </a-button>
+        </div>
+        <div class="recent-card">
+          <div class="recent-empty">
+            <div class="empty-icon">
+              <InboxOutlined class="inbox-icon" />
+            </div>
+            <h3 class="empty-title">暂无活动记录</h3>
+            <p class="empty-desc">开始使用平台后，您的活动记录将显示在这里</p>
+            <a-button type="primary" @click="handleStartChat">
+              开始探索
             </a-button>
           </div>
-          <a-row :gutter="[24, 24]">
-            <a-col :xs="24" :sm="12" :lg="6">
-              <div class="stat-card stat-card-primary hover-lift">
-                <div class="stat-card-inner">
-                  <div class="stat-header">
-                    <div class="stat-icon-wrapper">
-                      <MessageOutlined class="stat-icon" />
-                    </div>
-                    <a-tag color="blue" class="stat-trend">
-                      <ArrowUpOutlined /> +12%
-                    </a-tag>
-                  </div>
-                  <div class="stat-body">
-                    <div class="stat-value">{{ stats.conversations }}</div>
-                    <div class="stat-label">对话次数</div>
-                  </div>
-                  <div class="stat-progress">
-                    <div class="progress-bar">
-                      <div class="progress-fill" :style="{ width: stats.conversations > 0 ? '65%' : '0%' }"></div>
-                    </div>
-                    <span class="progress-text">本周目标 65%</span>
-                  </div>
-                </div>
-              </div>
-            </a-col>
-            <a-col :xs="24" :sm="12" :lg="6">
-              <div class="stat-card stat-card-success hover-lift">
-                <div class="stat-card-inner">
-                  <div class="stat-header">
-                    <div class="stat-icon-wrapper">
-                      <FileTextOutlined class="stat-icon" />
-                    </div>
-                    <a-tag color="green" class="stat-trend">
-                      <ArrowUpOutlined /> +8%
-                    </a-tag>
-                  </div>
-                  <div class="stat-body">
-                    <div class="stat-value">{{ stats.documents }}</div>
-                    <div class="stat-label">知识文档</div>
-                  </div>
-                  <div class="stat-progress">
-                    <div class="progress-bar">
-                      <div class="progress-fill" :style="{ width: stats.documents > 0 ? '42%' : '0%' }"></div>
-                    </div>
-                    <span class="progress-text">新增文档 3 篇</span>
-                  </div>
-                </div>
-              </div>
-            </a-col>
-            <a-col :xs="24" :sm="12" :lg="6">
-              <div class="stat-card stat-card-purple hover-lift">
-                <div class="stat-card-inner">
-                  <div class="stat-header">
-                    <div class="stat-icon-wrapper">
-                      <RobotOutlined class="stat-icon" />
-                    </div>
-                    <a-tag color="purple" class="stat-trend">
-                      <ArrowUpOutlined /> +5%
-                    </a-tag>
-                  </div>
-                  <div class="stat-body">
-                    <div class="stat-value">{{ stats.agents }}</div>
-                    <div class="stat-label">智能体数量</div>
-                  </div>
-                  <div class="stat-progress">
-                    <div class="progress-bar">
-                      <div class="progress-fill" :style="{ width: stats.agents > 0 ? '78%' : '0%' }"></div>
-                    </div>
-                    <span class="progress-text">在线智能体 2 个</span>
-                  </div>
-                </div>
-              </div>
-            </a-col>
-            <a-col :xs="24" :sm="12" :lg="6">
-              <div class="stat-card stat-card-orange hover-lift">
-                <div class="stat-card-inner">
-                  <div class="stat-header">
-                    <div class="stat-icon-wrapper">
-                      <TeamOutlined class="stat-icon" />
-                    </div>
-                    <a-tag color="orange" class="stat-trend">
-                      <ArrowUpOutlined /> +15%
-                    </a-tag>
-                  </div>
-                  <div class="stat-body">
-                    <div class="stat-value">{{ stats.activeUsers }}</div>
-                    <div class="stat-label">活跃用户</div>
-                  </div>
-                  <div class="stat-progress">
-                    <div class="progress-bar">
-                      <div class="progress-fill" :style="{ width: stats.activeUsers > 0 ? '55%' : '0%' }"></div>
-                    </div>
-                    <span class="progress-text">今日活跃 8 人</span>
-                  </div>
-                </div>
-              </div>
-            </a-col>
-          </a-row>
         </div>
-
-        <div class="features-section animate-slide-up" style="animation-delay: 0.2s;">
-          <div class="section-header">
-            <h2 class="section-title">快速入口</h2>
-            <p class="section-desc">点击下方卡片快速开始您的工作</p>
-          </div>
-          <a-row :gutter="[24, 24]">
-            <a-col :xs="24" :sm="12" :lg="8">
-              <div class="feature-card card-hover-lift" @click="handleStartChat">
-                <div class="feature-card-inner">
-                  <div class="feature-icon-wrapper bg-gradient-chat">
-                    <WechatOutlined class="feature-icon" />
-                  </div>
-                  <div class="feature-content">
-                    <h3 class="feature-title">智能对话</h3>
-                    <p class="feature-desc">与智能体进行自然语言对话，获取专业解答</p>
-                    <div class="feature-tags">
-                      <a-tag color="blue" class="feature-tag">AI 驱动</a-tag>
-                      <a-tag color="default" class="feature-tag-coming">即将推出</a-tag>
-                    </div>
-                  </div>
-                  <div class="feature-arrow">
-                    <RightOutlined class="arrow-icon" />
-                  </div>
-                </div>
-              </div>
-            </a-col>
-            <a-col :xs="24" :sm="12" :lg="8">
-              <div class="feature-card card-hover-lift" @click="handleKnowledge">
-                <div class="feature-card-inner">
-                  <div class="feature-icon-wrapper bg-gradient-knowledge">
-                    <DatabaseOutlined class="feature-icon" />
-                  </div>
-                  <div class="feature-content">
-                    <h3 class="feature-title">知识库管理</h3>
-                    <p class="feature-desc">上传和管理企业知识文档，构建智能知识大脑</p>
-                    <div class="feature-tags">
-                      <a-tag color="green" class="feature-tag">RAG 技术</a-tag>
-                      <a-tag color="default" class="feature-tag-coming">即将推出</a-tag>
-                    </div>
-                  </div>
-                  <div class="feature-arrow">
-                    <RightOutlined class="arrow-icon" />
-                  </div>
-                </div>
-              </div>
-            </a-col>
-            <a-col :xs="24" :sm="12" :lg="8">
-              <div class="feature-card card-hover-lift" @click="handleAgents">
-                <div class="feature-card-inner">
-                  <div class="feature-icon-wrapper bg-gradient-agent">
-                    <AppstoreOutlined class="feature-icon" />
-                  </div>
-                  <div class="feature-content">
-                    <h3 class="feature-title">智能体管理</h3>
-                    <p class="feature-desc">为不同岗位配置专属智能体，提升工作效率</p>
-                    <div class="feature-tags">
-                      <a-tag color="purple" class="feature-tag">可定制</a-tag>
-                      <a-tag color="default" class="feature-tag-coming">即将推出</a-tag>
-                    </div>
-                  </div>
-                  <div class="feature-arrow">
-                    <RightOutlined class="arrow-icon" />
-                  </div>
-                </div>
-              </div>
-            </a-col>
-          </a-row>
-        </div>
-
-        <div class="recent-section animate-slide-up" style="animation-delay: 0.3s;">
-          <div class="section-header">
-            <h2 class="section-title">最近活动</h2>
-            <a-button type="link" class="section-more">
-              查看全部 <ArrowRightOutlined />
-            </a-button>
-          </div>
-          <div class="recent-card">
-            <div class="recent-empty">
-              <div class="empty-icon">
-                <InboxOutlined class="inbox-icon" />
-              </div>
-              <h3 class="empty-title">暂无活动记录</h3>
-              <p class="empty-desc">开始使用平台后，您的活动记录将显示在这里</p>
-              <a-button type="primary" @click="handleStartChat">
-                开始探索
-              </a-button>
-            </div>
-          </div>
-        </div>
-      </a-layout-content>
-
-      <a-layout-footer class="layout-footer">
-        <div class="footer-content">
-          <div class="footer-left">
-            <span class="footer-copyright">© 2026 智现 AgentNow 企业智能体平台</span>
-          </div>
-          <div class="footer-right">
-            <a href="#" class="footer-link">隐私政策</a>
-            <a href="#" class="footer-link">服务条款</a>
-            <a href="#" class="footer-link">帮助中心</a>
-            <span class="footer-version">版本 v1.0.0</span>
-          </div>
-        </div>
-      </a-layout-footer>
-    </a-layout>
-  </div>
+      </div>
+    </div>
+  </MainLayout>
 </template>
 
 <script setup lang="ts">
 import { reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
 import {
-  RobotOutlined,
-  DownOutlined,
-  UserOutlined,
-  LockOutlined,
-  LogoutOutlined,
   RocketOutlined,
   MessageOutlined,
   FileTextOutlined,
@@ -359,17 +237,13 @@ import {
   WechatOutlined,
   DatabaseOutlined,
   AppstoreOutlined,
-  BellOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
   ArrowRightOutlined,
   ArrowUpOutlined,
   RightOutlined,
   InboxOutlined,
-  SafetyCertificateOutlined,
-  UnorderedListOutlined,
 } from '@ant-design/icons-vue'
 import { useUserStore } from '@/stores/user'
+import MainLayout from '@/components/MainLayout.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -401,45 +275,6 @@ const getCurrentDate = () => {
   return `${month}月${day}日 ${weekday}`
 }
 
-const handleGoHome = () => {
-  router.push({ name: 'Dashboard' })
-}
-
-const isActiveRoute = (path: string) => {
-  return router.currentRoute.value.path.startsWith(path)
-}
-
-const handleNavigate = (path: string) => {
-  router.push(path)
-}
-
-const handleProfile = () => {
-  message.info('个人中心功能开发中...')
-}
-
-const handleChangePassword = () => {
-  router.push({ name: 'PasswordSettings' })
-}
-
-const handleSettings = () => {
-  message.info('账户设置功能开发中...')
-}
-
-const handleLogout = () => {
-  Modal.confirm({
-    title: '确认退出',
-    content: '确定要退出登录吗？',
-    okText: '确定',
-    cancelText: '取消',
-    okType: 'danger',
-    onOk: () => {
-      userStore.logout()
-      router.push({ name: 'Login' })
-      message.success('已退出登录')
-    },
-  })
-}
-
 const handleStartChat = () => {
   message.info('智能对话功能开发中...')
 }
@@ -454,356 +289,7 @@ const handleAgents = () => {
 </script>
 
 <style scoped>
-.dashboard-page {
-  min-height: 100vh;
-  background: linear-gradient(180deg, #f7f8fa 0%, #f2f3f5 100%);
-}
-
-.layout-container {
-  min-height: 100vh;
-  background: transparent;
-}
-
-.layout-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 32px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  height: 64px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-}
-
-.logo-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  cursor: pointer;
-  padding: 8px 16px;
-  border-radius: 12px;
-  transition: all 0.3s ease;
-}
-
-.logo-wrapper:hover {
-  background: rgba(22, 93, 255, 0.06);
-}
-
-.logo-icon {
-  width: 48px;
-  height: 48px;
-  background: linear-gradient(135deg, #165DFF 0%, #4080FF 50%, #722ED1 100%);
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 
-    0 8px 24px rgba(22, 93, 255, 0.35),
-    0 2px 8px rgba(22, 93, 255, 0.2);
-  flex-shrink: 0;
-  position: relative;
-  overflow: hidden;
-}
-
-.logo-icon::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, transparent 100%);
-  border-radius: 14px 14px 0 0;
-}
-
-.logo-robot {
-  font-size: 26px;
-  color: white;
-  position: relative;
-  z-index: 1;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
-}
-
-.logo-brand {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  white-space: nowrap;
-}
-
-.logo-chinese {
-  font-size: 20px;
-  font-weight: 700;
-  color: #1d2129;
-  letter-spacing: 2px;
-  line-height: 1.2;
-}
-
-.logo-english {
-  font-size: 13px;
-  font-weight: 600;
-  background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  letter-spacing: 1px;
-  line-height: 1.2;
-}
-
-.header-center {
-  flex: 1;
-  display: flex;
-  justify-content: flex-start;
-  padding-left: 40px;
-}
-
-.nav-menu {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.nav-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: #4e5969;
-}
-
-.nav-menu-item:hover {
-  background: rgba(22, 93, 255, 0.08);
-  color: #165DFF;
-}
-
-.nav-menu-item-active {
-  background: rgba(22, 93, 255, 0.1);
-  color: #165DFF;
-  font-weight: 500;
-}
-
-.nav-icon {
-  font-size: 16px;
-}
-
-.nav-arrow {
-  font-size: 12px;
-  transition: transform 0.2s ease;
-}
-
-.nav-menu-item:hover .nav-arrow {
-  transform: rotate(180deg);
-}
-
-:deep(.nav-submenu) {
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-  border: 1px solid #e5e6eb;
-  padding: 8px;
-  min-width: 160px;
-}
-
-:deep(.nav-submenu .ant-menu-item) {
-  border-radius: 8px;
-  margin: 4px 0;
-  padding: 8px 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-:deep(.nav-submenu .ant-menu-item:hover) {
-  background: rgba(22, 93, 255, 0.06);
-}
-
-:deep(.nav-submenu .ant-menu-item-selected) {
-  background: rgba(22, 93, 255, 0.1);
-  color: #165DFF;
-}
-
-.submenu-icon {
-  font-size: 14px;
-  color: #86909c;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.action-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-}
-
-.action-btn:hover {
-  background: #f2f3f5;
-}
-
-.action-icon {
-  font-size: 18px;
-  color: #4e5969;
-  transition: color 0.2s ease;
-}
-
-.action-btn:hover .action-icon {
-  color: #165DFF;
-}
-
-.notification-btn .notification-badge {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 8px;
-  height: 8px;
-  background: #F53F3F;
-  border-radius: 50%;
-  border: 2px solid white;
-}
-
-.header-divider {
-  height: 24px;
-  margin: 0 8px;
-  background: #e5e6eb;
-}
-
-.user-dropdown-trigger {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  padding: 6px 12px;
-  border-radius: 10px;
-  transition: all 0.2s ease;
-}
-
-.user-dropdown-trigger:hover {
-  background: #f2f3f5;
-}
-
-.user-avatar {
-  background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
-  font-weight: 600;
-  box-shadow: 0 2px 8px rgba(22, 93, 255, 0.25);
-}
-
-.user-info-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.user-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: #1d2129;
-  line-height: 1.2;
-}
-
-.user-role {
-  font-size: 12px;
-  color: #86909c;
-  line-height: 1.2;
-}
-
-.dropdown-arrow {
-  font-size: 12px;
-  color: #86909c;
-  transition: transform 0.2s ease;
-}
-
-.user-dropdown-trigger:hover .dropdown-arrow {
-  color: #4e5969;
-}
-
-:deep(.user-dropdown-menu) {
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-  border: 1px solid #e5e6eb;
-  padding: 8px;
-  min-width: 240px;
-}
-
-.dropdown-user-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-}
-
-.dropdown-avatar {
-  background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
-  font-weight: 600;
-}
-
-.dropdown-user-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dropdown-username {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1d2129;
-}
-
-.dropdown-email {
-  font-size: 13px;
-  color: #86909c;
-}
-
-:deep(.user-dropdown-menu .ant-menu-item) {
-  border-radius: 8px;
-  margin: 4px 0;
-  padding: 8px 12px;
-}
-
-.menu-icon {
-  margin-right: 10px;
-  font-size: 16px;
-  color: #4e5969;
-}
-
-.menu-item-danger {
-  color: #F53F3F !important;
-}
-
-.menu-item-danger .menu-icon {
-  color: #F53F3F !important;
-}
-
-.layout-content {
-  margin: 0;
-  padding: 24px 32px;
-  background: transparent;
-  max-width: 1440px;
-  margin: 0 auto;
+.dashboard-content {
   width: 100%;
 }
 
@@ -1250,56 +736,6 @@ const handleAgents = () => {
   max-width: 320px;
 }
 
-.layout-footer {
-  background: #ffffff;
-  border-top: 1px solid #e5e6eb;
-  padding: 20px 32px;
-}
-
-.footer-content {
-  max-width: 1440px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.footer-left {
-  display: flex;
-  align-items: center;
-}
-
-.footer-copyright {
-  font-size: 13px;
-  color: #86909c;
-}
-
-.footer-right {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.footer-link {
-  font-size: 13px;
-  color: #86909c;
-  text-decoration: none;
-  transition: color 0.2s ease;
-}
-
-.footer-link:hover {
-  color: #165DFF;
-}
-
-.footer-version {
-  font-size: 12px;
-  color: #c9cdd4;
-  background: #f7f8fa;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-weight: 500;
-}
-
 .animate-slide-up {
   animation: slideUp 0.6s ease-out forwards;
   opacity: 0;
@@ -1317,18 +753,6 @@ const handleAgents = () => {
 }
 
 @media (max-width: 1024px) {
-  .layout-header {
-    padding: 0 20px;
-  }
-
-  .header-center {
-    display: none;
-  }
-
-  .layout-content {
-    padding: 20px;
-  }
-
   .welcome-section {
     padding: 24px;
     flex-direction: column;
@@ -1339,34 +763,9 @@ const handleAgents = () => {
   .welcome-visual {
     width: 100%;
   }
-
-  .footer-content {
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .footer-right {
-    gap: 16px;
-  }
 }
 
 @media (max-width: 640px) {
-  .layout-header {
-    padding: 0 16px;
-  }
-
-  .user-info-text {
-    display: none;
-  }
-
-  .dropdown-arrow {
-    display: none;
-  }
-
-  .layout-content {
-    padding: 16px;
-  }
-
   .welcome-section {
     padding: 20px;
     border-radius: 16px;
@@ -1384,15 +783,6 @@ const handleAgents = () => {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-  }
-
-  .footer-content {
-    text-align: center;
-  }
-
-  .footer-right {
-    flex-wrap: wrap;
-    justify-content: center;
   }
 }
 </style>

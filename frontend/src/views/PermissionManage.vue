@@ -1,205 +1,137 @@
 <template>
-  <div class="permission-page">
-    <a-card class="page-card">
-      <template #title>
-        <div class="page-header">
-          <span class="page-title">功能点管理</span>
-          <a-button type="primary" @click="handleAdd">
-            <PlusOutlined /> 新增功能点
-          </a-button>
-        </div>
-      </template>
-
-      <a-table
-        :columns="columns"
-        :data-source="permissionList"
-        :loading="loading"
-        row-key="id"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <span :style="{ paddingLeft: `${record.level * 24}px` }">
-              <FolderOutlined v-if="record.hasChildren" style="margin-right: 8px; color: #165DFF;" />
-              <FileOutlined v-else style="margin-right: 8px; color: #86909c;" />
-              {{ record.name }}
-            </span>
-          </template>
-          <template v-else-if="column.key === 'type'">
-            <a-tag :color="getTypeColor(record.type)">
-              {{ getTypeLabel(record.type) }}
-            </a-tag>
-          </template>
-          <template v-else-if="column.key === 'status'">
-            <a-tag :color="record.status === 1 ? 'green' : 'red'">
-              {{ record.status === 1 ? '启用' : '禁用' }}
-            </a-tag>
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <a-space>
-              <a-button type="link" size="small" @click="handleEdit(record)">
-                编辑
-              </a-button>
-              <a-popconfirm
-                title="确定要删除吗？"
-                ok-text="确定"
-                cancel-text="取消"
-                @confirm="handleDelete(record)"
-              >
-                <a-button type="link" size="small" danger>
-                  删除
-                </a-button>
-              </a-popconfirm>
-            </a-space>
-          </template>
+  <MainLayout>
+    <div class="permission-page">
+      <a-card class="page-card">
+        <template #title>
+          <div class="page-header">
+            <span class="page-title">功能点管理</span>
+            <a-button type="primary" @click="handleAdd">
+              <PlusOutlined /> 新增功能点
+            </a-button>
+          </div>
         </template>
-      </a-table>
-    </a-card>
 
-    <a-modal
-      v-model:open="modalVisible"
-      :title="isEdit ? '编辑功能点' : '新增功能点'"
-      :width="680"
-      @ok="handleSubmit"
-      @cancel="handleCancel"
-      :confirmLoading="submitting"
-    >
-      <a-form
-        :model="formData"
-        :rules="rules"
-        ref="formRef"
-        layout="vertical"
+        <a-table
+          :columns="columns"
+          :data-source="permissionList"
+          :loading="loading"
+          row-key="id"
+          :pagination="false"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'name'">
+              <span :style="{ paddingLeft: `${record.level * 24}px` }">
+                <FolderOutlined v-if="record.hasChildren" style="margin-right: 8px; color: #165DFF;" />
+                <FileOutlined v-else style="margin-right: 8px; color: #86909c;" />
+                {{ record.name }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'type'">
+              <a-tag :color="getTypeColor(record.type)">
+                {{ getTypeLabel(record.type) }}
+              </a-tag>
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <a-space>
+                <a-button type="link" size="small" @click="handleEdit(record)">
+                  编辑
+                </a-button>
+                <a-popconfirm
+                  title="确定要删除吗？"
+                  ok-text="确定"
+                  cancel-text="取消"
+                  @confirm="handleDelete(record)"
+                >
+                  <a-button type="link" size="small" danger>
+                    删除
+                  </a-button>
+                </a-popconfirm>
+              </a-space>
+            </template>
+          </template>
+        </a-table>
+      </a-card>
+
+      <a-modal
+        v-model:open="modalVisible"
+        :title="isEdit ? '编辑功能点' : '新增功能点'"
+        :width="680"
+        @ok="handleSubmit"
+        @cancel="handleCancel"
+        :confirmLoading="submitting"
       >
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item label="上级功能点" name="parent_id">
-              <a-tree-select
-                v-model:value="formData.parent_id"
-                :tree-data="parentOptions"
-                :replace-fields="{ children: 'children', title: 'name', key: 'id', value: 'id' }"
-                placeholder="请选择上级功能点（不选则为顶级）"
-                allow-clear
-                :tree-default-expand-all="true"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="功能点名称" name="name">
-              <a-input
-                v-model:value="formData.name"
-                placeholder="请输入功能点名称"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
+        <a-form
+          :model="formData"
+          :rules="rules"
+          ref="formRef"
+          layout="vertical"
+        >
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item label="上级功能点" name="parent_id">
+                <a-tree-select
+                  v-model:value="formData.parent_id"
+                  :tree-data="parentOptions"
+                  :replace-fields="{ children: 'children', title: 'name', key: 'id', value: 'id' }"
+                  placeholder="请选择上级功能点（不选则为顶级）"
+                  allow-clear
+                  :tree-default-expand-all="true"
+                  style="width: 100%"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="功能点名称" name="name">
+                <a-input
+                  v-model:value="formData.name"
+                  placeholder="请输入功能点名称"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
 
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item label="权限编码" name="code">
-              <a-input
-                v-model:value="formData.code"
-                placeholder="请输入权限编码，如：user:list"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="类型" name="type">
-              <a-select v-model:value="formData.type" placeholder="请选择类型">
-                <a-select-option :value="1">菜单</a-select-option>
-                <a-select-option :value="2">按钮</a-select-option>
-                <a-select-option :value="3">API接口</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item label="权限编码" name="code">
+                <a-input
+                  v-model:value="formData.code"
+                  placeholder="请输入权限编码，如：user:list"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="类型" name="type">
+                <a-select v-model:value="formData.type" placeholder="请选择类型">
+                  <a-select-option :value="1">菜单</a-select-option>
+                  <a-select-option :value="2">按钮</a-select-option>
+                  <a-select-option :value="3">API接口</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
 
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item label="路由路径" name="path">
-              <a-input
-                v-model:value="formData.path"
-                placeholder="请输入路由路径或接口路径"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="组件路径" name="component">
-              <a-input
-                v-model:value="formData.component"
-                placeholder="请输入前端组件路径"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item label="图标" name="icon">
-              <a-input
-                v-model:value="formData.icon"
-                placeholder="请输入图标名称"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="排序号" name="sort">
-              <a-input-number
-                v-model:value="formData.sort"
-                :min="0"
-                placeholder="数字越小越靠前"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item label="状态" name="status">
-              <a-radio-group v-model:value="formData.status">
-                <a-radio :value="1">启用</a-radio>
-                <a-radio :value="0">禁用</a-radio>
-              </a-radio-group>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="是否显示" name="visible">
-              <a-switch v-model:checked="formData.visible" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item label="权限级别" name="permission_level">
-              <a-select v-model:value="formData.permission_level" placeholder="请选择权限级别">
-                <a-select-option :value="1">普通</a-select-option>
-                <a-select-option :value="2">敏感</a-select-option>
-                <a-select-option :value="3">高危</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="重定向路径" name="redirect">
-              <a-input
-                v-model:value="formData.redirect"
-                placeholder="请输入重定向路径"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-form-item label="描述" name="description">
-          <a-textarea
-            v-model:value="formData.description"
-            :rows="3"
-            placeholder="请输入功能点描述"
-          />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-  </div>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item label="路由路径" name="path">
+                <a-input
+                  v-model:value="formData.path"
+                  placeholder="请输入路由路径或接口路径"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="图标" name="icon">
+                <a-input
+                  v-model:value="formData.icon"
+                  placeholder="请输入图标名称"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-form>
+      </a-modal>
+    </div>
+  </MainLayout>
 </template>
 
 <script setup lang="ts">
@@ -212,6 +144,7 @@ import {
   FileOutlined,
 } from '@ant-design/icons-vue'
 import { permissionApi, type Permission, type PermissionTree } from '@/api/permission'
+import MainLayout from '@/components/MainLayout.vue'
 
 interface PermissionListItem extends Permission {
   level: number
@@ -233,15 +166,7 @@ const formData = reactive({
   code: '',
   type: 1,
   path: '',
-  component: '',
   icon: '',
-  sort: 0,
-  status: 1,
-  visible: true,
-  keep_alive: false,
-  redirect: '',
-  permission_level: 1,
-  description: '',
 })
 
 const rules = {
@@ -251,12 +176,11 @@ const rules = {
 }
 
 const columns = [
-  { title: '功能点名称', dataIndex: 'name', key: 'name', width: 200 },
+  { title: '功能点名称', dataIndex: 'name', key: 'name', width: 250 },
   { title: '权限编码', dataIndex: 'code', key: 'code', width: 180 },
   { title: '类型', dataIndex: 'type', key: 'type', width: 100 },
   { title: '路径', dataIndex: 'path', key: 'path', width: 180 },
-  { title: '排序', dataIndex: 'sort', key: 'sort', width: 80 },
-  { title: '状态', dataIndex: 'status', key: 'status', width: 80 },
+  { title: '图标', dataIndex: 'icon', key: 'icon', width: 100 },
   { title: '操作', key: 'action', width: 150, fixed: 'right' as const },
 ]
 
@@ -322,15 +246,7 @@ const resetForm = () => {
   formData.code = ''
   formData.type = 1
   formData.path = ''
-  formData.component = ''
   formData.icon = ''
-  formData.sort = 0
-  formData.status = 1
-  formData.visible = true
-  formData.keep_alive = false
-  formData.redirect = ''
-  formData.permission_level = 1
-  formData.description = ''
 }
 
 const handleAdd = () => {
@@ -353,15 +269,7 @@ const handleEdit = async (record: Permission) => {
       formData.code = data.code
       formData.type = data.type
       formData.path = data.path || ''
-      formData.component = data.component || ''
       formData.icon = data.icon || ''
-      formData.sort = data.sort
-      formData.status = data.status
-      formData.visible = data.visible
-      formData.keep_alive = data.keep_alive
-      formData.redirect = data.redirect || ''
-      formData.permission_level = data.permission_level
-      formData.description = data.description || ''
       modalVisible.value = true
     }
   } catch (error) {
@@ -408,7 +316,6 @@ const handleSubmit = async () => {
     } else {
       const res = await permissionApi.create({
         ...formData,
-        enterprise_id: null,
       })
       if (res.code === 200) {
         message.success('创建成功')
@@ -430,8 +337,7 @@ onMounted(() => {
 
 <style scoped>
 .permission-page {
-  min-height: calc(100vh - 64px - 60px);
-  background: #f7f8fa;
+  width: 100%;
 }
 
 .page-card {
