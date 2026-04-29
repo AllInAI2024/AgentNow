@@ -60,6 +60,11 @@ from app.schemas.hermes import (
     ConfigResponse,
     ConfigProfileItem,
     ConfigProfileListResponse,
+    HermesKnowledgeDocStatus,
+    HermesKnowledgeDoc,
+    HermesKnowledgeDocDetail,
+    HermesKnowledgeStatus,
+    HermesKnowledgeListResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -2731,6 +2736,349 @@ class HermesService:
             env_file_path=str(env_path) if env_path.exists() else None,
             last_updated=last_updated
         )
+
+
+    def _get_knowledge_base_path(self) -> Path:
+        knowledge_base = Path.home() / ".agentnow" / "knowledge" / "docs"
+        return knowledge_base
+
+    def _is_text_file(self, file_path: Path) -> bool:
+        text_extensions = {
+            ".md", ".txt", ".json", ".csv", ".html", ".htm", ".xml",
+            ".py", ".js", ".ts", ".css", ".scss", ".less", ".vue",
+            ".java", ".c", ".cpp", ".h", ".hpp", ".go", ".rs",
+            ".rb", ".php", ".swift", ".kt", ".scala", ".sh",
+            ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
+            ".sql", ".log", ".mdx", ".rst", ".adoc",
+        }
+        return file_path.suffix.lower() in text_extensions
+
+    def _parse_markdown_frontmatter(self, content: str) -> tuple[dict, str]:
+        if not content.startswith("---"):
+            return {}, content
+
+        lines = content.split("\n")
+        frontmatter_lines = []
+        content_lines = []
+        in_frontmatter = False
+        frontmatter_ended = False
+
+        for i, line in enumerate(lines):
+            if i == 0 and line.strip() == "---":
+                in_frontmatter = True
+                continue
+            if in_frontmatter and line.strip() == "---":
+                in_frontmatter = False
+                frontmatter_ended = True
+                continue
+            if in_frontmatter:
+                frontmatter_lines.append(line)
+            elif frontmatter_ended:
+                content_lines.append(line)
+
+        frontmatter = {}
+        if frontmatter_lines:
+            try:
+                frontmatter = yaml.safe_load("\n".join(frontmatter_lines)) or {}
+            except Exception as e:
+                logger.warning(f"Failed to parse frontmatter: {e}")
+                frontmatter = {}
+
+        actual_content = "\n".join(content_lines)
+        return frontmatter, actual_content
+
+    def _extract_markdown_outline(self, content: str) -> List[dict]:
+        if not content:
+            return []
+
+        outline = []
+        lines = content.split("\n")
+        heading_pattern = re.compile(r"^(#{1,6})\s+(.+)$")
+
+        for line_number, line in enumerate(lines, 1):
+            match = heading_pattern.match(line.strip())
+            if match:
+                level = len(match.group(1))
+                title = match.group(2).strip()
+                outline.append({
+                    "level": level,
+                    "title": title,
+                    "line_number": line_number
+                })
+
+        return outline
+
+    def _get_file_mime_type(self, file_path: Path) -> str:
+        extension_mime = {
+            ".md": "text/markdown",
+            ".txt": "text/plain",
+            ".json": "application/json",
+            ".csv": "text/csv",
+            ".html": "text/html",
+            ".htm": "text/html",
+            ".xml": "application/xml",
+            ".pdf": "application/pdf",
+            ".doc": "application/msword",
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".xls": "application/vnd.ms-excel",
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".ppt": "application/vnd.ms-powerpoint",
+            ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".py": "text/x-python",
+            ".js": "application/javascript",
+            ".ts": "application/typescript",
+            ".css": "text/css",
+            ".java": "text/x-java-source",
+            ".yaml": "application/x-yaml",
+            ".yml": "application/x-yaml",
+            ".toml": "application/toml",
+            ".sql": "text/x-sql",
+            ".sh": "text/x-shellscript",
+        }
+        return extension_mime.get(file_path.suffix.lower(), "application/octet-stream")
+
+    def _scan_knowledge_docs(self, base_path: Path) -> List[HermesKnowledgeDoc]:
+        docs: List[HermesKnowledgeDoc] = []
+
+        if not base_path.exists():
+            logger.warning(f"Knowledge base path does not exist: {base_path}")
+            return docs
+
+        allowed_extensions = {
+            ".md", ".txt", ".json", ".csv", ".html", ".htm", ".xml",
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+            ".py", ".js", ".ts", ".css", ".scss", ".less", ".vue",
+            ".java", ".c", ".cpp", ".h", ".hpp", ".go", ".rs",
+            ".rb", ".php", ".swift", ".kt", ".scala", ".sh",
+            ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
+            ".sql", ".log", ".mdx", ".rst", ".adoc",
+        }
+
+        try:
+            for root, dirs, files in os.walk(base_path):
+                for file_name in files:
+                    file_path = Path(root) / file_name
+                    
+                    if file_path.suffix.lower() not in allowed_extensions:
+                        continue
+                    
+                    if file_name.startswith(".") or file_name.startswith("_"):
+                        continue
+                    
+                    try:
+                        relative_path = file_path.relative_to(base_path)
+                        stat = file_path.stat()
+                        
+                        doc_id = str(relative_path).replace(os.sep, "/")
+                        
+                        title = file_path.stem
+                        description = None
+                        tags: List[str] = []
+                        word_count = 0
+                        char_count = 0
+                        
+                        if self._is_text_file(file_path):
+                            try:
+                                with open(file_path, "r", encoding="utf-8") as f:
+                                    content = f.read()
+                                
+                                char_count = len(content)
+                                word_count = len(content.split())
+                                
+                                if file_path.suffix.lower() == ".md":
+                                    frontmatter, actual_content = self._parse_markdown_frontmatter(content)
+                                    
+                                    if frontmatter:
+                                        title = frontmatter.get("title") or title
+                                        description = frontmatter.get("description")
+                                        tags = frontmatter.get("tags", []) or []
+                                        
+                                        if isinstance(tags, str):
+                                            tags = [t.strip() for t in tags.split(",") if t.strip()]
+                            except Exception as e:
+                                logger.warning(f"Failed to read text file {file_path}: {e}")
+                        
+                        parent_dir = file_path.parent
+                        category = str(parent_dir.relative_to(base_path)) if parent_dir != base_path else None
+                        if category == ".":
+                            category = None
+                        
+                        doc = HermesKnowledgeDoc(
+                            id=doc_id,
+                            file_name=file_name,
+                            file_path=str(relative_path),
+                            file_size=stat.st_size,
+                            file_type=file_path.suffix.lower().lstrip("."),
+                            mime_type=self._get_file_mime_type(file_path),
+                            word_count=word_count,
+                            char_count=char_count,
+                            title=title,
+                            description=description,
+                            tags=list(tags) if tags else [],
+                            category=category,
+                            status=HermesKnowledgeDocStatus.INDEXED,
+                            created_at=datetime.fromtimestamp(stat.st_ctime),
+                            updated_at=datetime.fromtimestamp(stat.st_mtime),
+                            last_indexed_at=datetime.fromtimestamp(stat.st_mtime),
+                        )
+                        docs.append(doc)
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to process file {file_path}: {e}")
+                        continue
+                        
+        except Exception as e:
+            logger.error(f"Failed to scan knowledge base: {e}")
+
+        docs.sort(key=lambda x: x.updated_at, reverse=True)
+        return docs
+
+    def get_knowledge_status(self) -> HermesKnowledgeStatus:
+        base_path = self._get_knowledge_base_path()
+        
+        status = HealthStatus.HEALTHY
+        if not base_path.exists():
+            status = HealthStatus.WARNING
+        
+        docs = self._scan_knowledge_docs(base_path)
+        
+        total_docs = len(docs)
+        total_chars = sum(d.char_count for d in docs)
+        total_size = sum(d.file_size for d in docs)
+        
+        indexed_docs = sum(1 for d in docs if d.status == HermesKnowledgeDocStatus.INDEXED)
+        pending_docs = sum(1 for d in docs if d.status == HermesKnowledgeDocStatus.PENDING)
+        failed_docs = sum(1 for d in docs if d.status == HermesKnowledgeDocStatus.FAILED)
+        
+        last_index_at = None
+        if docs:
+            last_index_at = max(d.last_indexed_at for d in docs if d.last_indexed_at)
+        
+        return HermesKnowledgeStatus(
+            status=status,
+            total_docs=total_docs,
+            total_chars=total_chars,
+            total_size=total_size,
+            indexed_docs=indexed_docs,
+            pending_docs=pending_docs,
+            failed_docs=failed_docs,
+            last_index_at=last_index_at,
+            index_engine="Hermes RAG",
+            storage_path=str(base_path),
+        )
+
+    def list_knowledge_docs(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        keyword: Optional[str] = None,
+        file_type: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> HermesKnowledgeListResponse:
+        base_path = self._get_knowledge_base_path()
+        docs = self._scan_knowledge_docs(base_path)
+        
+        if keyword:
+            keyword_lower = keyword.lower()
+            docs = [
+                d for d in docs
+                if keyword_lower in (d.title or "").lower()
+                or keyword_lower in d.file_name.lower()
+                or keyword_lower in (d.description or "").lower()
+                or any(keyword_lower in tag.lower() for tag in d.tags)
+            ]
+        
+        if file_type:
+            file_type_lower = file_type.lower().lstrip(".")
+            docs = [d for d in docs if d.file_type == file_type_lower]
+        
+        if category:
+            docs = [d for d in docs if d.category == category]
+        
+        categories_set = set()
+        for d in self._scan_knowledge_docs(base_path):
+            if d.category:
+                categories_set.add(d.category)
+        categories = sorted(list(categories_set))
+        
+        total = len(docs)
+        total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
+        
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        paginated_docs = docs[start_idx:end_idx]
+        
+        return HermesKnowledgeListResponse(
+            items=paginated_docs,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+            categories=categories,
+        )
+
+    def get_knowledge_doc_detail(self, doc_id: str) -> Optional[HermesKnowledgeDocDetail]:
+        base_path = self._get_knowledge_base_path()
+        docs = self._scan_knowledge_docs(base_path)
+        
+        for doc in docs:
+            if doc.id == doc_id:
+                file_path = base_path / doc.file_path
+                
+                content = None
+                frontmatter = None
+                outline = None
+                
+                if self._is_text_file(file_path):
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            raw_content = f.read()
+                        
+                        if file_path.suffix.lower() == ".md":
+                            frontmatter, content = self._parse_markdown_frontmatter(raw_content)
+                            outline = self._extract_markdown_outline(content)
+                        else:
+                            content = raw_content
+                    except Exception as e:
+                        logger.warning(f"Failed to read file content {file_path}: {e}")
+                
+                return HermesKnowledgeDocDetail(
+                    id=doc.id,
+                    file_name=doc.file_name,
+                    file_path=doc.file_path,
+                    file_size=doc.file_size,
+                    file_type=doc.file_type,
+                    mime_type=doc.mime_type,
+                    word_count=doc.word_count,
+                    char_count=doc.char_count,
+                    title=doc.title,
+                    description=doc.description,
+                    tags=doc.tags,
+                    category=doc.category,
+                    status=doc.status,
+                    created_at=doc.created_at,
+                    updated_at=doc.updated_at,
+                    last_indexed_at=doc.last_indexed_at,
+                    content=content,
+                    frontmatter=frontmatter,
+                    outline=outline,
+                )
+        
+        return None
+
+    def get_knowledge_file_types(self) -> List[dict]:
+        base_path = self._get_knowledge_base_path()
+        docs = self._scan_knowledge_docs(base_path)
+        
+        type_counts: Dict[str, int] = {}
+        for doc in docs:
+            if doc.file_type:
+                type_counts[doc.file_type] = type_counts.get(doc.file_type, 0) + 1
+        
+        return [
+            {"type": ft, "count": count}
+            for ft, count in sorted(type_counts.items(), key=lambda x: (-x[1], x[0]))
+        ]
 
 
 hermes_service = HermesService()

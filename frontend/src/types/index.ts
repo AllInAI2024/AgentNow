@@ -369,8 +369,6 @@ export interface AvailableSkill {
   is_installed: boolean
 }
 
-export type HealthStatus = 'healthy' | 'warning' | 'unhealthy'
-
 export interface MCPTool {
   name: string
   description: string
@@ -565,4 +563,64 @@ export interface ConfigResponse {
   config_file_path: string | null
   env_file_path: string | null
   last_updated: string | null
+}
+
+export type HermesKnowledgeDocStatus = 'indexed' | 'indexing' | 'failed' | 'pending'
+
+export interface HermesKnowledgeDoc {
+  id: string
+  file_name: string
+  file_path: string
+  file_size: number
+  file_type: string | null
+  mime_type: string | null
+  word_count: number
+  char_count: number
+  title: string | null
+  description: string | null
+  tags: string[]
+  category: string | null
+  status: HermesKnowledgeDocStatus
+  created_at: string
+  updated_at: string
+  last_indexed_at: string | null
+}
+
+export interface HermesKnowledgeDocDetail extends HermesKnowledgeDoc {
+  content: string | null
+  frontmatter: Record<string, any> | null
+  outline: OutlineItem[] | null
+}
+
+export interface OutlineItem {
+  level: number
+  title: string
+  line_number: number
+}
+
+export interface HermesKnowledgeStatus {
+  status: HealthStatus
+  total_docs: number
+  total_chars: number
+  total_size: number
+  indexed_docs: number
+  pending_docs: number
+  failed_docs: number
+  last_index_at: string | null
+  index_engine: string
+  storage_path: string
+}
+
+export interface HermesKnowledgeListResponse {
+  items: HermesKnowledgeDoc[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+  categories: string[]
+}
+
+export interface FileTypeStat {
+  type: string
+  count: number
 }

@@ -23,6 +23,9 @@ from app.schemas.hermes import (
     ProfileMemoryListResponse,
     ConfigResponse,
     ConfigProfileListResponse,
+    HermesKnowledgeStatus,
+    HermesKnowledgeListResponse,
+    HermesKnowledgeDocDetail,
 )
 from app.schemas.user import APIResponse
 from app.services.auth_service import get_db, get_current_user
@@ -705,4 +708,118 @@ async def get_profile_config(
         code=200,
         message="获取成功",
         data=config
+    )
+
+
+@router.get(
+    "/knowledge/status",
+    response_model=APIResponse[HermesKnowledgeStatus],
+    summary="获取知识库状态",
+    description="获取 Hermes 知识库的整体状态，包括文档数量、索引状态等"
+)
+async def get_knowledge_status(
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    knowledge_status = hermes_service.get_knowledge_status()
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=knowledge_status
+    )
+
+
+@router.get(
+    "/knowledge/documents",
+    response_model=APIResponse[HermesKnowledgeListResponse],
+    summary="获取知识库文档列表",
+    description="获取 Hermes 知识库的文档列表，支持分页、搜索和筛选"
+)
+async def get_knowledge_documents(
+    page: int = Query(1, description="页码", ge=1),
+    page_size: int = Query(20, description="每页数量", ge=1, le=100),
+    keyword: Optional[str] = Query(None, description="搜索关键词"),
+    file_type: Optional[str] = Query(None, description="文件类型筛选"),
+    category: Optional[str] = Query(None, description="分类筛选"),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    doc_list = hermes_service.list_knowledge_docs(
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+        file_type=file_type,
+        category=category,
+    )
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=doc_list
+    )
+
+
+@router.get(
+    "/knowledge/documents/{doc_id:path}",
+    response_model=APIResponse[HermesKnowledgeDocDetail],
+    summary="获取文档详情",
+    description="获取 Hermes 知识库中指定文档的详细信息，包括内容"
+)
+async def get_knowledge_document_detail(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    doc_detail = hermes_service.get_knowledge_doc_detail(doc_id)
+    
+    if doc_detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"文档 '{doc_id}' 不存在"
+        )
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=doc_detail
+    )
+
+
+@router.get(
+    "/knowledge/file-types",
+    response_model=APIResponse[list],
+    summary="获取文件类型统计",
+    description="获取知识库中各文件类型的统计信息"
+)
+async def get_knowledge_file_types(
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    file_types = hermes_service.get_knowledge_file_types()
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=file_types
     )
