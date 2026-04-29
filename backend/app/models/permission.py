@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, Text, Integer, SmallInteger, Index, ForeignKey
+from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, Text, Integer, SmallInteger, Index
 
 from app.models import Base
 
@@ -9,7 +9,6 @@ class Permission(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="权限ID")
     parent_id = Column(BigInteger, default=0, comment="父权限ID（0表示顶级）")
-    enterprise_id = Column(BigInteger, ForeignKey("enterprises.id", ondelete="CASCADE"), comment="所属企业ID（NULL表示系统权限）")
     name = Column(String(50), nullable=False, comment="权限名称")
     code = Column(String(100), nullable=False, comment="权限编码（英文标识，如user:list, user:create）")
     type = Column(SmallInteger, default=1, comment="类型：1-菜单，2-按钮，3-API接口")
@@ -28,7 +27,6 @@ class Permission(Base):
 
     __table_args__ = (
         Index("idx_parent_id", "parent_id"),
-        Index("idx_enterprise_id", "enterprise_id"),
         Index("idx_code", "code"),
         Index("idx_type", "type"),
         Index("idx_status", "status"),
@@ -41,7 +39,6 @@ class Permission(Base):
         return {
             "id": self.id,
             "parent_id": self.parent_id,
-            "enterprise_id": self.enterprise_id,
             "name": self.name,
             "code": self.code,
             "type": self.type,

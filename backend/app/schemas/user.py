@@ -19,22 +19,21 @@ class UserLogin(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6, max_length=100, description="密码")
-    enterprise_id: Optional[int] = Field(None, description="所属企业ID")
+    department_id: Optional[int] = Field(None, description="所属部门ID")
+    role_id: Optional[int] = Field(None, description="角色ID")
     avatar_url: Optional[str] = Field(None, max_length=500, description="头像URL")
-    department: Optional[str] = Field(None, max_length=100, description="部门")
     position: Optional[str] = Field(None, max_length=100, description="职位")
     employee_no: Optional[str] = Field(None, max_length=50, description="员工工号")
     gender: int = Field(0, description="性别：0-未知，1-男，2-女")
     birthday: Optional[date] = Field(None, description="生日")
-    role_ids: Optional[List[int]] = Field(default_factory=list, description="角色ID列表")
 
 
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=1, max_length=50, description="用户姓名/昵称")
     email: Optional[str] = Field(None, max_length=100, description="邮箱")
-    enterprise_id: Optional[int] = Field(None, description="所属企业ID")
+    department_id: Optional[int] = Field(None, description="所属部门ID")
+    role_id: Optional[int] = Field(None, description="角色ID")
     avatar_url: Optional[str] = Field(None, max_length=500, description="头像URL")
-    department: Optional[str] = Field(None, max_length=100, description="部门")
     position: Optional[str] = Field(None, max_length=100, description="职位")
     employee_no: Optional[str] = Field(None, max_length=50, description="员工工号")
     gender: Optional[int] = Field(None, description="性别：0-未知，1-男，2-女")
@@ -46,12 +45,12 @@ class UserUpdate(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    enterprise_id: Optional[int] = None
+    department_id: Optional[int] = None
+    role_id: Optional[int] = None
     phone: str
     email: Optional[str] = None
     username: str
     avatar_url: Optional[str] = None
-    department: Optional[str] = None
     position: Optional[str] = None
     employee_no: Optional[str] = None
     gender: int
