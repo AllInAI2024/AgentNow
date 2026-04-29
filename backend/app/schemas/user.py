@@ -1,5 +1,5 @@
 from typing import Optional, List, Generic, TypeVar
-from datetime import datetime, date
+from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -19,25 +19,15 @@ class UserLogin(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6, max_length=100, description="密码")
-    department_id: Optional[int] = Field(None, description="所属部门ID")
-    role_id: Optional[int] = Field(None, description="角色ID")
     avatar_url: Optional[str] = Field(None, max_length=500, description="头像URL")
-    position: Optional[str] = Field(None, max_length=100, description="职位")
-    employee_no: Optional[str] = Field(None, max_length=50, description="员工工号")
-    gender: int = Field(0, description="性别：0-未知，1-男，2-女")
-    birthday: Optional[date] = Field(None, description="生日")
+    hermes_profile: Optional[str] = Field(None, max_length=100, description="对应的 Hermes Profile 名称")
+    hermes_profile_config: Optional[str] = Field(None, description="Hermes Profile 配置(JSON)")
 
 
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=1, max_length=50, description="用户姓名/昵称")
     email: Optional[str] = Field(None, max_length=100, description="邮箱")
-    department_id: Optional[int] = Field(None, description="所属部门ID")
-    role_id: Optional[int] = Field(None, description="角色ID")
     avatar_url: Optional[str] = Field(None, max_length=500, description="头像URL")
-    position: Optional[str] = Field(None, max_length=100, description="职位")
-    employee_no: Optional[str] = Field(None, max_length=50, description="员工工号")
-    gender: Optional[int] = Field(None, description="性别：0-未知，1-男，2-女")
-    birthday: Optional[date] = Field(None, description="生日")
     hermes_profile: Optional[str] = Field(None, max_length=100, description="对应的 Hermes Profile 名称")
     hermes_profile_config: Optional[str] = Field(None, description="Hermes Profile 配置(JSON)")
     is_active: Optional[bool] = Field(None, description="是否激活")
@@ -45,16 +35,10 @@ class UserUpdate(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    department_id: Optional[int] = None
-    role_id: Optional[int] = None
     phone: str
     email: Optional[str] = None
     username: str
     avatar_url: Optional[str] = None
-    position: Optional[str] = None
-    employee_no: Optional[str] = None
-    gender: int
-    birthday: Optional[date] = None
     hermes_profile: Optional[str] = None
     hermes_profile_config: Optional[str] = None
     is_active: bool

@@ -32,11 +32,10 @@ def build_permission_tree(permissions: List[Permission], parent_id: int = 0) -> 
     "",
     response_model=APIResponse[List[PermissionResponse]],
     summary="获取权限列表",
-    description="获取所有功能点/权限列表，支持按类型和状态筛选"
+    description="获取所有功能点/权限列表，支持按类型筛选"
 )
 def get_permissions(
     type: Optional[int] = Query(None, description="权限类型：1-菜单，2-按钮，3-API接口"),
-    status: Optional[int] = Query(None, description="状态：0-禁用，1-启用"),
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -44,10 +43,8 @@ def get_permissions(
     
     if type is not None:
         query = query.filter(Permission.type == type)
-    if status is not None:
-        query = query.filter(Permission.status == status)
     
-    permissions = query.order_by(Permission.sort, Permission.id).all()
+    permissions = query.order_by(Permission.parent_id, Permission.id).all()
     
     return APIResponse(
         code=200,
@@ -66,9 +63,7 @@ def get_permission_tree(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    permissions = db.query(Permission).filter(
-        Permission.status == 1
-    ).order_by(Permission.parent_id, Permission.sort, Permission.id).all()
+    permissions = db.query(Permission).order_by(Permission.parent_id, Permission.id).all()
     
     tree = build_permission_tree(permissions, 0)
     
@@ -137,14 +132,7 @@ def create_permission(
         code=permission_data.code,
         type=permission_data.type,
         path=permission_data.path,
-        component=permission_data.component,
         icon=permission_data.icon,
-        sort=permission_data.sort,
-        visible=permission_data.visible,
-        keep_alive=permission_data.keep_alive,
-        redirect=permission_data.redirect,
-        permission_level=permission_data.permission_level,
-        description=permission_data.description,
     )
     
     db.add(permission)

@@ -12,12 +12,6 @@ from app.schemas.user import (
     AssignRolesRequest,
     APIResponse,
 )
-from app.schemas.enterprise import (
-    EnterpriseBase,
-    EnterpriseCreate,
-    EnterpriseUpdate,
-    EnterpriseResponse,
-)
 from app.schemas.role import (
     RoleBase,
     RoleCreate,
@@ -47,10 +41,6 @@ __all__ = [
     "ResetPassword",
     "AssignRolesRequest",
     "APIResponse",
-    "EnterpriseBase",
-    "EnterpriseCreate",
-    "EnterpriseUpdate",
-    "EnterpriseResponse",
     "RoleBase",
     "RoleCreate",
     "RoleUpdate",

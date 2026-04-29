@@ -112,8 +112,7 @@ def get_user_roles(db: Session, user_id: int) -> List[Role]:
     roles = db.query(Role).join(
         UserRole, UserRole.role_id == Role.id
     ).filter(
-        UserRole.user_id == user_id,
-        Role.status == 1
+        UserRole.user_id == user_id
     ).all()
     return roles
 
@@ -126,10 +125,8 @@ def get_user_permissions(db: Session, user_id: int) -> List[Permission]:
     ).join(
         UserRole, UserRole.role_id == Role.id
     ).filter(
-        UserRole.user_id == user_id,
-        Role.status == 1,
-        Permission.status == 1
-    ).order_by(Permission.parent_id, Permission.sort).all()
+        UserRole.user_id == user_id
+    ).order_by(Permission.parent_id).all()
     return permissions
 
 
@@ -142,11 +139,8 @@ def get_user_menu_permissions(db: Session, user_id: int) -> List[Permission]:
         UserRole, UserRole.role_id == Role.id
     ).filter(
         UserRole.user_id == user_id,
-        Role.status == 1,
-        Permission.status == 1,
-        Permission.type.in_([1, 2]),
-        Permission.visible == True
-    ).order_by(Permission.parent_id, Permission.sort).all()
+        Permission.type.in_([1, 2])
+    ).order_by(Permission.parent_id).all()
     return permissions
 
 
@@ -164,8 +158,6 @@ def check_user_permission(db: Session, user_id: int, permission_code: str) -> bo
         UserRole, UserRole.role_id == Role.id
     ).filter(
         UserRole.user_id == user_id,
-        Role.status == 1,
-        Permission.status == 1,
         Permission.code == permission_code
     ).first() is not None
     
@@ -182,8 +174,7 @@ def require_permission(db: Session, user_id: int, permission_code: str):
 
 def get_super_admin_role(db: Session) -> Optional[Role]:
     role = db.query(Role).filter(
-        Role.code == "super_admin",
-        Role.is_system == True
+        Role.code == "super_admin"
     ).first()
     return role
 
@@ -197,8 +188,7 @@ def assign_role_to_user(db: Session, user_id: int, role_id: int, created_by: Opt
     if existing is None:
         user_role = UserRole(
             user_id=user_id,
-            role_id=role_id,
-            created_by=created_by
+            role_id=role_id
         )
         db.add(user_role)
         db.commit()

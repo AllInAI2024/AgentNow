@@ -11,7 +11,6 @@ class RolePermission(Base):
     role_id = Column(BigInteger, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False, comment="角色ID")
     permission_id = Column(BigInteger, ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False, comment="权限ID")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
-    created_by = Column(BigInteger, comment="创建人ID")
 
     __table_args__ = (
         UniqueConstraint("role_id", "permission_id", name="uk_role_permission"),
@@ -28,5 +27,4 @@ class RolePermission(Base):
             "role_id": self.role_id,
             "permission_id": self.permission_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "created_by": self.created_by,
         }
