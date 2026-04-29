@@ -3717,7 +3717,7 @@ class HermesService:
                 pass
         
         memory_limit = 2200
-        memory_percent = min(100.0, (memory_chars / memory_limit * 100) if memory_limit > 0 else 0.0
+        memory_percent = min(100.0, (memory_chars / memory_limit * 100) if memory_limit > 0 else 0.0)
         
         skill_count = self._get_profile_skill_count(profile_name)
         
