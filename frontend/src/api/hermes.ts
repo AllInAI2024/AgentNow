@@ -16,6 +16,10 @@ import type {
   ProfileMemoryListResponse,
   ConfigResponse,
   ConfigProfileListResponse,
+  HermesKnowledgeStatus,
+  HermesKnowledgeListResponse,
+  HermesKnowledgeDocDetail,
+  FileTypeStat,
   APIResponse 
 } from '@/types'
 
@@ -123,5 +127,34 @@ export const hermesApi = {
 
   getProfileConfig: (profileName: string): Promise<APIResponse<ConfigResponse>> => {
     return http.get(`/hermes/config/${encodeURIComponent(profileName)}`)
+  },
+
+  getKnowledgeStatus: (): Promise<APIResponse<HermesKnowledgeStatus>> => {
+    return http.get('/hermes/knowledge/status')
+  },
+
+  getKnowledgeDocs: (params?: {
+    page?: number
+    page_size?: number
+    keyword?: string
+    file_type?: string
+    category?: string
+  }): Promise<APIResponse<HermesKnowledgeListResponse>> => {
+    const queryParams = new URLSearchParams()
+    if (params?.page) queryParams.append('page', String(params.page))
+    if (params?.page_size) queryParams.append('page_size', String(params.page_size))
+    if (params?.keyword) queryParams.append('keyword', params.keyword)
+    if (params?.file_type) queryParams.append('file_type', params.file_type)
+    if (params?.category) queryParams.append('category', params.category)
+    const queryString = queryParams.toString()
+    return http.get(`/hermes/knowledge/documents${queryString ? `?${queryString}` : ''}`)
+  },
+
+  getKnowledgeDocDetail: (docId: string): Promise<APIResponse<HermesKnowledgeDocDetail>> => {
+    return http.get(`/hermes/knowledge/documents/${encodeURIComponent(docId)}`)
+  },
+
+  getKnowledgeFileTypes: (): Promise<APIResponse<FileTypeStat[]>> => {
+    return http.get('/hermes/knowledge/file-types')
   },
 }

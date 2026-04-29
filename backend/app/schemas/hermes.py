@@ -377,3 +377,61 @@ class ConfigProfileItem(BaseModel):
 class ConfigProfileListResponse(BaseModel):
     items: List[ConfigProfileItem] = Field(default_factory=list, description="Profile列表")
     total: int = Field(0, description="总数量")
+
+
+class HermesKnowledgeDocStatus(str, Enum):
+    INDEXED = "indexed"
+    INDEXING = "indexing"
+    FAILED = "failed"
+    PENDING = "pending"
+
+
+class HermesKnowledgeDoc(BaseModel):
+    id: str = Field(..., description="文档ID（文件路径哈希或相对路径）")
+    file_name: str = Field(..., description="文件名")
+    file_path: str = Field(..., description="相对存储路径")
+    file_size: int = Field(0, description="文件大小（字节）")
+    file_type: Optional[str] = Field(None, description="文件类型/扩展名")
+    mime_type: Optional[str] = Field(None, description="MIME类型")
+    word_count: int = Field(0, description="字数统计（仅文本文件）")
+    char_count: int = Field(0, description="字符数")
+    title: Optional[str] = Field(None, description="文档标题（从Frontmatter或内容提取）")
+    description: Optional[str] = Field(None, description="文档描述/摘要")
+    tags: List[str] = Field(default_factory=list, description="标签列表")
+    category: Optional[str] = Field(None, description="文档分类（目录结构）")
+    status: HermesKnowledgeDocStatus = Field(HermesKnowledgeDocStatus.INDEXED, description="索引状态")
+    created_at: datetime = Field(default_factory=datetime.now, description="文件创建时间")
+    updated_at: datetime = Field(default_factory=datetime.now, description="文件最后修改时间")
+    last_indexed_at: Optional[datetime] = Field(None, description="最后索引时间")
+
+
+class HermesKnowledgeDocDetail(HermesKnowledgeDoc):
+    content: Optional[str] = Field(None, description="文档内容（仅文本文件）")
+    frontmatter: Optional[dict] = Field(None, description="YAML Frontmatter数据")
+    outline: Optional[List[dict]] = Field(None, description="文档大纲（标题结构）")
+
+
+class HermesKnowledgeStatus(BaseModel):
+    status: HealthStatus = Field(HealthStatus.HEALTHY, description="知识库整体状态")
+    total_docs: int = Field(0, description="总文档数")
+    total_chars: int = Field(0, description="总字符数")
+    total_size: int = Field(0, description="总文件大小（字节）")
+    indexed_docs: int = Field(0, description="已索引文档数")
+    pending_docs: int = Field(0, description="待索引文档数")
+    failed_docs: int = Field(0, description="索引失败文档数")
+    last_index_at: Optional[datetime] = Field(None, description="最后索引时间")
+    index_engine: str = Field("Hermes RAG", description="索引引擎名称")
+    storage_path: str = Field(..., description="知识库存储路径")
+
+
+class HermesKnowledgeListResponse(BaseModel):
+    items: List[HermesKnowledgeDoc] = Field(default_factory=list, description="文档列表")
+    total: int = Field(0, description="总数量")
+    page: int = Field(1, description="当前页码")
+    page_size: int = Field(20, description="每页数量")
+    total_pages: int = Field(0, description="总页数")
+    categories: List[str] = Field(default_factory=list, description="所有分类")
+
+
+class HermesKnowledgeStatusResponse(BaseModel):
+    status: HermesKnowledgeStatus = Field(..., description="知识库状态")
