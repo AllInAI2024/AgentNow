@@ -357,12 +357,45 @@ class HermesService:
             profiles: List[str] = []
             lines = stdout.strip().split("\n")
             
+            table_border_chars = {
+                "─", "┌", "┐", "├", "┤", "└", "┘", 
+                "│", "┏", "┓", "┣", "┫", "┗", "┛",
+                "┡", "┢", "┩", "┪", "┭", "┮", "┯", "┰", "┱", "┲", "┳", "┺", "┻", "┼", "┽", "┾", "┿", "╀", "╁", "╂", "╃", "╄", "╅", "╆", "╇", "╈", "╉", "╊", "╋",
+                "-", "+", "|"
+            }
+            
+            def _is_table_border(line: str) -> bool:
+                if not line:
+                    return True
+                stripped = line.strip()
+                if not stripped:
+                    return True
+                
+                if all(c in table_border_chars for c in stripped):
+                    return True
+                
+                if stripped.startswith("──") or stripped.endswith("──"):
+                    return True
+                
+                if stripped.startswith("┌") or stripped.startswith("├") or stripped.startswith("└") or stripped.startswith("┏") or stripped.startswith("┣") or stripped.startswith("┗"):
+                    return True
+                if stripped.endswith("┐") or stripped.endswith("┤") or stripped.endswith("┘") or stripped.endswith("┓") or stripped.endswith("┫") or stripped.endswith("┛"):
+                    return True
+                
+                return False
+            
             for line in lines:
                 line = line.strip()
                 if not line:
                     continue
                 
+                if _is_table_border(line):
+                    continue
+                
                 if line.lower().startswith("profile") or "profiles" in line.lower():
+                    continue
+                
+                if "name" in line.lower() and "active" in line.lower():
                     continue
                 
                 if "(" in line and ")" in line:
@@ -372,7 +405,12 @@ class HermesService:
                 else:
                     name = line
                 
-                if name and len(name) > 0:
+                if "│" in name:
+                    parts = [p.strip() for p in name.split("│") if p.strip()]
+                    if parts:
+                        name = parts[0].rstrip("*").strip()
+                
+                if name and len(name) > 0 and not _is_table_border(name):
                     profiles.append(name)
             
             logger.debug(f"Found profiles: {profiles}")
@@ -2858,6 +2896,8 @@ class HermesService:
 
         try:
             for root, dirs, files in os.walk(base_path):
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d != ".markdown_vault_mcp"]
+                
                 for file_name in files:
                     file_path = Path(root) / file_name
                     
