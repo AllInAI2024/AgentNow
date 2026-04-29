@@ -325,11 +325,11 @@ class HermesService:
         try:
             count = 0
             for item in skills_dir.iterdir():
-                if item.is_dir():
-                    count += 1
-                elif item.is_file() and item.suffix in [".md", ".yaml", ".yml", ".py"]:
-                    if item.name not in ["README.md", "README"]:
-                        count += 1
+                if item.is_dir() and not item.name.startswith("."):
+                    for skill_dir in item.iterdir():
+                        if skill_dir.is_dir() and not skill_dir.name.startswith("."):
+                            count += 1
+                            logger.debug(f"Found skill: {item.name}/{skill_dir.name}")
             return count
         except Exception as e:
             logger.error(f"Failed to count skills in {skills_dir}: {e}")
@@ -341,20 +341,9 @@ class HermesService:
         default_skills_dir = self._hermes_home / "skills"
         default_count = self._get_skills_from_dir(default_skills_dir)
         total += default_count
-        logger.debug(f"Default profile skills: {default_count}")
+        logger.info(f"Default profile skills: {default_count}")
         
-        if self._hermes_profiles_home.exists():
-            try:
-                for profile_dir in self._hermes_profiles_home.iterdir():
-                    if profile_dir.is_dir():
-                        skills_dir = profile_dir / "skills"
-                        count = self._get_skills_from_dir(skills_dir)
-                        total += count
-                        logger.debug(f"Profile {profile_dir.name} skills: {count}")
-            except Exception as e:
-                logger.error(f"Failed to iterate profiles: {e}")
-        
-        logger.info(f"Total skills across all profiles: {total}")
+        logger.info(f"Total skills: {total}")
         return total
 
     def _get_mcp_services_from_config(self, config_path: Path) -> int:
@@ -370,13 +359,19 @@ class HermesService:
             
             count = 0
             
-            if "mcp" in config:
+            if "mcp_servers" in config and isinstance(config["mcp_servers"], dict):
+                count = len(config["mcp_servers"])
+                logger.debug(f"Found {count} MCP servers in mcp_servers")
+            
+            elif "mcp" in config:
                 mcp_config = config["mcp"]
                 if "servers" in mcp_config and isinstance(mcp_config["servers"], dict):
                     count = len(mcp_config["servers"])
+                    logger.debug(f"Found {count} MCP servers in mcp.servers")
             
-            if "mcpServers" in config and isinstance(config["mcpServers"], dict):
-                count = max(count, len(config["mcpServers"]))
+            elif "mcpServers" in config and isinstance(config["mcpServers"], dict):
+                count = len(config["mcpServers"])
+                logger.debug(f"Found {count} MCP servers in mcpServers")
             
             logger.debug(f"MCP services in {config_path}: {count}")
             return count

@@ -1,7 +1,7 @@
 -- 智现 AgentNow 智能体平台数据库初始化脚本
 -- 数据库: agentnow
--- 版本: v8.0 (知识库管理 v2.0 - 集成 mcp-markdown-vault)
--- 日期: 2026-04-28
+-- 版本: v9.0 (智能体模板与 PPT 生成数据结构)
+-- 日期: 2026-04-29
 
 -- 创建数据库
 CREATE DATABASE IF NOT EXISTS agentnow DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -166,7 +166,183 @@ CREATE TABLE IF NOT EXISTS knowledge_docs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库文档表';
 
 -- ============================================
--- 九、初始化数据
+-- 九、智能体模板表
+-- ============================================
+CREATE TABLE IF NOT EXISTS agent_templates (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '模板ID',
+    code VARCHAR(100) NOT NULL COMMENT '模板编码（英文唯一标识，如 ppt_assistant）',
+    name VARCHAR(100) NOT NULL COMMENT '模板名称',
+    description VARCHAR(1000) COMMENT '模板描述',
+    template_type VARCHAR(50) DEFAULT 'business' COMMENT '模板类型：business-业务模板，system-系统模板',
+    role_prompt LONGTEXT COMMENT '角色说明提示词',
+    system_prompt LONGTEXT COMMENT '系统提示词',
+    welcome_message TEXT COMMENT '欢迎语',
+    knowledge_scope VARCHAR(50) DEFAULT 'category' COMMENT '知识范围类型：none/global/category/custom',
+    knowledge_categories JSON COMMENT '允许使用的知识分类列表（JSON数组）',
+    tool_policy JSON COMMENT '工具白名单与工具策略（JSON）',
+    output_rules JSON COMMENT '输出格式和输出约束（JSON）',
+    confirmation_rules JSON COMMENT '用户确认规则（JSON）',
+    interaction_rules JSON COMMENT '关键交互规则（JSON）',
+    workflow_hints JSON COMMENT '轻量流程提示（JSON，为后续流程编排预留）',
+    model_config JSON COMMENT '模型相关配置（JSON，可选）',
+    status TINYINT DEFAULT 0 COMMENT '模板状态：0-草稿，1-启用，2-停用',
+    is_default BOOLEAN DEFAULT FALSE COMMENT '是否为默认模板',
+    version INT DEFAULT 1 COMMENT '当前版本号',
+    created_by BIGINT COMMENT '创建人用户ID',
+    updated_by BIGINT COMMENT '最后更新人用户ID',
+    published_at DATETIME COMMENT '最近发布时间',
+    deleted_at DATETIME COMMENT '删除时间（软删除）',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_agent_template_code (code),
+    INDEX idx_template_type (template_type),
+    INDEX idx_status (status),
+    INDEX idx_is_default (is_default),
+    INDEX idx_created_by (created_by),
+    INDEX idx_deleted_at (deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='智能体模板表';
+
+-- ============================================
+-- 十、智能体模板版本表
+-- ============================================
+CREATE TABLE IF NOT EXISTS agent_template_versions (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '版本ID',
+    template_id BIGINT NOT NULL COMMENT '模板ID',
+    version_no INT NOT NULL COMMENT '版本号',
+    version_label VARCHAR(100) COMMENT '版本标签，如 v1.0、初版、销售优化版',
+    change_summary VARCHAR(1000) COMMENT '版本变更说明',
+    template_snapshot JSON NOT NULL COMMENT '模板完整快照（JSON）',
+    published_by BIGINT COMMENT '发布人用户ID',
+    published_at DATETIME COMMENT '发布时间',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    UNIQUE KEY uk_template_version (template_id, version_no),
+    INDEX idx_template_id (template_id),
+    INDEX idx_published_by (published_by),
+    FOREIGN KEY (template_id) REFERENCES agent_templates(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='智能体模板版本表';
+
+-- ============================================
+-- 十一、员工智能体开通表
+-- ============================================
+CREATE TABLE IF NOT EXISTS user_agents (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '员工智能体ID',
+    user_id BIGINT NOT NULL COMMENT '员工用户ID',
+    template_id BIGINT NOT NULL COMMENT '绑定的模板ID',
+    display_name VARCHAR(100) NOT NULL COMMENT '员工看到的智能体显示名称',
+    hermes_profile VARCHAR(100) NOT NULL COMMENT '绑定的 Hermes Profile 名称',
+    template_version INT NOT NULL DEFAULT 1 COMMENT '开通时使用的模板版本号',
+    config_snapshot JSON NOT NULL COMMENT '模板配置快照（JSON），避免后续模板修改直接影响历史实例',
+    agent_status TINYINT DEFAULT 1 COMMENT '智能体状态：0-待开通，1-可用，2-已停用，3-开通失败',
+    activation_mode VARCHAR(20) DEFAULT 'auto' COMMENT '开通方式：auto-自动开通，manual-手动开通',
+    enabled_at DATETIME COMMENT '开通时间',
+    last_used_at DATETIME COMMENT '最近使用时间',
+    disabled_at DATETIME COMMENT '停用时间',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_user_template (user_id, template_id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_template_id (template_id),
+    INDEX idx_hermes_profile (hermes_profile),
+    INDEX idx_agent_status (agent_status),
+    INDEX idx_last_used_at (last_used_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (template_id) REFERENCES agent_templates(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='员工智能体开通表';
+
+-- ============================================
+-- 十二、智能体会话表
+-- ============================================
+CREATE TABLE IF NOT EXISTS agent_conversations (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '会话ID',
+    user_id BIGINT NOT NULL COMMENT '员工用户ID',
+    user_agent_id BIGINT NOT NULL COMMENT '员工智能体ID',
+    hermes_profile VARCHAR(100) NOT NULL COMMENT '会话所属 Hermes Profile',
+    hermes_conversation_id VARCHAR(100) COMMENT 'Hermes 侧会话ID（如有）',
+    hermes_response_id VARCHAR(100) COMMENT 'Hermes 最新响应ID（如使用 Responses API）',
+    title VARCHAR(255) COMMENT '会话标题',
+    current_stage VARCHAR(50) DEFAULT 'chatting' COMMENT '当前阶段：chatting/outline_draft/outline_confirmed/template_select/final_generating/completed',
+    status TINYINT DEFAULT 1 COMMENT '会话状态：0-草稿，1-进行中，2-已完成，3-已归档，4-失败',
+    outline_confirmed BOOLEAN DEFAULT FALSE COMMENT '是否已确认大纲',
+    template_confirmed BOOLEAN DEFAULT FALSE COMMENT '是否已确认展示模板/风格',
+    final_generation_confirmed BOOLEAN DEFAULT FALSE COMMENT '是否已确认正式生成文件',
+    message_count INT DEFAULT 0 COMMENT '消息总数',
+    latest_user_input VARCHAR(1000) COMMENT '最近一条用户输入摘要',
+    final_file_id BIGINT COMMENT '最终生成文件ID（关联生成文件表）',
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '会话开始时间',
+    last_message_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '最后消息时间',
+    completed_at DATETIME COMMENT '完成时间',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_profile_conversation (hermes_profile, hermes_conversation_id),
+    UNIQUE KEY uk_profile_response (hermes_profile, hermes_response_id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_user_agent_id (user_agent_id),
+    INDEX idx_hermes_profile (hermes_profile),
+    INDEX idx_status (status),
+    INDEX idx_current_stage (current_stage),
+    INDEX idx_last_message_at (last_message_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_agent_id) REFERENCES user_agents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='智能体会话表';
+
+-- ============================================
+-- 十三、智能体生成文件表
+-- ============================================
+CREATE TABLE IF NOT EXISTS agent_generated_files (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '生成文件ID',
+    user_id BIGINT NOT NULL COMMENT '员工用户ID',
+    user_agent_id BIGINT NOT NULL COMMENT '员工智能体ID',
+    conversation_id BIGINT COMMENT '来源会话ID',
+    file_type VARCHAR(50) NOT NULL COMMENT '文件类型，如 pptx、pdf、md',
+    file_name VARCHAR(255) NOT NULL COMMENT '文件名',
+    file_path VARCHAR(1000) NOT NULL COMMENT '文件存储路径',
+    file_size BIGINT DEFAULT 0 COMMENT '文件大小（字节）',
+    mime_type VARCHAR(100) COMMENT 'MIME类型',
+    template_name VARCHAR(100) COMMENT '生成时使用的模板名称或母版名称',
+    source_type VARCHAR(50) DEFAULT 'generated' COMMENT '来源类型：generated-自动生成，regenerated-重新生成，manual_upload-人工上传',
+    version_no INT DEFAULT 1 COMMENT '文件版本号，同一会话多次生成时递增',
+    generation_status TINYINT DEFAULT 1 COMMENT '生成状态：0-生成中，1-成功，2-失败',
+    error_message TEXT COMMENT '失败原因',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted_at DATETIME COMMENT '删除时间（软删除）',
+    INDEX idx_user_id (user_id),
+    INDEX idx_user_agent_id (user_agent_id),
+    INDEX idx_conversation_id (conversation_id),
+    INDEX idx_file_type (file_type),
+    INDEX idx_generation_status (generation_status),
+    INDEX idx_deleted_at (deleted_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_agent_id) REFERENCES user_agents(id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id) REFERENCES agent_conversations(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='智能体生成文件表';
+
+-- ============================================
+-- 十四、智能体操作日志表
+-- ============================================
+CREATE TABLE IF NOT EXISTS agent_operation_logs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '日志ID',
+    operator_user_id BIGINT NOT NULL COMMENT '操作人用户ID',
+    target_type VARCHAR(50) NOT NULL COMMENT '目标类型：template/user_agent/conversation/file',
+    target_id BIGINT COMMENT '目标ID',
+    action VARCHAR(100) NOT NULL COMMENT '操作编码，如 template:create、agent:enable、ppt:generate',
+    action_name VARCHAR(100) COMMENT '操作名称',
+    result_status TINYINT DEFAULT 1 COMMENT '执行结果：1-成功，0-失败',
+    details JSON COMMENT '操作详情（JSON）',
+    error_message TEXT COMMENT '失败原因',
+    ip_address VARCHAR(50) COMMENT '操作者IP',
+    user_agent VARCHAR(500) COMMENT '请求来源 User-Agent',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX idx_operator_user_id (operator_user_id),
+    INDEX idx_target_type_target_id (target_type, target_id),
+    INDEX idx_action (action),
+    INDEX idx_result_status (result_status),
+    INDEX idx_created_at (created_at),
+    FOREIGN KEY (operator_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='智能体操作日志表';
+
+-- ============================================
+-- 十五、初始化数据
 -- ============================================
 
 -- 插入系统内置角色
@@ -412,7 +588,7 @@ VALUES (@admin_user_id, @super_admin_role_id);
 --       VAULT_PATH: "/Users/yourname/.agentnow/knowledge/docs"
 
 -- ============================================
--- 十一、Hermes 系统管理菜单权限
+-- 十六、Hermes 系统管理菜单权限
 -- ============================================
 
 -- 插入 Hermes 一级菜单
