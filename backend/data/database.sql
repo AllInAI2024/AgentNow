@@ -201,7 +201,7 @@ VALUES
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
 (@knowledge_id, '文档列表', 'knowledge:document', 1, '/knowledge/document', 'file', 1),
-(@knowledge_id, '知识库设置', 'knowledge:setting', 1, '/knowledge/setting', 'setting', 2);
+(@knowledge_id, '知识库设置', 'knowledge:setting', 1, '/knowledge/setting', 'tool', 2);
 
 -- 二级菜单 - 系统管理
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
@@ -217,8 +217,8 @@ VALUES
 -- 角色权限部分
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
-(@system_id, '角色管理', 'role:manage', 1, '/role/manage', 'list', 4),
-(@system_id, '功能点管理', 'permission:manage', 1, '/permission/manage', 'unordered-list', 5);
+(@system_id, '角色管理', 'role:manage', 1, '/role/manage', 'safety-certificate', 4),
+(@system_id, '功能点管理', 'permission:manage', 1, '/permission/manage', 'key', 5);
 
 -- 分割线（角色权限和系统设置之间）
 INSERT INTO permissions (parent_id, name, code, type, sort, divider)

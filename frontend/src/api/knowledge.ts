@@ -40,7 +40,7 @@ export const knowledgeApi = {
 
   uploadDoc: (
     formData: FormData,
-    onUploadProgress?: (progressEvent: { loaded: number; total: number }) => void
+    onUploadProgress?: (progressEvent: { loaded: number; total?: number }) => void
   ): Promise<APIResponse<KnowledgeDoc>> => {
     return http.post('/knowledge/docs', formData, {
       headers: {

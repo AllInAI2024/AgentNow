@@ -93,8 +93,8 @@
                   {{ userStore.userInfo?.username?.charAt(0) }}
                 </a-avatar>
                 <div class="user-info-text">
-                  <span class="user-name">{{ userStore.userInfo?.username }}</span>
-                  <span class="user-role">员工</span>
+                  <span class="user-name">{{ userStore.userInfo?.login_name }}</span>
+                  <span class="user-role">{{ userRolesDisplay }}</span>
                 </div>
                 <DownOutlined class="dropdown-arrow" />
               </div>
@@ -179,6 +179,8 @@ import {
   KeyOutlined,
   FolderOpenOutlined,
   FileTextOutlined,
+  MessageOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons-vue'
 import type { PermissionTree } from '@/types'
 import { useUserStore } from '@/stores/user'
@@ -201,6 +203,8 @@ const iconMap: Record<string, unknown> = {
   'key': KeyOutlined,
   'file': FileTextOutlined,
   'unordered-list': UnorderedListOutlined,
+  'message': MessageOutlined,
+  'appstore': AppstoreOutlined,
 }
 
 const defaultIcon = QuestionCircleOutlined
@@ -211,6 +215,12 @@ const getIconComponent = (iconName: string) => {
 
 const topLevelMenus = computed<PermissionTree[]>(() => {
   return userStore.menuPermissions || []
+})
+
+const userRolesDisplay = computed<string>(() => {
+  const roles = userStore.userRoles || []
+  if (roles.length === 0) return '-'
+  return roles.map(r => r.name).join('、')
 })
 
 const getMenuDescription = (menu: PermissionTree): string => {
@@ -402,8 +412,8 @@ const handleLogout = () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 18px;
-  border-radius: 10px;
+  padding: 6px 16px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   color: #646a73;
@@ -411,12 +421,12 @@ const handleLogout = () => {
 }
 
 .nav-menu-item:hover {
-  background: rgba(22, 93, 255, 0.08);
+  background: rgba(22, 93, 255, 0.06);
   color: #165DFF;
 }
 
 .nav-menu-item-active {
-  background: rgba(22, 93, 255, 0.12);
+  background: rgba(22, 93, 255, 0.1);
   color: #165DFF;
   font-weight: 500;
 }
@@ -424,7 +434,7 @@ const handleLogout = () => {
 .nav-menu-item-active::after {
   content: '';
   position: absolute;
-  bottom: 2px;
+  bottom: 0;
   left: 50%;
   transform: translateX(-50%);
   width: 20px;

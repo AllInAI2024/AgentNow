@@ -62,22 +62,28 @@
               <span v-else>-</span>
             </template>
             <template v-else-if="column.key === 'action'">
-              <div class="action-buttons">
-                <a-button type="link" size="small" @click="handleEdit(record)">
-                  编辑
-                </a-button>
-                <a-button type="link" size="small" @click="handleAssignRole(record)">
-                  分配角色
-                </a-button>
+              <a-space size="small">
+                <a-tooltip title="编辑">
+                  <a-button type="text" size="small" @click="handleEdit(record)">
+                    <EditOutlined />
+                  </a-button>
+                </a-tooltip>
+                <a-tooltip title="分配角色">
+                  <a-button type="text" size="small" @click="handleAssignRole(record)">
+                    <SafetyCertificateOutlined />
+                  </a-button>
+                </a-tooltip>
                 <a-popconfirm
                   title="确定要重置密码吗？重置后密码为123456。"
                   ok-text="确定"
                   cancel-text="取消"
                   @confirm="handleResetPassword(record)"
                 >
-                  <a-button type="link" size="small">
-                    重置密码
-                  </a-button>
+                  <a-tooltip title="重置密码">
+                    <a-button type="text" size="small">
+                      <KeyOutlined />
+                    </a-button>
+                  </a-tooltip>
                 </a-popconfirm>
                 <a-popconfirm
                   :title="record.is_active ? '确定要禁用该员工吗？' : '确定要启用该员工吗？'"
@@ -85,9 +91,11 @@
                   cancel-text="取消"
                   @confirm="handleToggleStatus(record)"
                 >
-                  <a-button type="link" size="small">
-                    {{ record.is_active ? '禁用' : '启用' }}
-                  </a-button>
+                  <a-tooltip :title="record.is_active ? '禁用' : '启用'">
+                    <a-button type="text" size="small" :danger="record.is_active">
+                      <component :is="record.is_active ? StopOutlined : PlayCircleOutlined" />
+                    </a-button>
+                  </a-tooltip>
                 </a-popconfirm>
                 <a-popconfirm
                   title="确定要删除该员工吗？"
@@ -95,11 +103,13 @@
                   cancel-text="取消"
                   @confirm="handleDelete(record)"
                 >
-                  <a-button type="link" size="small" danger>
-                    删除
-                  </a-button>
+                  <a-tooltip title="删除">
+                    <a-button type="text" size="small" danger>
+                      <DeleteOutlined />
+                    </a-button>
+                  </a-tooltip>
                 </a-popconfirm>
-              </div>
+              </a-space>
             </template>
           </template>
         </a-table>
@@ -227,7 +237,15 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import type { FormInstance } from 'ant-design-vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import {
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  SafetyCertificateOutlined,
+  KeyOutlined,
+  StopOutlined,
+  PlayCircleOutlined,
+} from '@ant-design/icons-vue'
 import { employeeApi } from '@/api/employee'
 import { departmentApi } from '@/api/department'
 import { roleApi, type Role } from '@/api/role'
