@@ -26,6 +26,7 @@ from app.schemas.hermes import (
     HermesKnowledgeStatus,
     HermesKnowledgeListResponse,
     HermesKnowledgeDocDetail,
+    HermesAuditLogListResponse,
 )
 from app.schemas.user import APIResponse
 from app.services.auth_service import get_db, get_current_user
@@ -822,4 +823,45 @@ async def get_knowledge_file_types(
         code=200,
         message="获取成功",
         data=file_types
+    )
+
+
+@router.get(
+    "/audit",
+    response_model=APIResponse[HermesAuditLogListResponse],
+    summary="获取审计日志",
+    description="获取 Hermes 操作审计日志，支持分页、筛选"
+)
+async def get_audit_logs(
+    page: int = Query(1, description="页码", ge=1),
+    page_size: int = Query(20, description="每页数量", ge=1, le=100),
+    action: Optional[str] = Query(None, description="操作类型筛选"),
+    user_id: Optional[int] = Query(None, description="用户ID筛选"),
+    user_name: Optional[str] = Query(None, description="用户名筛选"),
+    target_type: Optional[str] = Query(None, description="目标类型筛选"),
+    start_time: Optional[str] = Query(None, description="开始时间（ISO格式）"),
+    end_time: Optional[str] = Query(None, description="结束时间（ISO格式）"),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限访问 Hermes 系统管理"
+        )
+    
+    audit_logs = hermes_service.get_audit_logs(
+        page=page,
+        page_size=page_size,
+        action=action,
+        user_id=user_id,
+        user_name=user_name,
+        target_type=target_type,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    
+    return APIResponse(
+        code=200,
+        message="获取成功",
+        data=audit_logs
     )
