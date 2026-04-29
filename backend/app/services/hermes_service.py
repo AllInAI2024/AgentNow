@@ -48,6 +48,18 @@ from app.schemas.hermes import (
     MemoryResponse,
     ProfileMemoryListItem,
     ProfileMemoryListResponse,
+    ConfigItem,
+    ConfigCategory,
+    ModelConfig,
+    TerminalConfig,
+    APIServerConfig,
+    MemoryConfig,
+    CompressionConfig,
+    ToolsConfig,
+    GeneralConfig,
+    ConfigResponse,
+    ConfigProfileItem,
+    ConfigProfileListResponse,
 )
 
 logger = logging.getLogger(__name__)
