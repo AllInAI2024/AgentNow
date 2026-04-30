@@ -27,7 +27,7 @@
                   @click="handleNavigate(menu.path || '/')"
                 >
                   <component :is="getIconComponent(menu.icon || '')" class="nav-icon" />
-                  <span class="nav-text">{{ menu.name }}</span>
+                  <span class="nav-text">{{ getTopLevelMenuName(menu) }}</span>
                 </div>
               </template>
               <template v-else>
@@ -37,7 +37,7 @@
                     :class="{ 'nav-menu-item-active': isMenuActive(menu) }"
                   >
                     <component :is="getIconComponent(menu.icon || '')" class="nav-icon" />
-                    <span class="nav-text">{{ menu.name }}</span>
+                    <span class="nav-text">{{ getTopLevelMenuName(menu) }}</span>
                     <DownOutlined class="nav-arrow" />
                   </div>
                   <template #overlay>
@@ -332,6 +332,16 @@ const getIconComponent = (iconName: string) => {
   return iconMap[iconName] || defaultIcon
 }
 
+const topLevelMenuNameMap: Record<string, string> = {
+  agent: '智能体',
+  knowledge: '知识库',
+  hermes: 'Hermes管理',
+}
+
+const getTopLevelMenuName = (menu: PermissionTree): string => {
+  return topLevelMenuNameMap[menu.code] || menu.name
+}
+
 const topLevelMenus = computed<PermissionTree[]>(() => {
   return userStore.menuPermissions || []
 })
@@ -463,6 +473,7 @@ const handleLogout = () => {
   -webkit-backdrop-filter: blur(24px);
   border-bottom: 1px solid rgba(229, 230, 235, 0.8);
   height: 68px;
+  line-height: normal;
   position: sticky;
   top: 0;
   z-index: 100;
@@ -565,37 +576,40 @@ const handleLogout = () => {
 .nav-menu-item {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 6px 16px;
-  border-radius: 10px;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   color: #646a73;
   position: relative;
+  line-height: 1;
 }
 
 .nav-menu-item:hover {
-  background: rgba(22, 93, 255, 0.06);
-  transform: translateY(-1px);
+  background: rgba(22, 93, 255, 0.08);
   color: #165DFF;
 }
 
 .nav-menu-item-active {
-  background: rgba(22, 93, 255, 0.12);
+  background: linear-gradient(180deg, rgba(22, 93, 255, 0.12) 0%, rgba(22, 93, 255, 0.08) 100%);
   color: #165DFF;
   font-weight: 500;
+  box-shadow: inset 0 0 0 1px rgba(22, 93, 255, 0.08);
 }
 
 .nav-menu-item-active::after {
   content: '';
   position: absolute;
-  bottom: -6px;
+  bottom: -8px;
   left: 50%;
   transform: translateX(-50%);
-  width: 16px;
-  height: 2px;
+  width: 18px;
+  height: 3px;
   background: linear-gradient(90deg, #165DFF 0%, #722ED1 100%);
-  border-radius: 1px;
+  border-radius: 999px;
 }
 
 .nav-icon {
@@ -604,7 +618,9 @@ const handleLogout = () => {
 
 .nav-text {
   font-size: 14px;
+  line-height: 1;
   letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 .nav-arrow {
