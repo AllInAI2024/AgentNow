@@ -3298,7 +3298,7 @@ class HermesService:
             action, action_name = action_mappings[i % len(action_mappings)]
             user_id, user_name = user_mappings[i % len(user_mappings)]
             
-            minutes_ago = i * 30
+            minutes_ago = (i + 1) * 30
             timestamp = now - timedelta(minutes=minutes_ago)
             
             target_type = None
