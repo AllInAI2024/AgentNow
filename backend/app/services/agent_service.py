@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.models import (
+    User,
     UserAgent,
     AgentTemplate,
     AgentConversation,
@@ -19,18 +20,25 @@ from app.schemas import (
     ChatResponse,
     ConversationDetailResponse,
 )
+from app.services.hermes_profile_service import HermesProfileService
 
 
 class AgentService:
     def __init__(self, db: Session):
         self.db = db
-
+        self._profile_service: Optional[HermesProfileService] = None
+    
+    def _get_profile_service(self) -> HermesProfileService:
+        if self._profile_service is None:
+            self._profile_service = HermesProfileService()
+        return self._profile_service
+    
     def get_user_agent_by_id(self, agent_id: int, user_id: int) -> Optional[UserAgent]:
         return self.db.query(UserAgent).filter(
             UserAgent.id == agent_id,
             UserAgent.user_id == user_id
         ).first()
-
+    
     def get_user_agents(self, user_id: int) -> UserAgentListResponse:
         user_agents = self.db.query(UserAgent).filter(
             UserAgent.user_id == user_id
@@ -76,7 +84,7 @@ class AgentService:
             items=items,
             total=len(items),
         )
-
+    
     def get_user_agent_detail(
         self,
         agent_id: int,
@@ -121,44 +129,125 @@ class AgentService:
         )
         
         return result, "获取成功"
-
+    
+    def _log_operation(
+        self,
+        operator_user_id: int,
+        target_type: str,
+        target_id: Optional[int],
+        action: str,
+        action_name: str,
+        success: bool,
+        details: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        log = AgentOperationLog(
+            operator_user_id=operator_user_id,
+            target_type=target_type,
+            target_id=target_id,
+            action=action,
+            action_name=action_name,
+            result_status=1 if success else 0,
+            details=details,
+            error_message=error_message,
+            created_at=datetime.utcnow(),
+        )
+        self.db.add(log)
+        self.db.commit()
+    
+    def _get_default_template(self) -> Optional[AgentTemplate]:
+        return self.db.query(AgentTemplate).filter(
+            AgentTemplate.is_default == True,
+            AgentTemplate.status == 1,
+            AgentTemplate.deleted_at.is_(None)
+        ).first()
+    
+    def _get_template_by_id(self, template_id: int) -> Optional[AgentTemplate]:
+        return self.db.query(AgentTemplate).filter(
+            AgentTemplate.id == template_id,
+            AgentTemplate.status == 1,
+            AgentTemplate.deleted_at.is_(None)
+        ).first()
+    
+    def _get_user_by_id(self, user_id: int) -> Optional[User]:
+        return self.db.query(User).filter(
+            User.id == user_id,
+            User.is_active == True
+        ).first()
+    
+    def _ensure_hermes_profile_for_user(
+        self,
+        user_id: int,
+        tenant_id: int = 1,
+    ) -> Tuple[str, bool, str]:
+        profile_service = self._get_profile_service()
+        
+        profile_name, created, message = profile_service.ensure_profile(
+            user_id=user_id,
+            tenant_id=tenant_id,
+        )
+        
+        return profile_name, created, message
+    
     def enable_agent_for_user(
         self,
         user_id: int,
         template_id: Optional[int] = None,
+        tenant_id: int = 1,
     ) -> Tuple[Optional[EnableAgentResponse], str]:
+        user = self._get_user_by_id(user_id)
+        if not user:
+            return None, "用户不存在或已被停用"
+        
         if template_id:
-            template = self.db.query(AgentTemplate).filter(
-                AgentTemplate.id == template_id,
-                AgentTemplate.status == 1,
-                AgentTemplate.deleted_at.is_(None)
-            ).first()
+            template = self._get_template_by_id(template_id)
+            if not template:
+                return None, f"模板 ID={template_id} 不存在或已停用"
         else:
-            template = self.db.query(AgentTemplate).filter(
-                AgentTemplate.is_default == True,
-                AgentTemplate.status == 1,
-                AgentTemplate.deleted_at.is_(None)
-            ).first()
+            template = self._get_default_template()
+            if not template:
+                return None, "没有可用的模板，请先配置默认模板"
         
-        if not template:
-            return None, "没有可用的模板"
-        
-        existing = self.db.query(UserAgent).filter(
+        existing_agent = self.db.query(UserAgent).filter(
             UserAgent.user_id == user_id,
             UserAgent.template_id == template.id
         ).first()
         
-        if existing:
+        if existing_agent:
             return None, "该智能体已开通"
         
-        hermes_profile = f"corp_1_user_{user_id}"
+        profile_name, created_profile, profile_message = self._ensure_hermes_profile_for_user(
+            user_id=user_id,
+            tenant_id=tenant_id,
+        )
+        
+        if not profile_name:
+            self._log_operation(
+                operator_user_id=user_id,
+                target_type="user_agent",
+                target_id=None,
+                action="agent:enable",
+                action_name="开通智能体",
+                success=False,
+                details={
+                    "template_id": template.id,
+                    "template_code": template.code,
+                },
+                error_message=profile_message,
+            )
+            return None, f"创建 Hermes Profile 失败: {profile_message}"
+        
+        if user.hermes_profile != profile_name:
+            user.hermes_profile = profile_name
+            user.updated_at = datetime.utcnow()
+        
         config_snapshot = template.to_snapshot()
         
         user_agent = UserAgent(
             user_id=user_id,
             template_id=template.id,
             display_name=template.name,
-            hermes_profile=hermes_profile,
+            hermes_profile=profile_name,
             template_version=template.version,
             config_snapshot=config_snapshot,
             agent_status=1,
@@ -170,27 +259,58 @@ class AgentService:
         self.db.commit()
         self.db.refresh(user_agent)
         
-        log = AgentOperationLog(
+        self._log_operation(
             operator_user_id=user_id,
             target_type="user_agent",
             target_id=user_agent.id,
             action="agent:enable",
             action_name="开通智能体",
-            result_status=1,
+            success=True,
             details={
                 "template_id": template.id,
                 "template_code": template.code,
-                "hermes_profile": hermes_profile,
+                "hermes_profile": profile_name,
+                "created_profile": created_profile,
             },
         )
-        self.db.add(log)
-        self.db.commit()
         
         return EnableAgentResponse(
             user_agent=user_agent,
-            created_profile=True,
+            created_profile=created_profile,
         ), "开通成功"
-
+    
+    def get_or_create_agent_for_user(
+        self,
+        user_id: int,
+        tenant_id: int = 1,
+    ) -> Tuple[Optional[UserAgent], str]:
+        existing_agents = self.db.query(UserAgent).filter(
+            UserAgent.user_id == user_id,
+            UserAgent.agent_status == 1
+        ).all()
+        
+        if existing_agents:
+            if len(existing_agents) == 1:
+                return existing_agents[0], "获取已开通智能体"
+            else:
+                default_template = self._get_default_template()
+                if default_template:
+                    for agent in existing_agents:
+                        if agent.template_id == default_template.id:
+                            return agent, "获取默认模板智能体"
+                return existing_agents[0], "获取首个已开通智能体"
+        
+        result, message = self.enable_agent_for_user(
+            user_id=user_id,
+            template_id=None,
+            tenant_id=tenant_id,
+        )
+        
+        if result:
+            return result.user_agent, "自动开通智能体成功"
+        else:
+            return None, message
+    
     def send_chat_message(
         self,
         agent_id: int,
@@ -245,7 +365,7 @@ class AgentService:
             assistant_message=assistant_message,
             structured_result=None,
         ), "发送成功"
-
+    
     def get_conversations(
         self,
         agent_id: int,
@@ -279,7 +399,7 @@ class AgentService:
             page_size=page_size,
             total_pages=total_pages,
         )
-
+    
     def get_conversation_detail(
         self,
         conversation_id: int,
@@ -322,7 +442,7 @@ class AgentService:
             structured_result=None,
             files=file_dicts,
         ), "获取成功"
-
+    
     def generate_ppt(
         self,
         agent_id: int,
@@ -384,24 +504,22 @@ class AgentService:
         
         self.db.commit()
         
-        log = AgentOperationLog(
+        self._log_operation(
             operator_user_id=user_id,
             target_type="file",
             target_id=generated_file.id,
             action="ppt:generate",
             action_name="生成PPT",
-            result_status=1,
+            success=True,
             details={
                 "conversation_id": conversation_id,
                 "template_name": template_name,
                 "version_no": next_version,
             },
         )
-        self.db.add(log)
-        self.db.commit()
         
         return generated_file, "PPT生成成功"
-
+    
     def download_generated_file(
         self,
         file_id: int,
