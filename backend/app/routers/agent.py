@@ -44,7 +44,7 @@ router = APIRouter(prefix="/agents", tags=["智能体管理（员工侧）"])
     description="获取当前登录员工已开通的智能体列表"
 )
 def get_my_agents(
-    current_user: User = Depends(permission_required("agent:use")),
+    current_user: User = Depends(permission_required("agent:list")),
     db: Session = Depends(get_db)
 ):
     service = AgentService(db)
@@ -65,7 +65,7 @@ def get_my_agents(
 )
 def enable_my_agent(
     enable_data: EnableAgentRequest,
-    current_user: User = Depends(permission_required("agent:use")),
+    current_user: User = Depends(permission_required("agent:list")),
     db: Session = Depends(get_db)
 ):
     service = AgentService(db)
@@ -95,7 +95,7 @@ def enable_my_agent(
 )
 def get_my_agent_detail(
     agent_id: int,
-    current_user: User = Depends(permission_required("agent:use")),
+    current_user: User = Depends(permission_required("agent:list")),
     db: Session = Depends(get_db)
 ):
     service = AgentService(db)
@@ -126,7 +126,7 @@ def get_my_agent_detail(
 def send_chat_message(
     agent_id: int,
     chat_data: ChatRequest,
-    current_user: User = Depends(permission_required("agent:use")),
+    current_user: User = Depends(permission_required("agent:list")),
     db: Session = Depends(get_db)
 ):
     service = AgentService(db)
@@ -163,7 +163,7 @@ def get_conversations(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     status: Optional[int] = Query(None, description="会话状态：0-草稿，1-进行中，2-已完成，3-已归档，4-失败"),
-    current_user: User = Depends(permission_required("agent:history:view")),
+    current_user: User = Depends(permission_required("agent:conversation")),
     db: Session = Depends(get_db)
 ):
     service = AgentService(db)
@@ -191,7 +191,7 @@ def get_conversations(
 def get_conversation_detail(
     agent_id: int,
     conversation_id: int,
-    current_user: User = Depends(permission_required("agent:history:view")),
+    current_user: User = Depends(permission_required("agent:conversation")),
     db: Session = Depends(get_db)
 ):
     service = AgentService(db)
@@ -223,7 +223,7 @@ def get_conversation_detail(
 def generate_ppt(
     agent_id: int,
     generate_data: GeneratePPTRequest,
-    current_user: User = Depends(permission_required("agent:use")),
+    current_user: User = Depends(permission_required("agent:list")),
     db: Session = Depends(get_db)
 ):
     service = AgentService(db)
@@ -256,7 +256,7 @@ def generate_ppt(
 def download_generated_file(
     agent_id: int,
     file_id: int,
-    current_user: User = Depends(permission_required("agent:use")),
+    current_user: User = Depends(permission_required("agent:list")),
     db: Session = Depends(get_db)
 ):
     service = AgentService(db)
