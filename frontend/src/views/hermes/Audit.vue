@@ -297,9 +297,9 @@ const fetchAuditLogs = async () => {
     let start_time: string | undefined
     let end_time: string | undefined
     
-    if (dateRange.value) {
-      const startDate = dateRange.value[0].local()
-      const endDate = dateRange.value[1].local()
+    if (dateRange.value && dateRange.value.length === 2) {
+      const startDate = dateRange.value[0]
+      const endDate = dateRange.value[1]
       
       start_time = startDate.startOf('day').toISOString()
       end_time = endDate.endOf('day').toISOString()
@@ -371,21 +371,28 @@ const formatDateTime = (timestamp: string): string => {
 const formatRelativeTime = (timestamp: string): string => {
   const now = dayjs()
   const time = dayjs(timestamp)
+  
   const diffMinutes = now.diff(time, 'minute')
   
-  if (diffMinutes < 60) {
-    return time.format('今天')
+  if (diffMinutes < 0) {
+    return '刚刚'
   }
   
-  const diffDays = now.diff(time, 'day')
+  const todayStart = now.startOf('day')
+  const timeDate = time.startOf('day')
+  const diffDays = todayStart.diff(timeDate, 'day')
+  
   if (diffDays === 0) {
-    return time.format('今天')
+    if (diffMinutes < 60) {
+      return `${diffMinutes}分钟前`
+    }
+    return '今天 ' + time.format('HH:mm')
   } else if (diffDays === 1) {
-    return '昨天'
+    return '昨天 ' + time.format('HH:mm')
   } else if (diffDays < 7) {
     return `${diffDays}天前`
   } else {
-    return time.format('MM-DD')
+    return time.format('MM-DD HH:mm')
   }
 }
 

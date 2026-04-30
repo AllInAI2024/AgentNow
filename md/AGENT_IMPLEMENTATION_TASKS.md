@@ -19,6 +19,13 @@
 
 文档写法尽量贴近真实研发协作，不用太重的 AI 术语，重点是让开发过程更稳，减少返工。
 
+为了后续开发不混淆，这份文档的定位也固定下来：
+
+1. 这份文档负责“怎么一步一步开发”
+2. 总体范围和边界，以 `AGENT_IMPLEMENTATION_SPEC.md` 为准
+3. `ppt_assistant` 的模板配置细节，以 `AGENT_PPT_ASSISTANT_TEMPLATE_V1.md` 为准
+4. 数据库真实结构，以 `backend/data/database.sql` 为准
+
 ---
 
 ## 二、这次到底要做什么

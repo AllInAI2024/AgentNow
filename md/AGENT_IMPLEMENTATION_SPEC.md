@@ -1,8 +1,8 @@
 # AgentNow 企业智能体功能实现方案
 
-> 版本：v1.0
+> 版本：v1.1
 > 日期：2026-04-29
-> 状态：待评审
+> 状态：开发前定稿
 > 适用范围：AgentNow 基于 Hermes 的企业端智能体能力建设
 
 ---
@@ -28,6 +28,34 @@
 3. **记忆隔离依赖 Hermes Profile**，不是在 AgentNow 自己重复实现一套记忆系统
 4. **知识共享通过共享知识库目录/MCP 能力实现**，不是把知识复制到每个员工 Profile
 5. **首期优先保证“可用闭环”**，而不是一次把多岗位、多模态、多流程全部做完
+
+### 1.3 文档分工
+
+为了避免开发阶段“看错文档、按错版本”。
+
+当前 Agent 相关文档建议按下面方式使用：
+
+1. `AGENT_IMPLEMENTATION_SPEC.md`
+   - 用来说明总体目标、边界、架构、模块、接口和实施路径
+   - 它回答“整体要做什么、为什么这样做”
+
+2. `AGENT_PPT_ASSISTANT_TEMPLATE_V1.md`
+   - 用来定义 `ppt_assistant` 这个首个模板怎么配置、怎么交互、怎么输出
+   - 它回答“PPT 助手这个模板具体怎么工作”
+
+3. `AGENT_IMPLEMENTATION_TASKS.md`
+   - 用来指导正式开发时一步一步推进
+   - 它回答“按什么顺序开发、每一步怎么交代给大模型”
+
+4. `AGENT_API_SPEC.md`
+   - 用来定义员工侧接口、管理端接口、请求参数、返回结构、状态枚举和错误口径
+   - 它回答“接口怎么设计、前后端怎么联调”
+
+补充一个单一事实来源：
+
+5. `backend/data/database.sql`
+   - 作为当前数据库结构的最终落地版本
+   - 如果文档中的字段示意和 SQL 不一致，以 SQL 为准，再回头修文档
 
 ---
 
@@ -341,7 +369,9 @@ Hermes 原生支持不同 Profile 的角色配置，但企业场景更适合由 
 
 ## 五、数据模型设计
 
-在不破坏现有用户表的前提下，建议新增以下表。
+在不破坏现有用户表的前提下，第一版建议新增 6 张智能体核心表。
+
+这里要特别说明：**数据库最终落地以 `backend/data/database.sql` 为准，本章节主要用于理解业务关系和设计意图。**
 
 ### 5.1 `agent_templates`
 
@@ -364,9 +394,28 @@ Hermes 原生支持不同 Profile 的角色配置，但企业场景更适合由 
 | `workflow_hints` | 轻量流程提示 JSON，为后续流程编排预留扩展位 |
 | `status` | 草稿/启用/停用 |
 | `is_default` | 是否默认模板 |
+| `version` | 当前版本号 |
 | `created_by` | 创建人 |
+| `updated_by` | 更新人 |
 
-### 5.2 `user_agents`
+### 5.2 `agent_template_versions`
+
+用于记录模板每次发布时的完整快照，支撑版本管理、回滚和模板同步。
+
+建议字段：
+
+| 字段 | 说明 |
+|------|------|
+| `id` | 主键 |
+| `template_id` | 模板 ID |
+| `version_no` | 版本号 |
+| `version_label` | 版本标签 |
+| `change_summary` | 版本变更说明 |
+| `template_snapshot` | 模板完整快照 |
+| `published_by` | 发布人 |
+| `published_at` | 发布时间 |
+
+### 5.3 `user_agents`
 
 用于描述“某个员工开通了哪个智能体”。
 
@@ -380,11 +429,14 @@ Hermes 原生支持不同 Profile 的角色配置，但企业场景更适合由 
 | `display_name` | 员工看到的名称 |
 | `hermes_profile` | 对应 Hermes Profile |
 | `agent_status` | 未开通/开通中/可用/停用 |
+| `template_version` | 开通时使用的模板版本号 |
 | `config_snapshot` | 模板快照，避免模板变更影响历史 |
+| `activation_mode` | 自动开通/手动开通 |
 | `enabled_at` | 开通时间 |
 | `last_used_at` | 最近使用时间 |
+| `disabled_at` | 停用时间 |
 
-### 5.3 `agent_conversations`
+### 5.4 `agent_conversations`
 
 用于缓存员工对话列表，提升前端展示效率。
 
@@ -396,14 +448,42 @@ Hermes 原生支持不同 Profile 的角色配置，但企业场景更适合由 
 | `user_id` | 员工 ID |
 | `user_agent_id` | 员工智能体 ID |
 | `hermes_profile` | Profile 名称 |
+| `hermes_conversation_id` | Hermes 会话 ID |
 | `hermes_response_id` | Hermes Responses API 返回的响应或会话标识 |
 | `title` | 会话标题 |
+| `current_stage` | 当前阶段 |
 | `status` | 进行中/已完成 |
 | `message_count` | 消息数 |
+| `outline_confirmed` | 是否已确认大纲 |
+| `template_confirmed` | 是否已确认模板 |
+| `final_generation_confirmed` | 是否已确认正式生成 |
+| `latest_user_input` | 最近一条用户输入摘要 |
+| `final_file_id` | 最终生成文件 ID |
 | `started_at` | 开始时间 |
 | `last_message_at` | 最后消息时间 |
+| `completed_at` | 完成时间 |
 
-### 5.4 `agent_operation_logs`
+### 5.5 `agent_generated_files`
+
+用于记录智能体生成的正式文件，包括 `.pptx`、后续可能扩展的 `.pdf`、`.md` 等。
+
+建议字段：
+
+| 字段 | 说明 |
+|------|------|
+| `id` | 主键 |
+| `user_id` | 员工 ID |
+| `user_agent_id` | 员工智能体 ID |
+| `conversation_id` | 来源会话 ID |
+| `file_type` | 文件类型 |
+| `file_name` | 文件名 |
+| `file_path` | 文件路径 |
+| `template_name` | 使用的母版或模板名称 |
+| `version_no` | 文件版本号 |
+| `generation_status` | 生成状态 |
+| `error_message` | 失败原因 |
+
+### 5.6 `agent_operation_logs`
 
 用于记录开通、重试、同步模板、调用知识库等关键动作，便于企业审计。
 
@@ -467,12 +547,18 @@ Hermes 原生支持不同 Profile 的角色配置，但企业场景更适合由 
 建议新增如下模块：
 
 1. `backend/app/models/agent_template.py`
-2. `backend/app/models/user_agent.py`
-3. `backend/app/models/agent_conversation.py`
-4. `backend/app/routers/agent.py`
-5. `backend/app/services/agent_service.py`
-6. `backend/app/services/hermes_profile_service.py`
-7. `backend/app/services/hermes_chat_service.py`
+2. `backend/app/models/agent_template_version.py`
+3. `backend/app/models/user_agent.py`
+4. `backend/app/models/agent_conversation.py`
+5. `backend/app/models/agent_generated_file.py`
+6. `backend/app/models/agent_operation_log.py`
+7. `backend/app/routers/agent.py`
+8. `backend/app/routers/agent_template.py`
+9. `backend/app/services/agent_service.py`
+10. `backend/app/services/agent_template_service.py`
+11. `backend/app/services/hermes_profile_service.py`
+12. `backend/app/services/hermes_chat_service.py`
+13. `backend/app/services/ppt_generation_service.py`
 
 ### 7.2 前端模块
 
@@ -509,6 +595,8 @@ Hermes 原生支持不同 Profile 的角色配置，但企业场景更适合由 
 | POST | `/api/agents/me/{agent_id}/chat` | 发送消息 |
 | GET | `/api/agents/me/{agent_id}/conversations` | 获取我的会话列表 |
 | GET | `/api/agents/me/{agent_id}/conversations/{id}` | 获取会话详情 |
+| POST | `/api/agents/me/{agent_id}/generate-ppt` | 生成正式 PPT |
+| GET | `/api/agents/me/{agent_id}/files/{file_id}` | 下载生成文件 |
 
 ### 8.2 管理端接口
 
@@ -516,8 +604,12 @@ Hermes 原生支持不同 Profile 的角色配置，但企业场景更适合由 
 |------|------|------|
 | GET | `/api/agent-templates` | 模板列表 |
 | POST | `/api/agent-templates` | 新建模板 |
+| GET | `/api/agent-templates/{id}` | 模板详情 |
 | PUT | `/api/agent-templates/{id}` | 更新模板 |
 | POST | `/api/agent-templates/{id}/publish` | 发布模板 |
+| POST | `/api/agent-templates/{id}/enable` | 启用模板 |
+| POST | `/api/agent-templates/{id}/disable` | 停用模板 |
+| POST | `/api/agent-templates/{id}/sync` | 同步模板到已开通员工 |
 | GET | `/api/agent-admin/users` | 查看员工智能体开通情况 |
 | POST | `/api/agent-admin/users/{user_id}/provision` | 为指定员工开通智能体 |
 
@@ -1141,14 +1233,15 @@ PPT 助手首期至少接入以下知识：
 
 建议你们下一步直接进入开发的事项如下：
 
-1. 确认新增三张表：`agent_templates`、`user_agents`、`agent_conversations`
-2. 新建后端 `agent_service` 与 `hermes_profile_service`
+1. 以 `backend/data/database.sql` 为准，先落地 6 张智能体核心表
+2. 先完成后端 `agent`、`agent_template`、`hermes_profile` 基础服务骨架
 3. 先实现“员工首次开通默认 PPT 助手”
 4. 接 Hermes Responses API 打通单轮/多轮对话
-5. 准备 PPT 助手首批知识资料
-6. 做员工侧“我的智能体 + 对话页”
-7. 再补模板管理页
+5. 做员工侧“我的智能体 + 对话页”
+6. 准备 PPT 助手首批知识资料并接入知识范围控制
+7. 再补模板管理页和模板版本能力
+8. 最后接入 PPT 文件生成服务
 
 ---
 
-**文档位置：** `md/AGENT_IMPLEMENTATION_PLAN.md`
+**文档位置：** `md/AGENT_IMPLEMENTATION_SPEC.md`

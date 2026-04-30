@@ -1,8 +1,8 @@
 # PPT Assistant 模板设计 V1
 
-> 版本：v1.0
+> 版本：v1.1
 > 日期：2026-04-29
-> 状态：准备评审
+> 状态：开发前定稿
 > 适用范围：AgentNow 第一版 `ppt_assistant` 智能体模板
 
 ---
@@ -12,6 +12,13 @@
 这份文档的目标，是把 `ppt_assistant` 这个首个业务模板定义清楚，作为后续后台模板配置、产品交互设计、知识准备和研发实现的共同依据。
 
 这份文档不进入具体开发代码，也不讨论完整的低代码流程引擎，而是聚焦第一版可落地的模板能力。
+
+为了避免后续开发时理解跑偏，这份文档的定位也需要说清楚：
+
+1. 这份文档主要服务于后台模板配置、提示词维护和交互设计
+2. 涉及数据库字段时，以 `backend/data/database.sql` 为准
+3. 涉及整体边界和模块范围时，以 `AGENT_IMPLEMENTATION_SPEC.md` 为准
+4. 涉及正式开发顺序和执行提示词时，以 `AGENT_IMPLEMENTATION_TASKS.md` 为准
 
 ---
 
@@ -535,4 +542,4 @@
 
 ---
 
-**文档位置：** `md/PPT_ASSISTANT_TEMPLATE_V1.md`
+**文档位置：** `md/AGENT_PPT_ASSISTANT_TEMPLATE_V1.md`
