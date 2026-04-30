@@ -350,9 +350,9 @@ const getMenuDescription = (menu: PermissionTree): string => {
     'permission:manage': '配置系统功能与权限',
     'system:setting': '系统参数配置',
     'system:monitor': '系统运行监控',
-    'agent:list': '管理智能体列表',
-    'agent:config': '配置智能体参数',
-    'agent:conversation': '查看对话记录',
+    'agent:list': '管理和使用您的智能体',
+    'agent:config': '配置智能体模板（管理员）',
+    'agent:conversation': '查看对话历史记录',
     'knowledge:document': '管理知识库文档',
     'knowledge:setting': '知识库配置',
   }
