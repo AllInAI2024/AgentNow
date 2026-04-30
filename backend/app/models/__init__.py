@@ -22,6 +22,12 @@ from app.models.user_role import UserRole
 from app.models.role_permission import RolePermission
 from app.models.knowledge_doc import KnowledgeDoc
 from app.models.knowledge_config import KnowledgeConfig
+from app.models.agent_template import AgentTemplate
+from app.models.agent_template_version import AgentTemplateVersion
+from app.models.user_agent import UserAgent
+from app.models.agent_conversation import AgentConversation
+from app.models.agent_generated_file import AgentGeneratedFile
+from app.models.agent_operation_log import AgentOperationLog
 
 __all__ = [
     "Base", 
@@ -35,4 +41,10 @@ __all__ = [
     "RolePermission",
     "KnowledgeDoc",
     "KnowledgeConfig",
+    "AgentTemplate",
+    "AgentTemplateVersion",
+    "UserAgent",
+    "AgentConversation",
+    "AgentGeneratedFile",
+    "AgentOperationLog",
 ]
