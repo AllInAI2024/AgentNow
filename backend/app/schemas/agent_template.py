@@ -19,7 +19,7 @@ class AgentTemplateBase(BaseModel):
     confirmation_rules: Optional[Dict[str, Any]] = Field(default_factory=dict, description="确认规则")
     interaction_rules: Optional[Dict[str, Any]] = Field(default_factory=dict, description="交互规则")
     workflow_hints: Optional[Dict[str, Any]] = Field(default_factory=dict, description="流程提示")
-    model_config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="模型配置")
+    model_settings: Optional[Dict[str, Any]] = Field(default_factory=dict, description="模型配置")
     is_default: bool = Field(False, description="是否为默认模板")
 
 
@@ -41,7 +41,7 @@ class AgentTemplateUpdate(BaseModel):
     confirmation_rules: Optional[Dict[str, Any]] = None
     interaction_rules: Optional[Dict[str, Any]] = None
     workflow_hints: Optional[Dict[str, Any]] = None
-    model_config: Optional[Dict[str, Any]] = None
+    model_settings: Optional[Dict[str, Any]] = None
     is_default: Optional[bool] = None
     status: Optional[int] = None
 
