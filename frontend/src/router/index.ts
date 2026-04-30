@@ -73,6 +73,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '智能体对话', requiresAuth: true },
   },
   {
+    path: '/agent/list',
+    redirect: '/agents',
+  },
+  {
+    path: '/agent/conversation',
+    redirect: '/agents',
+  },
+  {
+    path: '/agent/config',
+    redirect: '/agents',
+  },
+  {
     path: '/hermes',
     redirect: '/hermes/overview',
     meta: { title: 'Hermes 系统管理', requiresAuth: true },
