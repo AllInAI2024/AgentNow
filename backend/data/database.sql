@@ -369,9 +369,9 @@ SET @system_id = (SELECT id FROM permissions WHERE code = 'system');
 -- 二级菜单 - 智能体管理
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
-(@agent_id, '智能体列表', 'agent:list', 1, '/agent/list', 'list', 1),
+(@agent_id, '我的智能体', 'agent:list', 1, '/agents', 'list', 1),
 (@agent_id, '智能体配置', 'agent:config', 1, '/agent/config', 'appstore', 2),
-(@agent_id, '对话管理', 'agent:conversation', 1, '/agent/conversation', 'message', 3);
+(@agent_id, '对话记录', 'agent:conversation', 1, '/agent/conversation', 'message', 3);
 
 -- 二级菜单 - 知识库管理
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
