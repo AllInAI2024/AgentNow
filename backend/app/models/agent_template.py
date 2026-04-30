@@ -26,7 +26,7 @@ class AgentTemplate(Base):
     confirmation_rules = Column(JSON, comment="用户确认规则（JSON）")
     interaction_rules = Column(JSON, comment="关键交互规则（JSON）")
     workflow_hints = Column(JSON, comment="轻量流程提示（JSON，为后续流程编排预留）")
-    model_config = Column(JSON, comment="模型相关配置（JSON，可选）")
+    model_settings = Column(JSON, comment="模型相关配置（JSON，可选）")
     
     status = Column(SmallInteger, default=0, comment="模板状态：0-草稿，1-启用，2-停用")
     is_default = Column(Boolean, default=False, comment="是否为默认模板")
@@ -69,7 +69,7 @@ class AgentTemplate(Base):
             "confirmation_rules": self.confirmation_rules,
             "interaction_rules": self.interaction_rules,
             "workflow_hints": self.workflow_hints,
-            "model_config": self.model_config,
+            "model_settings": self.model_settings,
             "status": self.status,
             "is_default": self.is_default,
             "version": self.version,
@@ -98,6 +98,6 @@ class AgentTemplate(Base):
             "confirmation_rules": self.confirmation_rules,
             "interaction_rules": self.interaction_rules,
             "workflow_hints": self.workflow_hints,
-            "model_config": self.model_config,
+            "model_settings": self.model_settings,
             "version": self.version,
         }
