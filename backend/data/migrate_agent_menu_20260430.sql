@@ -14,34 +14,17 @@ USE agentnow;
 UPDATE permissions 
 SET 
     name = '我的智能体',
-    path = '/agents',
-    description = '员工管理和使用自己的智能体'
+    path = '/agents'
 WHERE code = 'agent:list';
 
--- 将 "对话管理" 改为 "对话记录"，作为员工侧历史记录入口
--- 注意：员工侧的对话列表在聊天页面左侧，这里保留作为查看所有历史的入口
+-- 将 "对话管理" 改为 "对话记录"
 UPDATE permissions 
 SET 
-    name = '对话记录',
-    description = '查看智能体对话历史记录'
+    name = '对话记录'
 WHERE code = 'agent:conversation';
 
--- 智能体配置保留为管理员功能，修改描述
-UPDATE permissions 
-SET 
-    description = '管理智能体模板和配置（管理员功能）'
-WHERE code = 'agent:config';
-
 -- ============================================
--- 二、（可选）如果需要为普通用户添加新的权限，可在此添加
--- ============================================
-
--- 注意：普通用户角色(user)已经有 agent:list 和 agent:conversation 权限
--- 这是在 database.sql 中初始化的：
--- 'agent:list', 'agent:conversation'
-
--- ============================================
--- 三、验证更新结果
+-- 二、验证更新结果
 -- ============================================
 
 SELECT 
@@ -51,8 +34,7 @@ SELECT
     code,
     path,
     icon,
-    sort,
-    description
+    sort
 FROM permissions 
 WHERE parent_id = (SELECT id FROM permissions WHERE code = 'agent')
 ORDER BY sort;
