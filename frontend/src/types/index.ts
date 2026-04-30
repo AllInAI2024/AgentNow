@@ -769,3 +769,121 @@ export interface ProfileActionResult {
   new_status: ProfileStatus | null
   error: string | null
 }
+
+export interface AgentTemplate {
+  id: number
+  code: string
+  name: string
+  description: string
+  status: number
+  is_default: boolean
+  version: number
+}
+
+export interface UserAgent {
+  id: number
+  user_id: number
+  template_id: number
+  display_name: string
+  hermes_profile: string
+  template_version: number
+  config_snapshot: Record<string, any> | null
+  agent_status: number
+  activation_mode: string | null
+  enabled_at: string | null
+  last_used_at: string | null
+  disabled_at: string | null
+  created_at: string | null
+  updated_at: string | null
+  template: AgentTemplate | null
+}
+
+export interface UserAgentListResponse {
+  items: UserAgent[]
+  total: number
+}
+
+export interface AgentConversation {
+  id: number
+  user_id: number
+  user_agent_id: number
+  hermes_profile: string
+  hermes_conversation_id: string | null
+  hermes_response_id: string | null
+  title: string | null
+  current_stage: string
+  status: number
+  outline_confirmed: boolean
+  template_confirmed: boolean
+  final_generation_confirmed: boolean
+  message_count: number
+  latest_user_input: string | null
+  final_file_id: number | null
+  started_at: string | null
+  last_message_at: string | null
+  completed_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface AgentConversationListResponse {
+  items: AgentConversation[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp?: string
+}
+
+export interface StructuredResult {
+  type: string
+  title?: string
+  slides?: Array<{
+    index: number
+    title: string
+    bullets?: string[]
+  }>
+  [key: string]: any
+}
+
+export interface ChatResponseData {
+  conversation: AgentConversation
+  assistant_message: ChatMessage | null
+  structured_result: StructuredResult | null
+}
+
+export interface ConversationDetailResponse {
+  conversation: AgentConversation
+  messages: ChatMessage[]
+  structured_result: StructuredResult | null
+  files: Array<Record<string, any>>
+}
+
+export interface AgentGeneratedFile {
+  id: number
+  user_id: number
+  user_agent_id: number
+  conversation_id: number | null
+  file_type: string
+  file_name: string
+  file_path: string
+  file_size: number
+  mime_type: string | null
+  template_name: string | null
+  source_type: string | null
+  version_no: number
+  generation_status: number
+  error_message: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface EnableAgentResult {
+  user_agent: UserAgent
+  created_profile: boolean
+}

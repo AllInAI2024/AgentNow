@@ -61,6 +61,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '文档列表', requiresAuth: true },
   },
   {
+    path: '/agents',
+    name: 'MyAgents',
+    component: () => import('@/views/agent/MyAgents.vue'),
+    meta: { title: '我的智能体', requiresAuth: true },
+  },
+  {
+    path: '/agents/:agentId/chat',
+    name: 'AgentChat',
+    component: () => import('@/views/agent/Chat.vue'),
+    meta: { title: '智能体对话', requiresAuth: true },
+  },
+  {
     path: '/hermes',
     redirect: '/hermes/overview',
     meta: { title: 'Hermes 系统管理', requiresAuth: true },
