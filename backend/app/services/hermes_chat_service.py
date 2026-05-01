@@ -155,15 +155,15 @@ class HermesChatService:
 
     def __init__(self):
         self._base_url = settings.HERMES_BASE_URL or "http://127.0.0.1:8642"
-        self._api_key = os.environ.get("HERMES_API_KEY", "")
+        self._api_key = os.environ.get("HERMES_API_KEY")
         self._timeout = 120.0
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {
             "Content-Type": "application/json",
         }
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
+        if self._api_key and self._api_key.strip():
+            headers["Authorization"] = f"Bearer {self._api_key.strip()}"
         return headers
 
     def chat_completions(
