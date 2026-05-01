@@ -1,4 +1,5 @@
 import math
+import json
 from typing import Optional, Tuple, List, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -21,6 +22,10 @@ from app.schemas import (
     ConversationDetailResponse,
 )
 from app.services.hermes_profile_service import HermesProfileService
+from app.services.ppt_assistant_interaction_service import (
+    PPTAssistantInteractionService,
+    ConversationStage,
+)
 
 
 class AgentService:
@@ -311,6 +316,112 @@ class AgentService:
         else:
             return None, message
     
+    def _get_interaction_service_from_conversation(
+        self, 
+        conversation: AgentConversation
+    ) -> PPTAssistantInteractionService:
+        """
+        从会话中恢复交互服务状态
+        """
+        service = PPTAssistantInteractionService()
+        
+        if conversation.current_stage:
+            try:
+                stage_map = {
+                    "welcome": ConversationStage.WELCOME,
+                    "clarifying": ConversationStage.CLARIFYING,
+                    "outline_draft": ConversationStage.OUTLINE_DRAFT,
+                    "outline_confirmed": ConversationStage.OUTLINE_CONFIRMED,
+                    "template_select": ConversationStage.TEMPLATE_SELECT,
+                    "final_generating": ConversationStage.FINAL_GENERATING,
+                    "completed": ConversationStage.COMPLETED,
+                }
+                service._current_stage = stage_map.get(conversation.current_stage, ConversationStage.WELCOME)
+            except Exception:
+                pass
+        
+        return service
+    
+    def _update_conversation_from_service(
+        self, 
+        conversation: AgentConversation, 
+        service: PPTAssistantInteractionService,
+        structured_result: Optional[Dict[str, Any]]
+    ) -> None:
+        """
+        根据交互服务更新会话状态
+        """
+        stage_map = {
+            ConversationStage.WELCOME: "welcome",
+            ConversationStage.CLARIFYING: "clarifying",
+            ConversationStage.OUTLINE_DRAFT: "outline_draft",
+            ConversationStage.OUTLINE_CONFIRMED: "outline_confirmed",
+            ConversationStage.TEMPLATE_SELECT: "template_select",
+            ConversationStage.FINAL_GENERATING: "final_generating",
+            ConversationStage.COMPLETED: "completed",
+        }
+        
+        conversation.current_stage = stage_map.get(service.get_current_stage(), "chatting")
+        
+        current_stage = service.get_current_stage()
+        conversation.outline_confirmed = current_stage in [
+            ConversationStage.OUTLINE_CONFIRMED,
+            ConversationStage.TEMPLATE_SELECT,
+            ConversationStage.FINAL_GENERATING,
+            ConversationStage.COMPLETED,
+        ]
+        
+        conversation.template_confirmed = current_stage in [
+            ConversationStage.FINAL_GENERATING,
+            ConversationStage.COMPLETED,
+        ]
+        
+        conversation.final_generation_confirmed = current_stage == ConversationStage.COMPLETED
+        
+        if current_stage == ConversationStage.COMPLETED:
+            conversation.status = 2
+            conversation.completed_at = datetime.utcnow()
+    
+    def _get_welcome_message_from_template(self, user_agent: UserAgent) -> str:
+        """
+        从模板快照中获取欢迎语
+        """
+        default_welcome = """你好，我是企业 PPT 助手。
+
+你可以直接告诉我：
+1. 这份 PPT 是做什么用的
+2. 是给谁看的
+3. 想做多少页
+4. 有没有必须引用的公司资料
+
+如果你暂时说不全，我也会一步一步带你把这件事理顺。"""
+        
+        try:
+            config_snapshot = user_agent.config_snapshot
+            if config_snapshot and isinstance(config_snapshot, dict):
+                welcome = config_snapshot.get("welcome_message")
+                if welcome and isinstance(welcome, str) and len(welcome) > 0:
+                    return welcome
+        except Exception:
+            pass
+        
+        return default_welcome
+    
+    def _is_ppt_assistant(self, user_agent: UserAgent) -> bool:
+        """
+        判断是否是 PPT 助手模板
+        """
+        try:
+            config_snapshot = user_agent.config_snapshot
+            if config_snapshot and isinstance(config_snapshot, dict):
+                code = config_snapshot.get("code", "")
+                if "ppt" in code.lower():
+                    return True
+        except Exception:
+            pass
+        
+        return True
+    
     def send_chat_message(
         self,
         agent_id: int,
@@ -324,6 +435,8 @@ class AgentService:
         if not user_agent:
             return None, "智能体不存在或无权限访问"
         
+        is_new_conversation = False
+        
         if conversation_id:
             conversation = self.db.query(AgentConversation).filter(
                 AgentConversation.id == conversation_id,
@@ -333,12 +446,13 @@ class AgentService:
             if not conversation:
                 return None, "会话不存在或无权限访问"
         else:
+            is_new_conversation = True
             conversation = AgentConversation(
                 user_id=user_id,
                 user_agent_id=agent_id,
                 hermes_profile=user_agent.hermes_profile,
                 title=message[:50] if message else "新对话",
-                current_stage="chatting",
+                current_stage="welcome",
                 status=1,
                 message_count=0,
                 latest_user_input=message[:1000] if message else None,
@@ -353,17 +467,44 @@ class AgentService:
         if message:
             conversation.latest_user_input = message[:1000]
         
+        assistant_content = ""
+        structured_result = None
+        
+        if self._is_ppt_assistant(user_agent):
+            interaction_service = self._get_interaction_service_from_conversation(conversation)
+            
+            if is_new_conversation and not message:
+                welcome_msg = self._get_welcome_message_from_template(user_agent)
+                assistant_content = welcome_msg
+                structured_result = None
+            else:
+                actual_message = message if message else ""
+                assistant_content, structured_result, new_stage = interaction_service.process_message(
+                    message=actual_message,
+                    action_type=action_type,
+                    is_new_conversation=is_new_conversation
+                )
+                
+                self._update_conversation_from_service(
+                    conversation, 
+                    interaction_service, 
+                    structured_result
+                )
+        else:
+            assistant_content = "智能体对话功能开发中..."
+            structured_result = None
+        
         self.db.commit()
         
         assistant_message = {
             "role": "assistant",
-            "content": "智能体对话功能开发中...",
+            "content": assistant_content,
         }
         
         return ChatResponse(
             conversation=conversation,
             assistant_message=assistant_message,
-            structured_result=None,
+            structured_result=structured_result,
         ), "发送成功"
     
     def get_conversations(
