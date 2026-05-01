@@ -30,7 +30,9 @@
                     <div class="conversation-title">{{ conv.title || '新对话' }}</div>
                     <div class="conversation-meta">
                       <span class="conversation-time">{{ formatTime(conv.last_message_at || conv.started_at) }}</span>
-                      <span class="conversation-count">{{ conv.message_count }} 条消息</span>
+                      <span class="conversation-stage" :class="getStageClass(conv.current_stage)">
+                        {{ getStageLabel(conv.current_stage) }}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -59,8 +61,30 @@
                 <div class="chat-agent-name">{{ currentAgent?.display_name || '智能体' }}</div>
                 <div class="chat-agent-status">
                   <span class="status-dot"></span>
-                  在线
+                  <span class="current-stage-badge" :class="getStageClass(currentConversation.current_stage)">
+                    {{ getStageLabel(currentConversation.current_stage) }}
+                  </span>
                 </div>
+              </div>
+            </div>
+            
+            <div class="chat-status-bar" v-if="currentConversation">
+              <div class="status-item" :class="{ confirmed: currentConversation.outline_confirmed }">
+                <CheckCircleOutlined v-if="currentConversation.outline_confirmed" class="status-icon confirmed" />
+                <ClockCircleOutlined v-else class="status-icon pending" />
+                <span class="status-text">大纲确认</span>
+              </div>
+              <div class="status-divider"></div>
+              <div class="status-item" :class="{ confirmed: currentConversation.template_confirmed }">
+                <CheckCircleOutlined v-if="currentConversation.template_confirmed" class="status-icon confirmed" />
+                <ClockCircleOutlined v-else class="status-icon pending" />
+                <span class="status-text">模板确认</span>
+              </div>
+              <div class="status-divider"></div>
+              <div class="status-item" :class="{ confirmed: currentConversation.final_generation_confirmed }">
+                <CheckCircleOutlined v-if="currentConversation.final_generation_confirmed" class="status-icon confirmed" />
+                <ClockCircleOutlined v-else class="status-icon pending" />
+                <span class="status-text">生成完成</span>
               </div>
             </div>
           </div>
@@ -142,6 +166,46 @@
             </a-spin>
           </div>
 
+          <div class="chat-action-bar" v-if="showActionButtons">
+            <div class="action-buttons">
+              <a-button 
+                type="primary" 
+                size="large"
+                class="action-btn confirm-btn"
+                v-if="canConfirmOutline"
+                @click="handleConfirmOutline"
+              >
+                <CheckOutlined /> 确认大纲
+              </a-button>
+              <a-button 
+                size="large"
+                class="action-btn revise-btn"
+                v-if="canReviseOutline"
+                @click="handleReviseOutline"
+              >
+                <EditOutlined /> 调整大纲
+              </a-button>
+              <a-button 
+                type="primary" 
+                size="large"
+                class="action-btn confirm-btn"
+                v-if="canConfirmTemplate"
+                @click="handleConfirmTemplate"
+              >
+                <CheckOutlined /> 确认模板
+              </a-button>
+              <a-button 
+                type="primary" 
+                size="large"
+                class="action-btn generate-btn"
+                v-if="canGeneratePPT"
+                @click="handleGeneratePPT"
+              >
+                <FileTextOutlined /> 生成 PPT
+              </a-button>
+            </div>
+          </div>
+
           <div class="chat-input-area">
             <div class="input-wrapper">
               <a-textarea
@@ -189,6 +253,10 @@ import {
   ThunderboltOutlined,
   QuestionCircleOutlined,
   BulbOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  CheckOutlined,
+  EditOutlined,
 } from '@ant-design/icons-vue'
 import { agentApi } from '@/api/agent'
 import type { 
@@ -216,11 +284,32 @@ const isTyping = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
 
 const quickActions = computed(() => [
-  { text: '帮我写一个PPT大纲', icon: 'file' },
-  { text: '帮我生成会议纪要', icon: 'bulb' },
-  { text: '解释一下这个问题', icon: 'question' },
-  { text: '优化这段文字', icon: 'thunderbolt' },
+  { text: '帮我写一个公司介绍的 10 页 PPT', icon: 'file' },
+  { text: '帮我做一份产品宣讲 PPT', icon: 'bulb' },
+  { text: '我需要一份客户拜访汇报', icon: 'thunderbolt' },
 ])
+
+const showActionButtons = computed(() => {
+  if (!currentConversation.value) return false
+  const stage = currentConversation.value.current_stage
+  return ['outline_draft', 'outline_confirmed', 'template_select', 'final_generating'].includes(stage)
+})
+
+const canConfirmOutline = computed(() => {
+  return currentConversation.value?.current_stage === 'outline_draft'
+})
+
+const canReviseOutline = computed(() => {
+  return currentConversation.value?.current_stage === 'outline_draft'
+})
+
+const canConfirmTemplate = computed(() => {
+  return currentConversation.value?.current_stage === 'template_select'
+})
+
+const canGeneratePPT = computed(() => {
+  return currentConversation.value?.current_stage === 'final_generating'
+})
 
 const getQuickActionIcon = (icon: string) => {
   const iconMap: Record<string, unknown> = {
@@ -230,6 +319,33 @@ const getQuickActionIcon = (icon: string) => {
     'thunderbolt': ThunderboltOutlined,
   }
   return iconMap[icon] || MessageOutlined
+}
+
+const getStageLabel = (stage: string | null | undefined): string => {
+  const stageMap: Record<string, string> = {
+    'welcome': '欢迎',
+    'clarifying': '需求确认',
+    'outline_draft': '大纲草拟',
+    'outline_confirmed': '大纲已确认',
+    'template_select': '选择模板',
+    'final_generating': '生成中',
+    'completed': '已完成',
+    'chatting': '对话中',
+  }
+  return stageMap[stage || 'chatting'] || '对话中'
+}
+
+const getStageClass = (stage: string | null | undefined): string => {
+  const classMap: Record<string, string> = {
+    'welcome': 'stage-welcome',
+    'clarifying': 'stage-clarifying',
+    'outline_draft': 'stage-outline',
+    'outline_confirmed': 'stage-confirmed',
+    'template_select': 'stage-template',
+    'final_generating': 'stage-generating',
+    'completed': 'stage-completed',
+  }
+  return classMap[stage || ''] || ''
 }
 
 const loadAgentDetail = async () => {
@@ -305,17 +421,18 @@ const scrollToBottom = () => {
   }
 }
 
-const handleSendMessage = async () => {
-  const msg = inputMessage.value.trim()
-  if (!msg || !currentAgent.value || isTyping.value) return
+const sendMessageWithAction = async (msg: string, actionType: string = 'message') => {
+  if (!currentAgent.value || isTyping.value) return
 
-  const userMessage: ChatMessage = {
-    role: 'user',
-    content: msg,
-    timestamp: new Date().toISOString(),
+  if (msg && msg.trim()) {
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: msg,
+      timestamp: new Date().toISOString(),
+    }
+    messages.value.push(userMessage)
   }
   
-  messages.value.push(userMessage)
   inputMessage.value = ''
   isTyping.value = true
   
@@ -326,7 +443,8 @@ const handleSendMessage = async () => {
     const response = await agentApi.sendChat(
       agentId.value,
       msg,
-      currentConversationId.value || undefined
+      currentConversationId.value || undefined,
+      actionType
     )
 
     if (response.code === 200 && response.data) {
@@ -337,6 +455,8 @@ const handleSendMessage = async () => {
           currentConversationId.value = data.conversation.id
           currentConversation.value = data.conversation
           await loadConversations()
+        } else {
+          currentConversation.value = data.conversation
         }
       }
 
@@ -354,10 +474,34 @@ const handleSendMessage = async () => {
   } catch (error) {
     console.error('发送消息失败:', error)
     message.error('发送消息失败，请稍后重试')
-    messages.value = messages.value.slice(0, -1)
+    if (msg && msg.trim()) {
+      messages.value = messages.value.slice(0, -1)
+    }
   } finally {
     isTyping.value = false
   }
+}
+
+const handleSendMessage = async () => {
+  const msg = inputMessage.value.trim()
+  if (!msg) return
+  await sendMessageWithAction(msg, 'message')
+}
+
+const handleConfirmOutline = async () => {
+  await sendMessageWithAction('确认大纲，继续往下做', 'confirm_outline')
+}
+
+const handleReviseOutline = async () => {
+  inputMessage.value = '我想调整一下大纲'
+}
+
+const handleConfirmTemplate = async () => {
+  await sendMessageWithAction('使用公司标准模板', 'confirm_template')
+}
+
+const handleGeneratePPT = async () => {
+  await sendMessageWithAction('确认，生成正式 PPT', 'confirm_generation')
 }
 
 const handleKeyDown = (event: KeyboardEvent) => {
@@ -545,8 +689,31 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.conversation-count {
+.conversation-stage {
   flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.stage-clarifying {
+  background: #fff7e6;
+  color: #ff7d00;
+}
+
+.stage-outline, .stage-template {
+  background: #e8f3ff;
+  color: #165DFF;
+}
+
+.stage-confirmed, .stage-completed {
+  background: #e8ffea;
+  color: #00b42a;
+}
+
+.stage-generating {
+  background: #fff0f0;
+  color: #f53f3f;
 }
 
 .empty-conversations {
@@ -566,7 +733,7 @@ onMounted(() => {
 }
 
 .chat-header {
-  padding: 16px 24px;
+  padding: 12px 24px;
   background: #ffffff;
   border-bottom: 1px solid #e5e6eb;
 }
@@ -603,9 +770,8 @@ onMounted(() => {
 .chat-agent-status {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 12px;
-  color: #00B42A;
 }
 
 .status-dot {
@@ -616,9 +782,59 @@ onMounted(() => {
   animation: pulse 2s ease-in-out infinite;
 }
 
+.current-stage-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
+}
+
+.chat-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f2f5;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #86909c;
+}
+
+.status-item.confirmed {
+  color: #00b42a;
+}
+
+.status-icon {
+  font-size: 14px;
+}
+
+.status-icon.confirmed {
+  color: #00b42a;
+}
+
+.status-icon.pending {
+  color: #c9cdd4;
+}
+
+.status-divider {
+  width: 40px;
+  height: 1px;
+  background: #e5e6eb;
+}
+
+.status-text {
+  white-space: nowrap;
 }
 
 .chat-messages {
@@ -830,6 +1046,61 @@ onMounted(() => {
   }
 }
 
+.chat-action-bar {
+  padding: 12px 24px;
+  background: #ffffff;
+  border-top: 1px solid #e5e6eb;
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 24px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.confirm-btn {
+  background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
+  border: none;
+  color: white;
+}
+
+.confirm-btn:hover {
+  box-shadow: 0 4px 12px rgba(22, 93, 255, 0.3);
+  color: white;
+}
+
+.revise-btn {
+  background: #ffffff;
+  border: 1px solid #e5e6eb;
+  color: #1d2129;
+}
+
+.revise-btn:hover {
+  border-color: #165DFF;
+  color: #165DFF;
+}
+
+.generate-btn {
+  background: linear-gradient(135deg, #00b42a 0%, #23c34b 100%);
+  border: none;
+  color: white;
+}
+
+.generate-btn:hover {
+  box-shadow: 0 4px 12px rgba(0, 180, 42, 0.3);
+  color: white;
+}
+
 .chat-input-area {
   padding: 16px 24px;
   background: #ffffff;
@@ -910,6 +1181,16 @@ onMounted(() => {
   
   .message-content {
     max-width: 85%;
+  }
+  
+  .action-buttons {
+    flex-wrap: wrap;
+  }
+  
+  .action-btn {
+    flex: 1;
+    min-width: 120px;
+    justify-content: center;
   }
 }
 </style>
