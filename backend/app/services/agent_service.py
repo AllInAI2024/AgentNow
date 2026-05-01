@@ -1,6 +1,7 @@
 import math
 import json
 import os
+import logging
 from typing import Optional, Tuple, List, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -28,17 +29,156 @@ from app.services.ppt_assistant_interaction_service import (
     ConversationStage,
 )
 from app.services.knowledge_retrieval_service import KnowledgeRetrievalService
+from app.services.hermes_chat_service import HermesChatService
+from app.services.ppt_content_renderer import create_ppt_from_data, PPTContentRenderer
+
+logger = logging.getLogger(__name__)
 
 
 class AgentService:
     def __init__(self, db: Session):
         self.db = db
         self._profile_service: Optional[HermesProfileService] = None
+        self._hermes_chat_service: Optional[HermesChatService] = None
+        self._use_hermes: bool = self._check_hermes_available()
+    
+    def _check_hermes_available(self) -> bool:
+        hermes_url = settings.HERMES_BASE_URL or "http://127.0.0.1:8642"
+        logger.info(f"Hermes URL configured as: {hermes_url}")
+        return True
     
     def _get_profile_service(self) -> HermesProfileService:
         if self._profile_service is None:
             self._profile_service = HermesProfileService()
         return self._profile_service
+    
+    def _get_hermes_chat_service(self) -> HermesChatService:
+        if self._hermes_chat_service is None:
+            self._hermes_chat_service = HermesChatService()
+        return self._hermes_chat_service
+    
+    def _build_messages_history(
+        self,
+        conversation: AgentConversation,
+        user_message: Optional[str]
+    ) -> List[Dict[str, Any]]:
+        messages = []
+        history = conversation.messages_json or []
+        
+        for msg in history:
+            if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+        
+        if message:
+            messages.append({
+                "role": "user",
+                "content": message
+            })
+        
+        return messages
+    
+    def _try_hermes_chat(
+        self,
+        conversation: AgentConversation,
+        message: Optional[str],
+        is_new_conversation: bool,
+    ) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, Any]]]:
+        """
+        尝试使用 Hermes 进行对话
+        
+        Returns:
+            (assistant_content, new_stage, structured_result)
+            如果失败，返回 (None, None, None)
+        """
+        try:
+            hermes_service = self._get_hermes_chat_service()
+            
+            if is_new_conversation and not message:
+                welcome_msg = hermes_service.generate_welcome_message()
+                return welcome_msg, "welcome", None
+            
+            messages = self._build_messages_history(conversation, message)
+            
+            assistant_content, stage, ppt_content = hermes_service.chat_with_ppt_assistant(
+                messages=messages,
+                session_id=str(conversation.id)
+            )
+            
+            structured_result = None
+            if ppt_content:
+                structured_result = {
+                    "type": "ppt_content",
+                    "title": ppt_content.title,
+                    "subtitle": ppt_content.subtitle,
+                    "scene": ppt_content.scene,
+                    "audience": ppt_content.audience,
+                    "style": ppt_content.style,
+                    "slides": ppt_content.slides,
+                }
+            
+            return assistant_content, stage.value if stage else "clarifying", structured_result
+            
+        except Exception as e:
+            logger.error(f"Hermes chat failed: {e}")
+            return None, None, None
+    
+    def _update_conversation_from_hermes(
+        self,
+        conversation: AgentConversation,
+        user_message: Optional[str],
+        assistant_content: str,
+        new_stage: str,
+        structured_result: Optional[Dict[str, Any]],
+    ) -> None:
+        """
+        使用 Hermes 的结果更新会话
+        """
+        messages = conversation.messages_json or []
+        
+        if user_message:
+            messages.append({
+                "role": "user",
+                "content": user_message
+            })
+        
+        messages.append({
+            "role": "assistant",
+            "content": assistant_content
+        })
+        
+        conversation.messages_json = messages
+        conversation.message_count = len(messages)
+        conversation.current_stage = new_stage
+        
+        if structured_result:
+            conversation.structured_result_json = structured_result
+            
+            if new_stage == "content_ready":
+                conversation.outline_confirmed = True
+                conversation.template_confirmed = True
+                conversation.final_generation_confirmed = True
+                conversation.status = 2
+                conversation.completed_at = datetime.utcnow()
+                
+                requirements = conversation.requirements_json or {}
+                requirements["topic"] = structured_result.get("title", requirements.get("topic", ""))
+                requirements["audience"] = structured_result.get("audience", requirements.get("audience"))
+                requirements["scene"] = structured_result.get("scene", requirements.get("scene"))
+                requirements["style"] = structured_result.get("style", requirements.get("style"))
+                conversation.requirements_json = requirements
+        else:
+            if new_stage == "outline_draft":
+                conversation.outline_confirmed = False
+            elif new_stage == "template_select":
+                conversation.outline_confirmed = True
+                conversation.template_confirmed = False
+            elif new_stage == "final_generating":
+                conversation.outline_confirmed = True
+                conversation.template_confirmed = True
+                conversation.final_generation_confirmed = False
     
     def get_user_agent_by_id(self, agent_id: int, user_id: int) -> Optional[UserAgent]:
         return self.db.query(UserAgent).filter(
@@ -516,83 +656,104 @@ class AgentService:
         structured_result = None
         
         if self._is_ppt_assistant(user_agent):
-            interaction_service = self._get_interaction_service_from_conversation(conversation)
-            if metadata:
-                reqs = interaction_service.get_requirements()
-                if metadata.get("page_count") and not reqs.page_count:
-                    reqs.page_count = int(metadata["page_count"])
-                if metadata.get("audience") and not reqs.audience:
-                    reqs.audience = str(metadata["audience"])
-                if metadata.get("scene") and not reqs.scene:
-                    reqs.scene = str(metadata["scene"])
-                if metadata.get("style") and not reqs.style:
-                    reqs.style = str(metadata["style"])
+            hermes_content, hermes_stage, hermes_result = self._try_hermes_chat(
+                conversation=conversation,
+                message=message,
+                is_new_conversation=is_new_conversation
+            )
             
-            knowledge_categories = self._get_knowledge_categories_from_template(user_agent)
-            knowledge_context = None
-            knowledge_retrieval_service = None
-            
-            if knowledge_categories is not None:
-                knowledge_retrieval_service = KnowledgeRetrievalService(self.db)
-                current_reqs = interaction_service.get_requirements()
-                knowledge_query = self._build_knowledge_query(current_reqs, message or "")
+            if hermes_content is not None:
+                logger.info(f"Hermes chat succeeded, stage: {hermes_stage}")
+                assistant_content = hermes_content
+                new_stage = hermes_stage
+                structured_result = hermes_result
                 
-                if knowledge_query:
-                    knowledge_context = knowledge_retrieval_service.get_knowledge_context(
-                        query=knowledge_query,
-                        categories=knowledge_categories if knowledge_categories else None,
-                        max_docs=3
-                    )
-            
-            if is_new_conversation and not message:
-                welcome_msg = self._get_welcome_message_from_template(user_agent)
-                assistant_content = welcome_msg
-                structured_result = None
-                conversation.messages_json = [{
-                    "role": "assistant",
-                    "content": welcome_msg,
-                }]
-                conversation.message_count = 1
+                self._update_conversation_from_hermes(
+                    conversation=conversation,
+                    user_message=message,
+                    assistant_content=assistant_content,
+                    new_stage=new_stage,
+                    structured_result=structured_result
+                )
             else:
-                actual_message = message if message else ""
-                assistant_content, structured_result, new_stage = interaction_service.process_message(
-                    message=actual_message,
-                    action_type=action_type,
-                    is_new_conversation=is_new_conversation
-                )
+                logger.info("Hermes chat failed, falling back to legacy logic")
+                interaction_service = self._get_interaction_service_from_conversation(conversation)
+                if metadata:
+                    reqs = interaction_service.get_requirements()
+                    if metadata.get("page_count") and not reqs.page_count:
+                        reqs.page_count = int(metadata["page_count"])
+                    if metadata.get("audience") and not reqs.audience:
+                        reqs.audience = str(metadata["audience"])
+                    if metadata.get("scene") and not reqs.scene:
+                        reqs.scene = str(metadata["scene"])
+                    if metadata.get("style") and not reqs.style:
+                        reqs.style = str(metadata["style"])
                 
-                if knowledge_retrieval_service and knowledge_context:
+                knowledge_categories = self._get_knowledge_categories_from_template(user_agent)
+                knowledge_context = None
+                knowledge_retrieval_service = None
+                
+                if knowledge_categories is not None:
+                    knowledge_retrieval_service = KnowledgeRetrievalService(self.db)
                     current_reqs = interaction_service.get_requirements()
-                    topic_for_output = current_reqs.topic if current_reqs else None
+                    knowledge_query = self._build_knowledge_query(current_reqs, message or "")
                     
-                    if new_stage == ConversationStage.OUTLINE_DRAFT:
-                        if knowledge_context.get("has_knowledge"):
-                            sources = knowledge_context.get("sources", [])
-                            if sources:
-                                assistant_content += "\n\n📚 以上大纲参考了以下企业资料："
-                                for i, source in enumerate(sources, 1):
-                                    ref = f"\n{i}. 《{source['title']}》"
-                                    if source.get("category"):
-                                        ref += f"（{source['category']}）"
-                                    assistant_content += ref
-                        else:
-                            assistant_content += "\n\n⚠️ 说明："
-                            if topic_for_output:
-                                assistant_content += f"关于「{topic_for_output}」"
-                            else:
-                                assistant_content += "这份大纲"
-                            assistant_content += "未找到企业知识库中的相关资料，以上为通用结构建议。"
-                            assistant_content += "\n如需更贴合企业实际的内容，请上传相关资料到知识库。"
-                    elif new_stage == ConversationStage.CLARIFYING:
-                        if message and len(message) > 3:
-                            if not knowledge_context.get("has_knowledge"):
-                                pass
+                    if knowledge_query:
+                        knowledge_context = knowledge_retrieval_service.get_knowledge_context(
+                            query=knowledge_query,
+                            categories=knowledge_categories if knowledge_categories else None,
+                            max_docs=3
+                        )
                 
-                self._update_conversation_from_service(
-                    conversation, 
-                    interaction_service, 
-                    structured_result
-                )
+                if is_new_conversation and not message:
+                    welcome_msg = self._get_welcome_message_from_template(user_agent)
+                    assistant_content = welcome_msg
+                    structured_result = None
+                    conversation.messages_json = [{
+                        "role": "assistant",
+                        "content": welcome_msg,
+                    }]
+                    conversation.message_count = 1
+                else:
+                    actual_message = message if message else ""
+                    assistant_content, structured_result, new_stage = interaction_service.process_message(
+                        message=actual_message,
+                        action_type=action_type,
+                        is_new_conversation=is_new_conversation
+                    )
+                    
+                    if knowledge_retrieval_service and knowledge_context:
+                        current_reqs = interaction_service.get_requirements()
+                        topic_for_output = current_reqs.topic if current_reqs else None
+                        
+                        if new_stage == ConversationStage.OUTLINE_DRAFT:
+                            if knowledge_context.get("has_knowledge"):
+                                sources = knowledge_context.get("sources", [])
+                                if sources:
+                                    assistant_content += "\n\n📚 以上大纲参考了以下企业资料："
+                                    for i, source in enumerate(sources, 1):
+                                        ref = f"\n{i}. 《{source['title']}》"
+                                        if source.get("category"):
+                                            ref += f"（{source['category']}）"
+                                        assistant_content += ref
+                            else:
+                                assistant_content += "\n\n⚠️ 说明："
+                                if topic_for_output:
+                                    assistant_content += f"关于「{topic_for_output}」"
+                                else:
+                                    assistant_content += "这份大纲"
+                                assistant_content += "未找到企业知识库中的相关资料，以上为通用结构建议。"
+                                assistant_content += "\n如需更贴合企业实际的内容，请上传相关资料到知识库。"
+                        elif new_stage == ConversationStage.CLARIFYING:
+                            if message and len(message) > 3:
+                                if not knowledge_context.get("has_knowledge"):
+                                    pass
+                    
+                    self._update_conversation_from_service(
+                        conversation, 
+                        interaction_service, 
+                        structured_result
+                    )
         else:
             assistant_content = "智能体对话功能开发中..."
             structured_result = None
@@ -861,219 +1022,303 @@ class AgentService:
     ) -> bytes:
         """
         创建一个演示用的 PPT 文件
-        如果有 python-pptx 库，使用它创建真实的 PPT
-        否则，创建一个简单的占位文件
+        优先使用新的渲染服务，如果有结构化数据
+        否则回退到旧的逻辑
         """
         try:
-            from pptx import Presentation
-            
-            prs = Presentation()
-            
             requirements_data = self._get_conversation_requirements_data(conversation)
             structured_result = conversation.structured_result_json or {}
-
+            
             topic = requirements_data.get("topic", "未设置主题")
             audience = requirements_data.get("audience")
             scene = requirements_data.get("scene")
-            page_count = requirements_data.get("page_count")
             style = requirements_data.get("style")
             slides_data = structured_result.get("slides") if isinstance(structured_result, dict) else None
             
-            title_slide_layout = prs.slide_layouts[0]
-            slide = prs.slides.add_slide(title_slide_layout)
-            title = slide.shapes.title
-            subtitle = slide.placeholders[1]
-            
-            title.text = topic
-            subtitle_text = f"版本 v{version}\n模板: {template_name or '默认'}"
-            if style:
-                subtitle_text += f"\n风格: {style}"
-            subtitle.text = subtitle_text
-            
-            outline_slide_layout = prs.slide_layouts[1]
-            slide = prs.slides.add_slide(outline_slide_layout)
-            title = slide.shapes.title
-            body = slide.placeholders[1]
-
-            title.text = "目录"
-            tf = body.text_frame
-            tf.text = ""
-
-            if audience or scene or page_count:
-                p = tf.add_paragraph()
-                p.text = "【基本信息】"
-                p.bold = True
-
-                if audience:
-                    p = tf.add_paragraph()
-                    p.text = f"• 目标受众：{audience}"
-                    p.level = 1
+            if slides_data and isinstance(slides_data, list) and len(slides_data) > 0:
+                logger.info(f"Using new PPT renderer with {len(slides_data)} slides")
+                
+                effective_style = style or template_name or "默认"
+                
+                subtitle = ""
                 if scene:
-                    p = tf.add_paragraph()
-                    p.text = f"• 使用场景：{scene}"
-                    p.level = 1
-                if page_count:
-                    p = tf.add_paragraph()
-                    p.text = f"• 预计页数：{page_count}页"
-                    p.level = 1
+                    subtitle += f"场景：{scene}\n"
+                if audience:
+                    subtitle += f"受众：{audience}"
+                
+                metadata = {
+                    "version": version,
+                    "scene": scene,
+                    "audience": audience,
+                    "style": effective_style,
+                }
+                
+                return create_ppt_from_data(
+                    slides_data=slides_data,
+                    title=topic,
+                    subtitle=subtitle if subtitle else None,
+                    style=effective_style,
+                    metadata=metadata,
+                )
+            
+            logger.info("No structured slide data found, using fallback renderer")
+            return self._create_demo_ppt_fallback(
+                conversation=conversation,
+                version=version,
+                template_name=template_name,
+                knowledge_context=knowledge_context,
+            )
+            
+        except ImportError:
+            placeholder_content = self._create_placeholder_content(
+                conversation=conversation,
+                version=version,
+                template_name=template_name,
+                knowledge_context=knowledge_context,
+            )
+            return placeholder_content.encode('utf-8')
+        except Exception as e:
+            logger.error(f"PPT generation failed: {e}")
+            placeholder_content = self._create_placeholder_content(
+                conversation=conversation,
+                version=version,
+                template_name=template_name,
+                knowledge_context=knowledge_context,
+                error=str(e),
+            )
+            return placeholder_content.encode('utf-8')
+    
+    def _create_demo_ppt_fallback(
+        self, 
+        conversation: AgentConversation, 
+        version: int,
+        template_name: Optional[str],
+        knowledge_context: Optional[Dict[str, Any]] = None
+    ) -> bytes:
+        """
+        旧的 PPT 生成逻辑（作为 fallback）
+        """
+        from pptx import Presentation
+        import io
+        
+        prs = Presentation()
+        
+        requirements_data = self._get_conversation_requirements_data(conversation)
+        structured_result = conversation.structured_result_json or {}
 
+        topic = requirements_data.get("topic", "未设置主题")
+        audience = requirements_data.get("audience")
+        scene = requirements_data.get("scene")
+        page_count = requirements_data.get("page_count")
+        style = requirements_data.get("style")
+        slides_data = structured_result.get("slides") if isinstance(structured_result, dict) else None
+        
+        title_slide_layout = prs.slide_layouts[0]
+        slide = prs.slides.add_slide(title_slide_layout)
+        title = slide.shapes.title
+        subtitle = slide.placeholders[1]
+        
+        title.text = topic
+        subtitle_text = f"版本 v{version}\n模板: {template_name or '默认'}"
+        if style:
+            subtitle_text += f"\n风格: {style}"
+        subtitle.text = subtitle_text
+        
+        outline_slide_layout = prs.slide_layouts[1]
+        slide = prs.slides.add_slide(outline_slide_layout)
+        title = slide.shapes.title
+        body = slide.placeholders[1]
+
+        title.text = "目录"
+        tf = body.text_frame
+        tf.text = ""
+
+        if audience or scene or page_count:
             p = tf.add_paragraph()
-            p.text = ""
-            p = tf.add_paragraph()
-            p.text = "【内容结构】"
+            p.text = "【基本信息】"
             p.bold = True
 
-            outline_titles = []
-            if isinstance(slides_data, list) and slides_data:
-                outline_titles = [f"• 第{slide_item.get('index', idx + 1)}页：{slide_item.get('title', '未命名页面')}" for idx, slide_item in enumerate(slides_data)]
-            else:
-                outline_titles = [
-                    "• 第1页：封面",
-                    "• 第2页：目录",
-                    "• 第3页：正文内容",
-                ]
-
-            for outline_title in outline_titles[: min(len(outline_titles), 10)]:
+            if audience:
                 p = tf.add_paragraph()
-                p.text = outline_title
+                p.text = f"• 目标受众：{audience}"
+                p.level = 1
+            if scene:
+                p = tf.add_paragraph()
+                p.text = f"• 使用场景：{scene}"
+                p.level = 1
+            if page_count:
+                p = tf.add_paragraph()
+                p.text = f"• 预计页数：{page_count}页"
                 p.level = 1
 
-            if isinstance(slides_data, list) and slides_data:
-                for slide_item in slides_data:
-                    content_slide_layout = prs.slide_layouts[1]
-                    slide = prs.slides.add_slide(content_slide_layout)
-                    title = slide.shapes.title
-                    body = slide.placeholders[1]
+        p = tf.add_paragraph()
+        p.text = ""
+        p = tf.add_paragraph()
+        p.text = "【内容结构】"
+        p.bold = True
 
-                    title.text = slide_item.get("title") or f"第{slide_item.get('index', '')}页"
-                    tf = body.text_frame
-                    subtitle = slide_item.get("subtitle")
-                    if subtitle:
-                        tf.text = subtitle
-                    else:
-                        tf.text = ""
+        outline_titles = []
+        if isinstance(slides_data, list) and slides_data:
+            outline_titles = [f"• 第{slide_item.get('index', idx + 1)}页：{slide_item.get('title', '未命名页面')}" for idx, slide_item in enumerate(slides_data)]
+        else:
+            outline_titles = [
+                "• 第1页：封面",
+                "• 第2页：目录",
+                "• 第3页：正文内容",
+            ]
 
-                    bullets = slide_item.get("bullets") or []
-                    for bullet in bullets:
-                        p = tf.add_paragraph()
-                        p.text = str(bullet)
-                        p.level = 0
+        for outline_title in outline_titles[: min(len(outline_titles), 10)]:
+            p = tf.add_paragraph()
+            p.text = outline_title
+            p.level = 1
 
-                    speaker_notes = slide_item.get("speaker_notes")
-                    if speaker_notes:
-                        p = tf.add_paragraph()
-                        p.text = ""
-                        p = tf.add_paragraph()
-                        p.text = f"演讲备注：{speaker_notes}"
-                        p.level = 0
-            else:
+        if isinstance(slides_data, list) and slides_data:
+            for slide_item in slides_data:
                 content_slide_layout = prs.slide_layouts[1]
                 slide = prs.slides.add_slide(content_slide_layout)
                 title = slide.shapes.title
                 body = slide.placeholders[1]
 
-                title.text = "正文内容"
+                title.text = slide_item.get("title") or f"第{slide_item.get('index', '')}页"
                 tf = body.text_frame
-                tf.text = "这是一个由 AgentNow 智能体平台生成的 PPT。"
+                subtitle = slide_item.get("subtitle")
+                if subtitle:
+                    tf.text = subtitle
+                else:
+                    tf.text = ""
 
-                if audience:
+                bullets = slide_item.get("bullets") or []
+                for bullet in bullets:
                     p = tf.add_paragraph()
-                    p.text = f"• 目标受众：{audience}"
-                if scene:
+                    p.text = str(bullet)
+                    p.level = 0
+
+                speaker_notes = slide_item.get("speaker_notes")
+                if speaker_notes:
                     p = tf.add_paragraph()
-                    p.text = f"• 使用场景：{scene}"
-                if page_count:
+                    p.text = ""
                     p = tf.add_paragraph()
-                    p.text = f"• 预计页数：{page_count}"
-                if style:
-                    p = tf.add_paragraph()
-                    p.text = f"• 展示风格：{style}"
-            
-            if knowledge_context and knowledge_context.get("has_knowledge"):
-                sources = knowledge_context.get("sources", [])
-                if sources:
-                    reference_slide_layout = prs.slide_layouts[1]
-                    slide = prs.slides.add_slide(reference_slide_layout)
-                    title = slide.shapes.title
-                    body = slide.placeholders[1]
-                    
-                    title.text = "参考资料（企业知识库）"
-                    tf = body.text_frame
-                    tf.text = "以下内容来自企业知识库："
-                    
-                    for i, source in enumerate(sources, 1):
-                        p = tf.add_paragraph()
-                        p.text = ""
-                        p = tf.add_paragraph()
-                        p.text = f"{i}. 《{source['title']}》"
-                        p.bold = True
-                        if source.get("category"):
-                            p = tf.add_paragraph()
-                            p.text = f"   分类：{source['category']}"
-                    
-                    knowledge_text = knowledge_context.get("knowledge_text", "")
-                    if knowledge_text and len(knowledge_text) > 0:
-                        p = tf.add_paragraph()
-                        p.text = ""
-                        p = tf.add_paragraph()
-                        p.text = "【资料摘要】"
-                        p.bold = True
-                        
-                        content_lines = knowledge_text[:800].split('\n')
-                        for line in content_lines[:15]:
-                            if line.strip():
-                                p = tf.add_paragraph()
-                                p.text = line[:80]
-                                p.level = 1
-            
-            summary_slide_layout = prs.slide_layouts[1]
-            slide = prs.slides.add_slide(summary_slide_layout)
+                    p.text = f"演讲备注：{speaker_notes}"
+                    p.level = 0
+        else:
+            content_slide_layout = prs.slide_layouts[1]
+            slide = prs.slides.add_slide(content_slide_layout)
             title = slide.shapes.title
             body = slide.placeholders[1]
-            
-            title.text = "总结与说明"
+
+            title.text = "正文内容"
             tf = body.text_frame
-            tf.text = "PPT 生成完成！"
-            
-            p = tf.add_paragraph()
-            p.text = ""
-            p = tf.add_paragraph()
-            p.text = "【生成信息】"
-            p.bold = True
-            
-            p = tf.add_paragraph()
-            p.text = f"• 会话ID: {conversation.id}"
-            p = tf.add_paragraph()
-            p.text = f"• 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            p = tf.add_paragraph()
-            p.text = f"• 版本: v{version}"
-            
-            p = tf.add_paragraph()
-            p.text = ""
-            p = tf.add_paragraph()
-            p.text = "【说明】"
-            p.bold = True
-            
-            if knowledge_context and knowledge_context.get("has_knowledge"):
+            tf.text = "这是一个由 AgentNow 智能体平台生成的 PPT。"
+
+            if audience:
                 p = tf.add_paragraph()
-                p.text = "✓ 本 PPT 内容参考了企业知识库中的相关资料"
-                p.level = 1
-            else:
+                p.text = f"• 目标受众：{audience}"
+            if scene:
                 p = tf.add_paragraph()
-                p.text = "⚠ 本 PPT 为通用结构建议，未找到企业知识库中的相关资料"
-                p.level = 1
+                p.text = f"• 使用场景：{scene}"
+            if page_count:
                 p = tf.add_paragraph()
-                p.text = "  如需更贴合企业实际的内容，请上传相关资料到知识库"
-                p.level = 1
-            
-            import io
-            output = io.BytesIO()
-            prs.save(output)
-            output.seek(0)
-            return output.read()
-            
-        except ImportError:
-            placeholder_content = f"""PPT 演示文件
+                p.text = f"• 预计页数：{page_count}"
+            if style:
+                p = tf.add_paragraph()
+                p.text = f"• 展示风格：{style}"
+        
+        if knowledge_context and knowledge_context.get("has_knowledge"):
+            sources = knowledge_context.get("sources", [])
+            if sources:
+                reference_slide_layout = prs.slide_layouts[1]
+                slide = prs.slides.add_slide(reference_slide_layout)
+                title = slide.shapes.title
+                body = slide.placeholders[1]
+                
+                title.text = "参考资料（企业知识库）"
+                tf = body.text_frame
+                tf.text = "以下内容来自企业知识库："
+                
+                for i, source in enumerate(sources, 1):
+                    p = tf.add_paragraph()
+                    p.text = ""
+                    p = tf.add_paragraph()
+                    p.text = f"{i}. 《{source['title']}》"
+                    p.bold = True
+                    if source.get("category"):
+                        p = tf.add_paragraph()
+                        p.text = f"   分类：{source['category']}"
+                
+                knowledge_text = knowledge_context.get("knowledge_text", "")
+                if knowledge_text and len(knowledge_text) > 0:
+                    p = tf.add_paragraph()
+                    p.text = ""
+                    p = tf.add_paragraph()
+                    p.text = "【资料摘要】"
+                    p.bold = True
+                    
+                    content_lines = knowledge_text[:800].split('\n')
+                    for line in content_lines[:15]:
+                        if line.strip():
+                            p = tf.add_paragraph()
+                            p.text = line[:80]
+                            p.level = 1
+        
+        summary_slide_layout = prs.slide_layouts[1]
+        slide = prs.slides.add_slide(summary_slide_layout)
+        title = slide.shapes.title
+        body = slide.placeholders[1]
+        
+        title.text = "总结与说明"
+        tf = body.text_frame
+        tf.text = "PPT 生成完成！"
+        
+        p = tf.add_paragraph()
+        p.text = ""
+        p = tf.add_paragraph()
+        p.text = "【生成信息】"
+        p.bold = True
+        
+        p = tf.add_paragraph()
+        p.text = f"• 会话ID: {conversation.id}"
+        p = tf.add_paragraph()
+        p.text = f"• 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        p = tf.add_paragraph()
+        p.text = f"• 版本: v{version}"
+        
+        p = tf.add_paragraph()
+        p.text = ""
+        p = tf.add_paragraph()
+        p.text = "【说明】"
+        p.bold = True
+        
+        if knowledge_context and knowledge_context.get("has_knowledge"):
+            p = tf.add_paragraph()
+            p.text = "✓ 本 PPT 内容参考了企业知识库中的相关资料"
+            p.level = 1
+        else:
+            p = tf.add_paragraph()
+            p.text = "⚠ 本 PPT 为通用结构建议，未找到企业知识库中的相关资料"
+            p.level = 1
+            p = tf.add_paragraph()
+            p.text = "  如需更贴合企业实际的内容，请上传相关资料到知识库"
+            p.level = 1
+        
+        output = io.BytesIO()
+        prs.save(output)
+        output.seek(0)
+        return output.read()
+    
+    def _create_placeholder_content(
+        self,
+        conversation: AgentConversation,
+        version: int,
+        template_name: Optional[str],
+        knowledge_context: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+    ) -> str:
+        """
+        创建占位符内容（当 python-pptx 不可用时）
+        """
+        requirements_data = self._get_conversation_requirements_data(conversation)
+        
+        placeholder_content = f"""PPT 演示文件
 ================
 会话ID: {conversation.id}
 版本: v{version}
@@ -1084,26 +1329,30 @@ class AgentService:
 - 此为演示版本
 - 正式版本将生成真实的 .pptx 文件
 - 请安装 python-pptx 库以启用完整功能
-
+"""
+        if error:
+            placeholder_content += f"\n错误信息: {error}\n"
+        
+        placeholder_content += f"""
 需求信息：
 {json.dumps(requirements_data, ensure_ascii=False, indent=2) if requirements_data else '未记录详细需求'}
 
 知识检索状态：
 """
-            
-            if knowledge_context and knowledge_context.get("has_knowledge"):
-                placeholder_content += "✓ 已检索到企业知识库资料\n"
-                sources = knowledge_context.get("sources", [])
-                for i, source in enumerate(sources, 1):
-                    placeholder_content += f"  {i}. {source['title']}"
-                    if source.get("category"):
-                        placeholder_content += f"（{source['category']}）"
-                    placeholder_content += "\n"
-            else:
-                placeholder_content += "⚠ 未检索到企业知识库中的相关资料\n"
-                placeholder_content += "  本内容为通用建议\n"
-            
-            return placeholder_content.encode('utf-8')
+        
+        if knowledge_context and knowledge_context.get("has_knowledge"):
+            placeholder_content += "✓ 已检索到企业知识库资料\n"
+            sources = knowledge_context.get("sources", [])
+            for i, source in enumerate(sources, 1):
+                placeholder_content += f"  {i}. {source['title']}"
+                if source.get("category"):
+                    placeholder_content += f"（{source['category']}）"
+                placeholder_content += "\n"
+        else:
+            placeholder_content += "⚠ 未检索到企业知识库中的相关资料\n"
+            placeholder_content += "  本内容为通用建议\n"
+        
+        return placeholder_content
     
     def download_generated_file(
         self,
