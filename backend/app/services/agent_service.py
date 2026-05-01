@@ -99,7 +99,16 @@ class AgentService:
         
         messages = self._build_messages_history(conversation, message)
         
-        logger.info(f"Calling Hermes API, messages count: {len(messages)}, session_id: {conversation.id}")
+        logger.info(
+            f"Calling Hermes API: "
+            f"conversation_id={conversation.id}, "
+            f"is_new={is_new_conversation}, "
+            f"messages_count={len(messages)}, "
+            f"current_stage={conversation.current_stage}"
+        )
+        logger.info(
+            f"Message history: {json.dumps(messages, ensure_ascii=False)}"
+        )
         
         assistant_content, stage, ppt_content = hermes_service.chat_with_ppt_assistant(
             messages=messages,
@@ -136,8 +145,11 @@ class AgentService:
         messages = []
         old_messages = conversation.messages_json or []
         for msg in old_messages:
-            if isinstance(msg, dict):
-                messages.append(dict(msg))
+            if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
         
         old_count = len(messages)
         
