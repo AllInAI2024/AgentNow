@@ -72,10 +72,10 @@ class AgentService:
                     "content": msg["content"]
                 })
         
-        if message:
+        if user_message:
             messages.append({
                 "role": "user",
-                "content": message
+                "content": user_message
             })
         
         return messages
