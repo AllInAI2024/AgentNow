@@ -166,6 +166,43 @@
             </a-spin>
           </div>
 
+          <div class="generated-files-section" v-if="generatedFiles.length > 0">
+            <div class="files-header">
+              <FileTextOutlined class="files-icon" />
+              <span class="files-title">生成的文件</span>
+            </div>
+            <div class="files-list">
+              <div 
+                v-for="file in generatedFiles" 
+                :key="file.id"
+                class="file-item"
+              >
+                <div class="file-info">
+                  <FileTextOutlined class="file-type-icon" />
+                  <div class="file-details">
+                    <div class="file-name">{{ file.file_name }}</div>
+                    <div class="file-meta">
+                      <span class="file-size">{{ formatFileSize(file.file_size) }}</span>
+                      <span class="file-status" :class="getGenerationStatusClass(file.generation_status)">
+                        {{ getGenerationStatusLabel(file.generation_status) }}
+                      </span>
+                      <span class="file-version">v{{ file.version_no }}</span>
+                    </div>
+                  </div>
+                </div>
+                <a-button 
+                  type="primary"
+                  size="small"
+                  class="download-btn"
+                  :disabled="file.generation_status !== 1"
+                  @click="handleDownloadFile(file)"
+                >
+                  <DownloadOutlined /> 下载
+                </a-button>
+              </div>
+            </div>
+          </div>
+
           <div class="chat-action-bar" v-if="showActionButtons">
             <div class="action-buttons">
               <a-button 
@@ -211,10 +248,10 @@
               <a-textarea
                 v-model:value="inputMessage"
                 placeholder="输入您的问题或需求..."
-                :rows="1"
-                :auto-size="{ minRows: 1, maxRows: 4 }"
+                :rows="2"
+                :auto-size="{ minRows: 2, maxRows: 6 }"
                 class="chat-input"
-                @keydown.enter="handleKeyDown"
+                @keydown="handleKeyDown"
                 :disabled="!currentAgent || isTyping"
               />
               <div class="input-actions">
@@ -257,12 +294,14 @@ import {
   ClockCircleOutlined,
   CheckOutlined,
   EditOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons-vue'
 import { agentApi } from '@/api/agent'
 import type { 
   UserAgent, 
   AgentConversation, 
   ChatMessage,
+  AgentGeneratedFile,
 } from '@/types'
 import { useUserStore } from '@/stores/user'
 import MainLayout from '@/components/MainLayout.vue'
@@ -277,6 +316,7 @@ const currentConversationId = ref<number | null>(null)
 const currentConversation = ref<AgentConversation | null>(null)
 const conversations = ref<AgentConversation[]>([])
 const messages = ref<ChatMessage[]>([])
+const generatedFiles = ref<AgentGeneratedFile[]>([])
 const inputMessage = ref('')
 const loadingConversations = ref(false)
 const loadingMessages = ref(false)
@@ -384,6 +424,7 @@ const loadConversationDetail = async (conversationId: number) => {
     if (response.code === 200 && response.data) {
       currentConversation.value = response.data.conversation
       messages.value = response.data.messages || []
+      generatedFiles.value = response.data.files || []
       await nextTick()
       scrollToBottom()
     }
@@ -411,8 +452,8 @@ const handleSelectConversation = (conv: AgentConversation) => {
   loadConversationDetail(conv.id)
 }
 
-const handleQuickAction = (action: { text: string; icon: string }) => {
-  inputMessage.value = action.text
+const handleQuickAction = async (action: { text: string; icon: string }) => {
+  await sendMessageWithAction(action.text, 'message')
 }
 
 const scrollToBottom = () => {
@@ -502,6 +543,55 @@ const handleConfirmTemplate = async () => {
 
 const handleGeneratePPT = async () => {
   await sendMessageWithAction('确认，生成正式 PPT', 'confirm_generation')
+}
+
+const handleDownloadFile = async (file: AgentGeneratedFile) => {
+  if (file.generation_status !== 1) {
+    message.warning('文件生成未完成或已失败')
+    return
+  }
+  
+  try {
+    const blob = await agentApi.downloadFile(agentId.value, file.id)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = file.file_name
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    message.success('下载已开始')
+  } catch (error) {
+    console.error('下载文件失败:', error)
+    message.error('下载文件失败')
+  }
+}
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
+}
+
+const getGenerationStatusLabel = (status: number): string => {
+  const statusMap: Record<number, string> = {
+    0: '生成中',
+    1: '已完成',
+    2: '失败',
+  }
+  return statusMap[status] || '未知'
+}
+
+const getGenerationStatusClass = (status: number): string => {
+  const classMap: Record<number, string> = {
+    0: 'status-generating',
+    1: 'status-completed',
+    2: 'status-failed',
+  }
+  return classMap[status] || ''
 }
 
 const handleKeyDown = (event: KeyboardEvent) => {
@@ -1148,6 +1238,120 @@ onMounted(() => {
   font-size: 12px;
   color: #c9cdd4;
   margin-top: 8px;
+}
+
+.generated-files-section {
+  padding: 16px 24px;
+  background: #fffbe6;
+  border-top: 1px solid #ffeb3b;
+}
+
+.files-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.files-icon {
+  font-size: 18px;
+  color: #ff7d00;
+}
+
+.files-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #ffffff;
+  border: 1px solid #e5e6eb;
+  border-radius: 12px;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.file-type-icon {
+  font-size: 24px;
+  color: #165dff;
+  flex-shrink: 0;
+}
+
+.file-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1d2129;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.file-size {
+  color: #86909c;
+}
+
+.file-status {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.status-generating {
+  background: #e8f3ff;
+  color: #165dff;
+}
+
+.status-completed {
+  background: #e8ffea;
+  color: #00b42a;
+}
+
+.status-failed {
+  background: #fff0f0;
+  color: #f53f3f;
+}
+
+.file-version {
+  color: #86909c;
+}
+
+.download-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
 }
 
 @media (max-width: 1024px) {

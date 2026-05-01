@@ -68,4 +68,10 @@ export const agentApi = {
   ): Promise<APIResponse<ConversationDetailResponse>> => {
     return http.get(`/agents/me/${agentId}/conversations/${conversationId}`)
   },
+
+  downloadFile: (agentId: number, fileId: number): Promise<Blob> => {
+    return http.get(`/agents/me/${agentId}/files/${fileId}`, {
+      responseType: 'blob',
+    })
+  },
 }
