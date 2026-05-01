@@ -424,7 +424,7 @@ const loadConversationDetail = async (conversationId: number) => {
     if (response.code === 200 && response.data) {
       currentConversation.value = response.data.conversation
       messages.value = response.data.messages || []
-      generatedFiles.value = response.data.files || []
+      generatedFiles.value = (response.data.files || []) as AgentGeneratedFile[]
       await nextTick()
       scrollToBottom()
     }
@@ -462,12 +462,16 @@ const scrollToBottom = () => {
   }
 }
 
-const sendMessageWithAction = async (msg: string, actionType: string = 'message') => {
+const sendMessageWithAction = async (
+  msg: string,
+  actionType: string = 'message',
+  restoreInputOnError: boolean = false
+) => {
   if (!currentAgent.value || isTyping.value) return
 
-  const originalMessage = inputMessage.value
-  
-  if (msg && msg.trim()) {
+  const shouldAppendUserMessage = actionType === 'message'
+
+  if (shouldAppendUserMessage && msg && msg.trim()) {
     const userMessage: ChatMessage = {
       role: 'user',
       content: msg,
@@ -511,16 +515,23 @@ const sendMessageWithAction = async (msg: string, actionType: string = 'message'
         })
       }
 
+      if (currentConversationId.value) {
+        await loadConversationDetail(currentConversationId.value)
+        await loadConversations()
+      }
+
       await nextTick()
       scrollToBottom()
     }
   } catch (error) {
     console.error('发送消息失败:', error)
     message.error('发送消息失败，请稍后重试')
-    if (msg && msg.trim()) {
+    if (shouldAppendUserMessage && msg && msg.trim()) {
       messages.value = messages.value.slice(0, -1)
     }
-    inputMessage.value = originalMessage
+    if (restoreInputOnError) {
+      inputMessage.value = msg
+    }
   } finally {
     isTyping.value = false
   }
@@ -529,7 +540,8 @@ const sendMessageWithAction = async (msg: string, actionType: string = 'message'
 const handleSendMessage = async () => {
   const msg = inputMessage.value.trim()
   if (!msg) return
-  await sendMessageWithAction(msg, 'message')
+  inputMessage.value = ''
+  await sendMessageWithAction(msg, 'message', true)
 }
 
 const handleConfirmOutline = async () => {
@@ -545,7 +557,27 @@ const handleConfirmTemplate = async () => {
 }
 
 const handleGeneratePPT = async () => {
-  await sendMessageWithAction('确认，生成正式 PPT', 'confirm_generation')
+  if (!currentConversationId.value) {
+    message.warning('请先完成当前对话')
+    return
+  }
+
+  if (isTyping.value) return
+
+  isTyping.value = true
+  try {
+    const response = await agentApi.generatePPT(agentId.value, currentConversationId.value)
+    if (response.code === 200) {
+      message.success('PPT 生成成功')
+      await loadConversationDetail(currentConversationId.value)
+      await loadConversations()
+    }
+  } catch (error) {
+    console.error('生成 PPT 失败:', error)
+    message.error('生成 PPT 失败，请稍后重试')
+  } finally {
+    isTyping.value = false
+  }
 }
 
 const handleDownloadFile = async (file: AgentGeneratedFile) => {

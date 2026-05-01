@@ -1,7 +1,7 @@
 import re
-from typing import Optional, Tuple, Dict, Any, List
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class ConversationStage(Enum):
@@ -27,10 +27,11 @@ class PPTRequirements:
 
 class PPTAssistantInteractionService:
     """
-    PPT 助手交互服务
-    负责处理对话流程：欢迎语 -> 补问 -> 大纲 -> 确认 -> 生成
+    PPT 助手交互服务。
+    第一版不做通用流程引擎，但要把前 5 步做扎实：
+    动态补问 -> 输出大纲 -> 确认大纲 -> 选择风格 -> 最终生成前确认。
     """
-    
+
     WELCOME_MESSAGE = """你好，我是企业 PPT 助手。
 
 你可以直接告诉我：
@@ -41,588 +42,574 @@ class PPTAssistantInteractionService:
 
 如果你暂时说不全，我也会一步一步带你把这件事理顺。"""
 
-    CLARIFY_QUESTIONS_TEMPLATE = """为了把这份 PPT 做得更贴合你的实际场景，我先确认几个关键信息：
-
-1. 这份 PPT 是给谁看的？
-2. 主要用在什么场景？
-3. 你希望控制在多少页左右？
-4. 风格更偏正式汇报、客户介绍，还是销售展示？
-5. 有没有必须引用的公司资料、产品资料或案例？
-
-你先按你知道的部分告诉我，不完整也没关系，我会继续帮你补齐。"""
-
     def __init__(self):
         self._requirements = PPTRequirements()
         self._current_stage = ConversationStage.WELCOME
         self._outline_draft: Optional[List[Dict[str, Any]]] = None
+        self._structured_result: Optional[Dict[str, Any]] = None
         self._messages_history: List[Dict[str, Any]] = []
-    
-    def _add_message(self, role: str, content: str):
+
+    def load_state(
+        self,
+        *,
+        current_stage: Optional[str] = None,
+        requirements: Optional[Dict[str, Any]] = None,
+        outline_draft: Optional[List[Dict[str, Any]]] = None,
+        structured_result: Optional[Dict[str, Any]] = None,
+        messages_history: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        if current_stage:
+            try:
+                self._current_stage = ConversationStage(current_stage)
+            except ValueError:
+                self._current_stage = ConversationStage.WELCOME
+
+        if requirements:
+            self._requirements = PPTRequirements(
+                topic=requirements.get("topic"),
+                audience=requirements.get("audience"),
+                scene=requirements.get("scene"),
+                page_count=requirements.get("page_count"),
+                style=requirements.get("style"),
+                must_reference_materials=requirements.get("must_reference_materials"),
+                use_standard_template=requirements.get("use_standard_template"),
+            )
+
+        if outline_draft:
+            self._outline_draft = outline_draft
+
+        if structured_result:
+            self._structured_result = structured_result
+
+        if messages_history:
+            self._messages_history = messages_history
+
+    def export_state(self) -> Dict[str, Any]:
+        return {
+            "current_stage": self._current_stage.value,
+            "requirements": asdict(self._requirements),
+            "outline_draft": self._outline_draft,
+            "structured_result": self._structured_result,
+            "messages_history": self._messages_history,
+        }
+
+    def _add_message(self, role: str, content: str) -> None:
+        if not content:
+            return
         self._messages_history.append({
             "role": role,
             "content": content,
         })
-    
+
+    def _normalize_page_count(self, page_count: Optional[int]) -> int:
+        if not page_count:
+            return 8
+        return max(6, min(page_count, 16))
+
     def _parse_user_input(self, message: str) -> Dict[str, Any]:
-        """
-        解析用户输入，提取关键信息
-        """
-        result = {
+        result: Dict[str, Any] = {
             "topic": None,
             "audience": None,
             "scene": None,
             "page_count": None,
             "style": None,
+            "must_reference_materials": None,
+            "use_standard_template": None,
         }
-        
-        message_lower = message.lower()
-        
-        page_match = re.search(r'(\d+)\s*[页p]', message)
+
+        cleaned = message.strip()
+        if not cleaned:
+            return result
+
+        page_match = re.search(r"(\d{1,2})\s*(页|p|P|slide|slides)", cleaned)
         if page_match:
             result["page_count"] = int(page_match.group(1))
-        
-        audience_keywords = [
-            ("客户", "客户"),
-            ("老板", "老板"),
-            ("领导", "领导"),
-            ("内部", "内部"),
-            ("同事", "同事"),
-            ("投资者", "投资者"),
-            ("管理层", "管理层"),
+
+        audience_patterns = [
+            (r"(给|面向|向)(客户|客户方)", "客户"),
+            (r"(给|面向|向)(老板|领导|管理层)", "管理层"),
+            (r"(给|面向|向)(内部团队|内部同事|同事)", "内部团队"),
+            (r"(给|面向|向)(投资人|投资者)", "投资者"),
+            (r"(给|面向|向)(合作伙伴)", "合作伙伴"),
         ]
-        for keyword, value in audience_keywords:
-            if keyword in message:
+        for pattern, value in audience_patterns:
+            if re.search(pattern, cleaned):
                 result["audience"] = value
                 break
-        
+
+        if not result["audience"]:
+            audience_keywords = [
+                ("客户", "客户"),
+                ("老板", "管理层"),
+                ("领导", "管理层"),
+                ("管理层", "管理层"),
+                ("内部", "内部团队"),
+                ("同事", "内部团队"),
+                ("投资者", "投资者"),
+            ]
+            for keyword, value in audience_keywords:
+                if keyword in cleaned:
+                    result["audience"] = value
+                    break
+
         scene_keywords = [
+            ("公司介绍", "公司介绍"),
+            ("产品介绍", "产品介绍"),
+            ("产品宣讲", "产品宣讲"),
+            ("售前", "售前宣讲"),
+            ("客户拜访", "客户拜访"),
             ("汇报", "内部汇报"),
-            ("介绍", "介绍"),
-            ("宣讲", "宣讲"),
-            ("拜访", "客户拜访"),
-            ("投标", "投标"),
-            ("评审", "评审"),
+            ("方案", "方案说明"),
+            ("路演", "路演"),
+            ("评审", "方案评审"),
         ]
         for keyword, value in scene_keywords:
-            if keyword in message:
+            if keyword in cleaned:
                 result["scene"] = value
                 break
-        
+
         style_keywords = [
-            ("正式", "正式汇报"),
-            ("销售", "销售展示"),
-            ("简洁", "简洁风格"),
-            ("创意", "创意风格"),
+            ("正式", "正式汇报风格"),
+            ("管理层", "正式汇报风格"),
+            ("客户介绍", "客户介绍风格"),
+            ("销售", "销售展示风格"),
+            ("简洁", "简洁商务风格"),
+            ("商务", "简洁商务风格"),
         ]
         for keyword, value in style_keywords:
-            if keyword in message:
+            if keyword in cleaned:
                 result["style"] = value
                 break
-        
-        topic_indicators = ["关于", "做一份", "帮我", "我需要", "想做", "主题是", "关于"]
-        for indicator in topic_indicators:
-            if indicator in message:
-                parts = message.split(indicator)
-                if len(parts) > 1:
-                    potential_topic = parts[1].strip()
-                    if len(potential_topic) > 2:
-                        result["topic"] = potential_topic[:50]
-                        break
-        
-        if not result["topic"] and len(message) > 5:
-            result["topic"] = message[:50]
-        
+
+        if "标准模板" in cleaned or "公司模板" in cleaned:
+            result["style"] = "公司标准模板"
+            result["use_standard_template"] = True
+
+        materials_match = re.search(r"(必须引用|需要引用|参考|基于)(.+?)(资料|材料|文档|案例)", cleaned)
+        if materials_match:
+            result["must_reference_materials"] = materials_match.group(2).strip()
+
+        topic_patterns = [
+            r"帮我做一份(.+?)(?:PPT|ppt)",
+            r"做一份(.+?)(?:PPT|ppt)",
+            r"写一份(.+?)(?:PPT|ppt)",
+            r"关于(.+?)(?:的PPT|PPT|ppt)",
+        ]
+        for pattern in topic_patterns:
+            match = re.search(pattern, cleaned)
+            if match:
+                topic = match.group(1).strip("：:，,。. ")
+                if len(topic) >= 2:
+                    result["topic"] = topic[:80]
+                    break
+
+        if not result["topic"]:
+            explicit_topics = ["公司介绍", "产品介绍", "客户拜访汇报", "售前宣讲", "内部季度汇报", "解决方案汇报"]
+            for topic in explicit_topics:
+                if topic in cleaned:
+                    result["topic"] = topic
+                    break
+
+        if not result["topic"] and len(cleaned) > 6:
+            candidate = re.sub(r"(帮我|做一份|写一份|我需要|我想做|请|给我)", "", cleaned).strip()
+            if candidate:
+                result["topic"] = candidate[:80]
+
         return result
-    
-    def _update_requirements(self, parsed: Dict[str, Any]):
-        """
-        更新需求信息
-        """
-        if parsed.get("topic"):
-            self._requirements.topic = parsed["topic"]
-        if parsed.get("audience"):
-            self._requirements.audience = parsed["audience"]
-        if parsed.get("scene"):
-            self._requirements.scene = parsed["scene"]
-        if parsed.get("page_count"):
-            self._requirements.page_count = parsed["page_count"]
-        if parsed.get("style"):
-            self._requirements.style = parsed["style"]
-    
-    def _get_missing_info(self) -> List[str]:
-        """
-        获取缺失的关键信息
-        """
+
+    def _update_requirements(self, parsed: Dict[str, Any]) -> List[str]:
+        updated_fields: List[str] = []
+        for field in [
+            "topic",
+            "audience",
+            "scene",
+            "page_count",
+            "style",
+            "must_reference_materials",
+            "use_standard_template",
+        ]:
+            value = parsed.get(field)
+            if value is not None and value != "":
+                if getattr(self._requirements, field) != value:
+                    setattr(self._requirements, field, value)
+                    updated_fields.append(field)
+        return updated_fields
+
+    def _get_required_missing_keys(self) -> List[str]:
         missing = []
-        
         if not self._requirements.topic:
-            missing.append("PPT 的主题/用途")
+            missing.append("topic")
         if not self._requirements.audience:
-            missing.append("目标受众")
+            missing.append("audience")
         if not self._requirements.scene:
-            missing.append("使用场景")
+            missing.append("scene")
         if not self._requirements.page_count:
-            missing.append("预计页数")
-        
+            missing.append("page_count")
         return missing
-    
-    def _generate_clarify_response(self, missing: List[str]) -> str:
-        """
-        生成补问响应
-        """
-        if not missing:
-            return ""
-        
-        response = "我还需要了解几个关键信息，才能帮你做出更贴合实际的 PPT：\n\n"
-        
-        for i, item in enumerate(missing, 1):
-            response += f"{i}. {item}\n"
-        
-        response += "\n你可以一次性告诉我这些信息，也可以先回答你知道的部分。"
-        
-        return response
-    
-    def _generate_outline(self) -> Tuple[List[Dict[str, Any]], str]:
-        """
-        生成 PPT 大纲
-        """
-        topic = self._requirements.topic or "演示文稿"
-        page_count = self._requirements.page_count or 10
-        audience = self._requirements.audience or "受众"
-        scene = self._requirements.scene or "场景"
-        
-        outline = []
-        
-        outline.append({
-            "index": 1,
-            "title": "封面",
-            "subtitle": f"{topic} - {scene}",
-            "bullets": [
-                f"主题：{topic}",
-                f"场景：{scene}"
-            ],
-            "speaker_notes": "这是第一页，建议保持简洁大方。"
-        })
-        
-        outline.append({
-            "index": 2,
-            "title": "目录/议程",
-            "subtitle": "本次演示内容概览",
-            "bullets": [
-                "背景与目标",
-                "核心内容",
-                "行动建议",
-                "总结与展望"
-            ],
-            "speaker_notes": "用目录让听众快速了解整体结构。"
-        })
-        
-        content_pages = min(page_count - 5, 6)
-        for i in range(content_pages):
-            page_index = i + 3
-            if i == 0:
-                outline.append({
-                    "index": page_index,
-                    "title": "背景与目标",
-                    "subtitle": "我们为什么要做这件事",
-                    "bullets": [
-                        "当前背景介绍",
-                        "核心目标是什么",
-                        "预期达成什么效果"
-                    ],
-                    "speaker_notes": "先讲清楚背景，让听众进入状态。"
-                })
-            elif i == 1:
-                outline.append({
-                    "index": page_index,
-                    "title": "核心方案",
-                    "subtitle": "我们的解决方案",
-                    "bullets": [
-                        "方案核心要点",
-                        "关键优势",
-                        "与其他方案的区别"
-                    ],
-                    "speaker_notes": "这是核心内容页，建议突出重点。"
-                })
-            elif i == 2:
-                outline.append({
-                    "index": page_index,
-                    "title": "实施路径",
-                    "subtitle": "如何落地执行",
-                    "bullets": [
-                        "关键步骤",
-                        "时间规划",
-                        "资源需求"
-                    ],
-                    "speaker_notes": "讲清楚怎么做，让方案更可信。"
-                })
-            elif i == 3:
-                outline.append({
-                    "index": page_index,
-                    "title": "预期效果",
-                    "subtitle": "能带来什么价值",
-                    "bullets": [
-                        "直接收益",
-                        "间接价值",
-                        "成功案例参考"
-                    ],
-                    "speaker_notes": "用数据或案例支撑预期效果。"
-                })
-            elif i == 4:
-                outline.append({
-                    "index": page_index,
-                    "title": "风险与应对",
-                    "subtitle": "可能遇到的问题及解决方案",
-                    "bullets": [
-                        "潜在风险点",
-                        "应对措施",
-                        "应急预案"
-                    ],
-                    "speaker_notes": "展示思考的全面性。"
-                })
-            else:
-                outline.append({
-                    "index": page_index,
-                    "title": f"补充内容 {i-4}",
-                    "subtitle": "根据实际需要调整",
-                    "bullets": [
-                        "要点一",
-                        "要点二",
-                        "要点三"
-                    ],
-                    "speaker_notes": "这部分内容可以根据具体主题调整。"
-                })
-        
-        outline.append({
-            "index": len(outline) + 1,
-            "title": "总结",
-            "subtitle": "核心要点回顾",
-            "bullets": [
-                "我们要做什么",
-                "为什么要做",
-                "预期达成什么效果"
-            ],
-            "speaker_notes": "简洁总结，强化记忆点。"
-        })
-        
-        outline.append({
-            "index": len(outline) + 1,
-            "title": "Q&A",
-            "subtitle": "感谢聆听，欢迎提问",
-            "bullets": [],
-            "speaker_notes": "留出时间回答问题。"
-        })
-        
-        outline_text = f"""# {topic}
 
-适用场景：{scene}
-目标受众：{audience}
-建议页数：{len(outline)} 页
+    def _format_requirements_summary(self) -> str:
+        lines = []
+        if self._requirements.topic:
+            lines.append(f"- 主题：{self._requirements.topic}")
+        if self._requirements.audience:
+            lines.append(f"- 受众：{self._requirements.audience}")
+        if self._requirements.scene:
+            lines.append(f"- 场景：{self._requirements.scene}")
+        if self._requirements.page_count:
+            lines.append(f"- 页数：{self._requirements.page_count} 页")
+        if self._requirements.style:
+            lines.append(f"- 风格：{self._requirements.style}")
+        if self._requirements.must_reference_materials:
+            lines.append(f"- 必须参考资料：{self._requirements.must_reference_materials}")
+        return "\n".join(lines)
 
-## 页面设计：
-"""
+    def _generate_dynamic_clarify_response(self, missing_keys: List[str], updated_fields: Optional[List[str]] = None) -> str:
+        intro = "为了把这份 PPT 做得更贴合你的实际场景，我先补齐几个关键信息："
+        if updated_fields:
+            collected = []
+            field_labels = {
+                "topic": "主题",
+                "audience": "受众",
+                "scene": "场景",
+                "page_count": "页数",
+                "style": "风格",
+            }
+            for field in updated_fields:
+                if field in field_labels:
+                    collected.append(field_labels[field])
+            if collected:
+                intro = f"收到，你已经补充了{ '、'.join(collected) }。为了继续往下做，我还想确认："
+
+        question_map = {
+            "topic": "这份 PPT 的主题/核心用途是什么？",
+            "audience": "这份 PPT 主要是给谁看的？",
+            "scene": "它主要用在什么场景？比如客户介绍、内部汇报、售前宣讲。",
+            "page_count": "你希望大概控制在多少页左右？",
+            "style": "你希望风格更偏正式汇报、客户介绍，还是销售展示？",
+        }
+
+        lines = [intro, ""]
+        for index, key in enumerate(missing_keys, start=1):
+            lines.append(f"{index}. {question_map[key]}")
+
+        if self._requirements.must_reference_materials:
+            lines.extend(["", f"我已记住需要参考的资料方向：{self._requirements.must_reference_materials}。"])
+
+        lines.extend(["", "你先按知道的部分回复就行，不用一次性说全。"])
+        return "\n".join(lines)
+
+    def _infer_outline_sections(self) -> List[Tuple[str, str, List[str], str]]:
+        topic = self._requirements.topic or "本次汇报"
+        scene = self._requirements.scene or "汇报场景"
+        audience = self._requirements.audience or "目标受众"
+
+        if "公司介绍" in topic or scene == "公司介绍":
+            return [
+                ("封面", f"{topic} - 面向{audience}", [f"主题：{topic}", f"适用场景：{scene}"], "开场页建议突出公司定位与沟通场景。"),
+                ("目录", "本次介绍结构", ["公司概况", "核心能力", "产品与方案", "合作价值"], "让听众先建立整体预期。"),
+                ("公司概况", "快速建立基础认知", ["公司定位", "发展阶段", "核心业务"], "适合用 3 个关键事实建立信任。"),
+                ("核心能力", "我们能解决什么问题", ["能力一", "能力二", "能力三"], "避免写成流水账，突出差异化。"),
+                ("产品与方案", "核心产品或解决方案概览", ["产品矩阵", "典型应用", "关键优势"], "聚焦与受众最相关的能力。"),
+                ("典型案例", "增强可信度", ["行业案例", "客户收益", "落地成果"], "优先引用企业知识库里的真实案例。"),
+                ("合作方式", "下一步如何推进", ["合作流程", "支持方式", "里程碑"], "帮助听众自然进入下一步。"),
+                ("总结与Q&A", "重点回顾", ["核心价值回顾", "建议行动", "答疑环节"], "收尾页保持简洁。"),
+            ]
+
+        if "产品" in topic or scene in {"产品介绍", "产品宣讲"}:
+            return [
+                ("封面", f"{topic} - 面向{audience}", [f"主题：{topic}", f"适用场景：{scene}"], "封面可突出产品名称与定位。"),
+                ("目录", "本次宣讲结构", ["市场背景", "产品定位", "核心功能", "价值收益"], "帮助听众把握讲解节奏。"),
+                ("业务痛点", "为什么需要这款产品", ["当前问题", "影响范围", "改进机会"], "先讲痛点再讲产品更容易建立认同。"),
+                ("产品定位", "产品解决什么问题", ["目标用户", "核心定位", "应用场景"], "说明产品在整体方案中的位置。"),
+                ("核心功能", "最值得记住的能力", ["功能一", "功能二", "功能三"], "每页只保留最关键的信息。"),
+                ("方案优势", "为什么值得选择", ["效率提升", "成本优势", "交付保障"], "可结合案例或数据强化。"),
+                ("落地案例", "已有实践与效果", ["案例背景", "实施过程", "结果收益"], "尽量引用真实资料。"),
+                ("总结与Q&A", "重点回顾", ["核心价值", "推荐动作", "答疑环节"], "结尾回到业务价值。"),
+            ]
+
+        if "汇报" in topic or scene == "内部汇报":
+            return [
+                ("封面", f"{topic} - 面向{audience}", [f"主题：{topic}", f"适用场景：{scene}"], "封面标题建议直接体现汇报事项。"),
+                ("目录", "本次汇报结构", ["背景目标", "工作进展", "问题挑战", "下一步计划"], "先给出结构，方便领导跟进。"),
+                ("背景与目标", "为什么做这件事", ["背景说明", "本期目标", "衡量指标"], "交代背景时尽量简洁。"),
+                ("阶段进展", "已经完成了什么", ["关键动作", "里程碑结果", "阶段成果"], "建议用结果导向表述。"),
+                ("问题与挑战", "当前卡点", ["核心问题", "影响范围", "原因分析"], "体现判断力，不只是罗列问题。"),
+                ("解决方案", "如何推进", ["应对方案", "资源需求", "风险控制"], "方案要可执行。"),
+                ("下一步计划", "接下来怎么做", ["时间安排", "重点任务", "预期产出"], "让管理层明确下一步。"),
+                ("总结与决策建议", "需要达成什么共识", ["关键结论", "决策建议", "待确认事项"], "收尾页突出需要拍板的内容。"),
+            ]
+
+        return [
+            ("封面", f"{topic} - 面向{audience}", [f"主题：{topic}", f"适用场景：{scene}"], "封面建议直接体现主题与对象。"),
+            ("目录", "本次内容结构", ["背景与目标", "核心方案", "实施路径", "总结建议"], "目录页用于帮助受众建立整体认知。"),
+            ("背景与目标", "先把问题讲清楚", ["当前背景", "目标是什么", "为什么现在做"], "第一部分聚焦共识建立。"),
+            ("核心方案", "方案的主要内容", ["核心做法", "关键优势", "与其他方案区别"], "这是整份 PPT 的重点页。"),
+            ("实施路径", "如何落地", ["阶段步骤", "资源安排", "时间规划"], "让方案更可执行。"),
+            ("预期效果", "能带来什么价值", ["直接收益", "间接收益", "衡量指标"], "最好结合数据或案例。"),
+            ("风险与应对", "提前说明挑战", ["潜在风险", "应对措施", "备选方案"], "体现方案完整性。"),
+            ("总结与Q&A", "重点回顾", ["结论回顾", "建议动作", "答疑环节"], "最后一页突出重点。"),
+        ]
+
+    def _generate_outline(self, *, revision_note: Optional[str] = None) -> Tuple[List[Dict[str, Any]], str]:
+        page_count = self._normalize_page_count(self._requirements.page_count)
+        sections = self._infer_outline_sections()
+
+        if len(sections) > page_count:
+            sections = sections[:page_count]
+        elif len(sections) < page_count:
+            while len(sections) < page_count - 1:
+                extra_index = len(sections)
+                sections.insert(
+                    -1,
+                    (
+                        f"补充页 {extra_index - 1}",
+                        "根据具体主题补充",
+                        ["关键事实", "支持论据", "行动建议"],
+                        "这页用于承接主题细节，后续可继续细化。",
+                    ),
+                )
+
+        outline: List[Dict[str, Any]] = []
+        for index, (title, subtitle, bullets, notes) in enumerate(sections, start=1):
+            outline.append({
+                "index": index,
+                "title": title,
+                "subtitle": subtitle,
+                "bullets": bullets,
+                "speaker_notes": notes,
+            })
+
+        outline_text = [
+            f"# {self._requirements.topic or 'PPT 方案'}",
+            "",
+            f"适用场景：{self._requirements.scene or '待补充'}",
+            f"目标受众：{self._requirements.audience or '待补充'}",
+            f"建议页数：{len(outline)} 页",
+        ]
+        if self._requirements.style:
+            outline_text.append(f"建议风格：{self._requirements.style}")
+
+        outline_text.extend(["", "## 页面设计："])
         for slide in outline:
-            outline_text += f"\n{slide['index']}. 第{slide['index']}页：{slide['title']}"
-        
-        outline_text += f"""
+            outline_text.append(f"{slide['index']}. 第{slide['index']}页：{slide['title']}")
 
-## 每页文案：
-"""
+        outline_text.extend(["", "## 每页文案："])
         for slide in outline:
-            outline_text += f"""
-第{slide['index']}页：{slide['title']}
-- 标题：{slide['title']}
-- 副标题：{slide['subtitle']}
-- 要点：
-"""
-            for bullet in slide['bullets']:
-                outline_text += f"  - {bullet}\n"
-            outline_text += f"- 演讲备注：{slide['speaker_notes']}\n"
-        
-        return outline, outline_text
-    
-    def _generate_outline_confirmation_message(self, outline_text: str) -> str:
-        """
-        生成大纲确认消息
-        """
-        return f"""这是我根据你提供的信息整理的第一版大纲。
+            outline_text.append(f"第{slide['index']}页：{slide['title']}")
+            outline_text.append(f"- 标题：{slide['title']}")
+            outline_text.append(f"- 副标题：{slide['subtitle']}")
+            outline_text.append("- 要点：")
+            for bullet in slide["bullets"]:
+                outline_text.append(f"  - {bullet}")
+            outline_text.append(f"- 演讲备注：{slide['speaker_notes']}")
 
-{outline_text}
+        if revision_note:
+            outline_text.extend(["", f"本轮调整说明：{revision_note}"])
 
----
+        return outline, "\n".join(outline_text)
 
-你先看整体结构对不对。
+    def _build_structured_result(self) -> Optional[Dict[str, Any]]:
+        if not self._outline_draft:
+            return None
+        self._structured_result = {
+            "type": "ppt_outline",
+            "title": self._requirements.topic or "PPT 大纲",
+            "slides": self._outline_draft,
+            "requirements": asdict(self._requirements),
+        }
+        return self._structured_result
 
-如果这版结构没问题，我就继续补全逐页内容；如果哪里不合适，你直接告诉我删哪一页、补哪一页，或者整体风格往哪个方向调。"""
-    
+    def _generate_outline_confirmation_message(self, outline_text: str, *, updated: bool = False) -> str:
+        intro = "这是我根据你提供的信息整理的第一版大纲。"
+        if updated:
+            intro = "我已经根据你刚才补充的信息更新了一版大纲。"
+        return (
+            f"{intro}\n\n{outline_text}\n\n---\n\n"
+            "你先看整体结构对不对。\n\n"
+            "如果这版结构没问题，我就继续进入风格确认；如果哪里不合适，你直接告诉我删哪一页、补哪一页，或者整体风格往哪个方向调。"
+        )
+
+    def _generate_template_selection_message(self) -> str:
+        return (
+            "好的，大纲已确认。接下来我们把展示风格定下来。\n\n"
+            "你可以选择：\n"
+            "1. 公司标准模板\n"
+            "2. 正式汇报风格\n"
+            "3. 客户介绍风格\n"
+            "4. 销售展示风格\n\n"
+            "确认后我再进入正式生成。"
+        )
+
+    def _generate_final_confirmation_message(self) -> str:
+        return (
+            "内容结构已经基本确定，我准备进入正式生成前的最后确认。\n\n"
+            "我先确认三件事：\n"
+            "1. 页数已经确认\n"
+            "2. 大纲结构没有问题\n"
+            "3. 展示风格或模板已经定下来\n\n"
+            "如果你确认，就点击“生成 PPT”继续。"
+        )
+
     def _is_confirmation_message(self, message: str) -> bool:
-        """
-        判断用户消息是否是确认
-        """
         confirm_keywords = [
             "可以", "没问题", "确认", "好的", "就这样",
-            "继续", "往下做", "没问题的", "对的", "是的",
-            "ok", "OK", "行", "可以的"
+            "继续", "往下做", "对的", "是的", "行", "ok", "OK",
         ]
-        
-        for keyword in confirm_keywords:
-            if keyword in message:
-                return True
-        
-        return False
-    
+        return any(keyword in message for keyword in confirm_keywords)
+
     def _is_revision_message(self, message: str) -> bool:
-        """
-        判断用户消息是否是修改意见
-        """
         revision_keywords = [
             "改", "修改", "调整", "换", "增加", "删除",
-            "不要", "需要加", "加一页", "删一页", "不对",
-            "不太对", "再想想", "重新", "换个"
+            "不要", "需要加", "删一页", "不对", "不太对", "重新",
         ]
-        
-        for keyword in revision_keywords:
-            if keyword in message:
-                return True
-        
-        return False
-    
+        return any(keyword in message for keyword in revision_keywords)
+
     def _parse_numeric_selection(self, message: str) -> Optional[int]:
-        """
-        解析用户输入的数字选择（如"1"、"2"等）
-        返回选择的数字，如果没有数字选择则返回 None
-        """
-        import re
-        
         stripped_message = message.strip()
-        
-        match = re.match(r'^(\d+)[、.．，,：:\s]*$', stripped_message)
+        match = re.match(r"^(\d+)[、.．，,：:\s]*$", stripped_message)
         if match:
             return int(match.group(1))
-        
-        match = re.match(r'^选[择]?[：:：]?\s*(\d+)', stripped_message)
+        match = re.match(r"^选[择]?[：:：]?\s*(\d+)", stripped_message)
         if match:
             return int(match.group(1))
-        
-        match = re.match(r'^第(\d+)[个项]?$', stripped_message)
-        if match:
-            return int(match.group(1))
-        
-        if stripped_message in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-            return int(stripped_message)
-        
         return None
-    
+
     def process_message(
-        self, 
-        message: str, 
+        self,
+        message: str,
         action_type: str = "message",
-        is_new_conversation: bool = False
+        is_new_conversation: bool = False,
     ) -> Tuple[str, Optional[Dict[str, Any]], ConversationStage]:
-        """
-        处理用户消息，生成响应
-        
-        Returns:
-            - assistant_message: 助手回复文本
-            - structured_result: 结构化结果（如大纲）
-            - current_stage: 当前会话阶段
-        """
-        self._add_message("user", message)
-        
-        if is_new_conversation and self._current_stage == ConversationStage.WELCOME:
-            welcome = self.WELCOME_MESSAGE
-            self._add_message("assistant", welcome)
-            return welcome, None, ConversationStage.WELCOME
-        
+        if action_type == "message" and message:
+            self._add_message("user", message)
+
+        if is_new_conversation and self._current_stage == ConversationStage.WELCOME and not message.strip():
+            self._add_message("assistant", self.WELCOME_MESSAGE)
+            return self.WELCOME_MESSAGE, self._structured_result, self._current_stage
+
         parsed = self._parse_user_input(message)
-        self._update_requirements(parsed)
-        
+        updated_fields = self._update_requirements(parsed) if message else []
+
         if action_type == "confirm_outline":
-            self._current_stage = ConversationStage.OUTLINE_CONFIRMED
-            response = "好的，大纲已确认。接下来我建议把展示风格也定下来。\n\n你可以告诉我：\n1. 想用公司标准模板\n2. 还是更偏正式汇报、客户介绍、销售展示的风格\n\n这个定下来以后，后面的正式文件会更稳。"
-            self._add_message("assistant", response)
-            return response, None, ConversationStage.TEMPLATE_SELECT
-        
-        if action_type == "confirm_template":
-            self._current_stage = ConversationStage.FINAL_GENERATING
-            response = "我准备开始生成正式 PPT 文件了。\n\n我先最后确认三件事：\n1. 页数你这边确认了\n2. 大纲结构没有问题\n3. 展示风格或模板已经定下来\n\n如果你确认，我就按这个版本出正式文件。"
-            self._add_message("assistant", response)
-            return response, None, ConversationStage.FINAL_GENERATING
-        
-        if self._current_stage == ConversationStage.WELCOME:
-            if not message or message.strip() == "":
-                self._current_stage = ConversationStage.CLARIFYING
-                response = self.CLARIFY_QUESTIONS_TEMPLATE
-                self._add_message("assistant", response)
-                return response, None, ConversationStage.CLARIFYING
-            
-            missing = self._get_missing_info()
-            
-            if len(missing) >= 2:
-                self._current_stage = ConversationStage.CLARIFYING
-                response = self._generate_clarify_response(missing)
-                self._add_message("assistant", response)
-                return response, None, ConversationStage.CLARIFYING
-            else:
-                self._current_stage = ConversationStage.OUTLINE_DRAFT
-                self._outline_draft, outline_text = self._generate_outline()
-                response = self._generate_outline_confirmation_message(outline_text)
-                
-                structured_result = {
-                    "type": "ppt_outline",
-                    "title": self._requirements.topic or "PPT 大纲",
-                    "slides": self._outline_draft,
-                    "requirements": {
-                        "topic": self._requirements.topic,
-                        "audience": self._requirements.audience,
-                        "scene": self._requirements.scene,
-                        "page_count": self._requirements.page_count,
-                        "style": self._requirements.style,
-                    }
-                }
-                
-                self._add_message("assistant", response)
-                return response, structured_result, ConversationStage.OUTLINE_DRAFT
-        
-        elif self._current_stage == ConversationStage.CLARIFYING:
-            missing = self._get_missing_info()
-            
-            if len(missing) >= 1:
-                response = self._generate_clarify_response(missing)
-                self._add_message("assistant", response)
-                return response, None, ConversationStage.CLARIFYING
-            else:
-                self._current_stage = ConversationStage.OUTLINE_DRAFT
-                self._outline_draft, outline_text = self._generate_outline()
-                response = self._generate_outline_confirmation_message(outline_text)
-                
-                structured_result = {
-                    "type": "ppt_outline",
-                    "title": self._requirements.topic or "PPT 大纲",
-                    "slides": self._outline_draft,
-                    "requirements": {
-                        "topic": self._requirements.topic,
-                        "audience": self._requirements.audience,
-                        "scene": self._requirements.scene,
-                        "page_count": self._requirements.page_count,
-                        "style": self._requirements.style,
-                    }
-                }
-                
-                self._add_message("assistant", response)
-                return response, structured_result, ConversationStage.OUTLINE_DRAFT
-        
-        elif self._current_stage == ConversationStage.OUTLINE_DRAFT:
-            if self._is_confirmation_message(message):
-                self._current_stage = ConversationStage.OUTLINE_CONFIRMED
-                response = "好的，大纲已确认。接下来我建议把展示风格也定下来。\n\n你可以告诉我：\n1. 想用公司标准模板\n2. 还是更偏正式汇报、客户介绍、销售展示的风格\n\n这个定下来以后，后面的正式文件会更稳。"
-                self._add_message("assistant", response)
-                return response, None, ConversationStage.TEMPLATE_SELECT
-            
-            elif self._is_revision_message(message):
-                response = f"收到，我来调整大纲。你说的是：{message}\n\n我理解你希望调整的方向，我来重新整理一版大纲。\n\n（注：第一版先用规则引擎，后续可以接入 LLM 来理解更复杂的修改意见）\n\n目前版本的大纲信息：\n- 主题：{self._requirements.topic}\n- 受众：{self._requirements.audience}\n- 场景：{self._requirements.scene}\n- 页数：{self._requirements.page_count}\n\n你可以更具体地告诉我：\n1. 哪几页需要增加\n2. 哪几页需要删除\n3. 哪些部分需要更正式、更多销售感，或更偏管理层汇报"
-                self._add_message("assistant", response)
-                return response, None, ConversationStage.OUTLINE_DRAFT
-            
-            else:
-                missing = self._get_missing_info()
-                if missing:
-                    self._current_stage = ConversationStage.CLARIFYING
-                    response = self._generate_clarify_response(missing)
-                    self._add_message("assistant", response)
-                    return response, None, ConversationStage.CLARIFYING
-                
-                response = "我理解你可能在补充信息。让我再确认一下当前状态：\n\n已收集的信息：\n"
-                if self._requirements.topic:
-                    response += f"- 主题：{self._requirements.topic}\n"
-                if self._requirements.audience:
-                    response += f"- 受众：{self._requirements.audience}\n"
-                if self._requirements.scene:
-                    response += f"- 场景：{self._requirements.scene}\n"
-                if self._requirements.page_count:
-                    response += f"- 页数：{self._requirements.page_count}\n"
-                
-                response += "\n如果信息已经完整，你可以说「确认」或「继续」，我来生成大纲；如果还需要补充，继续告诉我就好。"
-                self._add_message("assistant", response)
-                return response, None, ConversationStage.OUTLINE_DRAFT
-        
-        elif self._current_stage == ConversationStage.OUTLINE_CONFIRMED:
             self._current_stage = ConversationStage.TEMPLATE_SELECT
-            response = "好的，接下来我们定一下展示风格。\n\n你可以选择：\n1. 使用公司标准模板\n2. 使用更正式的汇报模板\n3. 使用更偏客户介绍的展示模板\n\n确认后我再生成正式 PPT 文件。"
+            response = self._generate_template_selection_message()
             self._add_message("assistant", response)
-            return response, None, ConversationStage.TEMPLATE_SELECT
-        
-        elif self._current_stage == ConversationStage.TEMPLATE_SELECT:
-            numeric_selection = self._parse_numeric_selection(message)
-            
-            if numeric_selection is not None:
-                self._requirements.style = {
-                    1: "公司标准模板",
-                    2: "正式汇报风格",
-                    3: "客户介绍风格",
-                    4: "销售展示风格"
-                }.get(numeric_selection, "标准风格")
-                self._requirements.use_standard_template = (numeric_selection == 1)
-                
-                self._current_stage = ConversationStage.FINAL_GENERATING
-                response = f"好的，已选择「{self._requirements.style}」。\n\n我准备开始生成正式 PPT 文件了。\n\n我先最后确认三件事：\n1. 页数你这边确认了\n2. 大纲结构没有问题\n3. 展示风格或模板已经定下来\n\n如果你确认，我就按这个版本出正式文件。"
+            return response, self._structured_result, self._current_stage
+
+        if action_type == "confirm_template":
+            if not self._requirements.style:
+                self._requirements.style = "公司标准模板"
+                self._requirements.use_standard_template = True
+            self._current_stage = ConversationStage.FINAL_GENERATING
+            response = self._generate_final_confirmation_message()
+            self._add_message("assistant", response)
+            return response, self._structured_result, self._current_stage
+
+        if self._current_stage in {ConversationStage.WELCOME, ConversationStage.CLARIFYING}:
+            missing_keys = self._get_required_missing_keys()
+            if missing_keys:
+                self._current_stage = ConversationStage.CLARIFYING
+                response = self._generate_dynamic_clarify_response(missing_keys, updated_fields)
                 self._add_message("assistant", response)
-                return response, None, ConversationStage.FINAL_GENERATING
-            
-            if self._is_confirmation_message(message) or "标准" in message or "正式" in message or "销售" in message or "客户" in message:
+                return response, self._structured_result, self._current_stage
+
+            self._current_stage = ConversationStage.OUTLINE_DRAFT
+            self._outline_draft, outline_text = self._generate_outline()
+            structured_result = self._build_structured_result()
+            response = self._generate_outline_confirmation_message(outline_text, updated=bool(updated_fields))
+            self._add_message("assistant", response)
+            return response, structured_result, self._current_stage
+
+        if self._current_stage == ConversationStage.OUTLINE_DRAFT:
+            if action_type == "revise_outline" or self._is_revision_message(message):
+                self._outline_draft, outline_text = self._generate_outline(revision_note=message or "根据用户意见进行了调整")
+                structured_result = self._build_structured_result()
+                response = self._generate_outline_confirmation_message(outline_text, updated=True)
+                self._add_message("assistant", response)
+                return response, structured_result, self._current_stage
+
+            if updated_fields:
+                self._outline_draft, outline_text = self._generate_outline(revision_note="已吸收你刚补充的信息")
+                structured_result = self._build_structured_result()
+                response = self._generate_outline_confirmation_message(outline_text, updated=True)
+                self._add_message("assistant", response)
+                return response, structured_result, self._current_stage
+
+            if self._is_confirmation_message(message):
+                self._current_stage = ConversationStage.TEMPLATE_SELECT
+                response = self._generate_template_selection_message()
+                self._add_message("assistant", response)
+                return response, self._structured_result, self._current_stage
+
+            response = (
+                "如果你认可这版大纲，可以直接点“确认大纲”；如果还想调整，也可以直接告诉我想改哪几页、补什么内容、风格往哪个方向调。"
+            )
+            self._add_message("assistant", response)
+            return response, self._structured_result, self._current_stage
+
+        if self._current_stage == ConversationStage.OUTLINE_CONFIRMED:
+            self._current_stage = ConversationStage.TEMPLATE_SELECT
+            response = self._generate_template_selection_message()
+            self._add_message("assistant", response)
+            return response, self._structured_result, self._current_stage
+
+        if self._current_stage == ConversationStage.TEMPLATE_SELECT:
+            selection = self._parse_numeric_selection(message)
+            style_map = {
+                1: "公司标准模板",
+                2: "正式汇报风格",
+                3: "客户介绍风格",
+                4: "销售展示风格",
+            }
+            if selection in style_map:
+                self._requirements.style = style_map[selection]
+                self._requirements.use_standard_template = selection == 1
+
+            if not self._requirements.style:
                 if "标准" in message:
                     self._requirements.style = "公司标准模板"
                     self._requirements.use_standard_template = True
                 elif "正式" in message:
                     self._requirements.style = "正式汇报风格"
-                elif "销售" in message:
-                    self._requirements.style = "销售展示风格"
                 elif "客户" in message:
                     self._requirements.style = "客户介绍风格"
-                
+                elif "销售" in message:
+                    self._requirements.style = "销售展示风格"
+
+            if self._requirements.style:
                 self._current_stage = ConversationStage.FINAL_GENERATING
-                response = "我准备开始生成正式 PPT 文件了。\n\n我先最后确认三件事：\n1. 页数你这边确认了\n2. 大纲结构没有问题\n3. 展示风格或模板已经定下来\n\n如果你确认，我就按这个版本出正式文件。"
+                response = f"好的，已选择「{self._requirements.style}」。\n\n{self._generate_final_confirmation_message()}"
                 self._add_message("assistant", response)
-                return response, None, ConversationStage.FINAL_GENERATING
-            else:
-                response = "你可以告诉我想用哪种风格，直接回复数字即可：\n1. 公司标准模板\n2. 正式汇报风格\n3. 客户介绍风格\n4. 销售展示风格"
-                self._add_message("assistant", response)
-                return response, None, ConversationStage.TEMPLATE_SELECT
-        
-        elif self._current_stage == ConversationStage.FINAL_GENERATING:
-            numeric_selection = self._parse_numeric_selection(message)
-            
-            if numeric_selection is not None or self._is_confirmation_message(message):
-                self._current_stage = ConversationStage.COMPLETED
-                response = "好的，我开始生成正式 PPT 文件。\n\n（注：第一版先生成结构化内容，后续接入 PPT 生成服务后可导出 .pptx 文件）\n\n当前已确认的信息：\n"
-                if self._requirements.topic:
-                    response += f"- 主题：{self._requirements.topic}\n"
-                if self._requirements.audience:
-                    response += f"- 受众：{self._requirements.audience}\n"
-                if self._requirements.scene:
-                    response += f"- 场景：{self._requirements.scene}\n"
-                if self._requirements.page_count:
-                    response += f"- 页数：{self._requirements.page_count}\n"
-                if self._requirements.style:
-                    response += f"- 风格：{self._requirements.style}\n"
-                
-                response += "\nPPT 已准备就绪！"
-                self._add_message("assistant", response)
-                return response, None, ConversationStage.COMPLETED
-            else:
-                response = "我已经准备好了。如果你确认要生成正式 PPT，直接回复「确认」或「1」即可。"
-                self._add_message("assistant", response)
-                return response, None, ConversationStage.FINAL_GENERATING
-        
-        response = "收到你的消息了。让我先确认一下当前的状态。\n\n你可以告诉我：\n1. 想调整大纲\n2. 想确认继续\n3. 或者有其他需求"
+                return response, self._structured_result, self._current_stage
+
+            response = (
+                "你可以直接回复想要的风格，或者输入数字：\n"
+                "1. 公司标准模板\n"
+                "2. 正式汇报风格\n"
+                "3. 客户介绍风格\n"
+                "4. 销售展示风格"
+            )
+            self._add_message("assistant", response)
+            return response, self._structured_result, self._current_stage
+
+        if self._current_stage == ConversationStage.FINAL_GENERATING:
+            response = (
+                "已准备好进入正式生成。\n\n"
+                f"{self._format_requirements_summary()}\n\n"
+                "如果这些信息都没问题，直接点击“生成 PPT”即可。"
+            )
+            self._add_message("assistant", response)
+            return response, self._structured_result, self._current_stage
+
+        response = "这轮会话已经完成。如果你还想继续修改，我可以基于当前内容帮你新开一轮继续调整。"
         self._add_message("assistant", response)
-        return response, None, self._current_stage
-    
+        return response, self._structured_result, self._current_stage
+
     def get_current_stage(self) -> ConversationStage:
         return self._current_stage
-    
+
     def get_requirements(self) -> PPTRequirements:
         return self._requirements
-    
+
     def get_outline_draft(self) -> Optional[List[Dict[str, Any]]]:
         return self._outline_draft

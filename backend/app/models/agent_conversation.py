@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, BigInteger, String, DateTime, Boolean, Index, SmallInteger
+from sqlalchemy import Column, BigInteger, String, DateTime, Boolean, Index, SmallInteger, JSON
 
 from app.models import Base
 
@@ -25,6 +25,9 @@ class AgentConversation(Base):
     
     message_count = Column(BigInteger, default=0, comment="消息总数")
     latest_user_input = Column(String(1000), comment="最近一条用户输入摘要")
+    requirements_json = Column(JSON, comment="需求收集结果（JSON）")
+    structured_result_json = Column(JSON, comment="最近一次结构化结果缓存（JSON）")
+    messages_json = Column(JSON, comment="会话消息缓存（JSON数组）")
     final_file_id = Column(BigInteger, comment="最终生成文件ID（关联生成文件表）")
     
     started_at = Column(DateTime, default=datetime.utcnow, comment="会话开始时间")
@@ -64,6 +67,9 @@ class AgentConversation(Base):
             "final_generation_confirmed": self.final_generation_confirmed,
             "message_count": self.message_count,
             "latest_user_input": self.latest_user_input,
+            "requirements_json": self.requirements_json,
+            "structured_result_json": self.structured_result_json,
+            "messages_json": self.messages_json,
             "final_file_id": self.final_file_id,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "last_message_at": self.last_message_at.isoformat() if self.last_message_at else None,
