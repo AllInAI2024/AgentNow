@@ -74,4 +74,17 @@ export const agentApi = {
       responseType: 'blob',
     })
   },
+
+  generatePPT: (
+    agentId: number,
+    conversationId: number,
+    templateName?: string,
+    regenerate: boolean = false
+  ): Promise<APIResponse<Record<string, unknown>>> => {
+    return http.post(`/agents/me/${agentId}/generate-ppt`, {
+      conversation_id: conversationId,
+      template_name: templateName,
+      regenerate,
+    })
+  },
 }

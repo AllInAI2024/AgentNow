@@ -4,7 +4,6 @@ import os
 from typing import Optional, Tuple, List, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 
 from app.config import settings
 from app.models import (
@@ -323,26 +322,21 @@ class AgentService:
         self, 
         conversation: AgentConversation
     ) -> PPTAssistantInteractionService:
-        """
-        从会话中恢复交互服务状态
-        """
         service = PPTAssistantInteractionService()
-        
-        if conversation.current_stage:
-            try:
-                stage_map = {
-                    "welcome": ConversationStage.WELCOME,
-                    "clarifying": ConversationStage.CLARIFYING,
-                    "outline_draft": ConversationStage.OUTLINE_DRAFT,
-                    "outline_confirmed": ConversationStage.OUTLINE_CONFIRMED,
-                    "template_select": ConversationStage.TEMPLATE_SELECT,
-                    "final_generating": ConversationStage.FINAL_GENERATING,
-                    "completed": ConversationStage.COMPLETED,
-                }
-                service._current_stage = stage_map.get(conversation.current_stage, ConversationStage.WELCOME)
-            except Exception:
-                pass
-        
+        structured_result = conversation.structured_result_json or None
+        outline_draft = None
+        if structured_result and isinstance(structured_result, dict):
+            slides = structured_result.get("slides")
+            if isinstance(slides, list):
+                outline_draft = slides
+
+        service.load_state(
+            current_stage=conversation.current_stage,
+            requirements=conversation.requirements_json if isinstance(conversation.requirements_json, dict) else None,
+            outline_draft=outline_draft,
+            structured_result=structured_result if isinstance(structured_result, dict) else None,
+            messages_history=conversation.messages_json if isinstance(conversation.messages_json, list) else None,
+        )
         return service
     
     def _update_conversation_from_service(
@@ -351,21 +345,13 @@ class AgentService:
         service: PPTAssistantInteractionService,
         structured_result: Optional[Dict[str, Any]]
     ) -> None:
-        """
-        根据交互服务更新会话状态
-        """
-        stage_map = {
-            ConversationStage.WELCOME: "welcome",
-            ConversationStage.CLARIFYING: "clarifying",
-            ConversationStage.OUTLINE_DRAFT: "outline_draft",
-            ConversationStage.OUTLINE_CONFIRMED: "outline_confirmed",
-            ConversationStage.TEMPLATE_SELECT: "template_select",
-            ConversationStage.FINAL_GENERATING: "final_generating",
-            ConversationStage.COMPLETED: "completed",
-        }
-        
-        conversation.current_stage = stage_map.get(service.get_current_stage(), "chatting")
-        
+        state = service.export_state()
+        conversation.current_stage = state["current_stage"]
+        conversation.requirements_json = state["requirements"]
+        conversation.messages_json = state["messages_history"]
+        conversation.structured_result_json = structured_result or state["structured_result"]
+        conversation.message_count = len(conversation.messages_json or [])
+
         current_stage = service.get_current_stage()
         conversation.outline_confirmed = current_stage in [
             ConversationStage.OUTLINE_CONFIRMED,
@@ -384,6 +370,20 @@ class AgentService:
         if current_stage == ConversationStage.COMPLETED:
             conversation.status = 2
             conversation.completed_at = datetime.utcnow()
+        else:
+            conversation.status = 1
+            conversation.completed_at = None
+
+    def _get_conversation_requirements_data(self, conversation: AgentConversation) -> Dict[str, Any]:
+        requirements = conversation.requirements_json
+        if isinstance(requirements, dict):
+            return requirements
+        if isinstance(requirements, str) and requirements:
+            try:
+                return json.loads(requirements)
+            except json.JSONDecodeError:
+                return {}
+        return {}
     
     def _get_welcome_message_from_template(self, user_agent: UserAgent) -> str:
         """
@@ -499,13 +499,15 @@ class AgentService:
                 status=1,
                 message_count=0,
                 latest_user_input=message[:1000] if message else None,
+                requirements_json={},
+                structured_result_json=None,
+                messages_json=[],
             )
             self.db.add(conversation)
             self.db.commit()
             self.db.refresh(conversation)
         
         user_agent.last_used_at = datetime.utcnow()
-        conversation.message_count += 1
         conversation.last_message_at = datetime.utcnow()
         if message:
             conversation.latest_user_input = message[:1000]
@@ -515,6 +517,16 @@ class AgentService:
         
         if self._is_ppt_assistant(user_agent):
             interaction_service = self._get_interaction_service_from_conversation(conversation)
+            if metadata:
+                reqs = interaction_service.get_requirements()
+                if metadata.get("page_count") and not reqs.page_count:
+                    reqs.page_count = int(metadata["page_count"])
+                if metadata.get("audience") and not reqs.audience:
+                    reqs.audience = str(metadata["audience"])
+                if metadata.get("scene") and not reqs.scene:
+                    reqs.scene = str(metadata["scene"])
+                if metadata.get("style") and not reqs.style:
+                    reqs.style = str(metadata["style"])
             
             knowledge_categories = self._get_knowledge_categories_from_template(user_agent)
             knowledge_context = None
@@ -536,6 +548,11 @@ class AgentService:
                 welcome_msg = self._get_welcome_message_from_template(user_agent)
                 assistant_content = welcome_msg
                 structured_result = None
+                conversation.messages_json = [{
+                    "role": "assistant",
+                    "content": welcome_msg,
+                }]
+                conversation.message_count = 1
             else:
                 actual_message = message if message else ""
                 assistant_content, structured_result, new_stage = interaction_service.process_message(
@@ -576,27 +593,6 @@ class AgentService:
                     interaction_service, 
                     structured_result
                 )
-                
-                if new_stage == ConversationStage.COMPLETED and not conversation.final_file_id:
-                    try:
-                        reqs = interaction_service.get_requirements()
-                        template_name = None
-                        if reqs and hasattr(reqs, 'style'):
-                            template_name = reqs.style
-                        
-                        generated_file, gen_msg = self.generate_ppt(
-                            agent_id=agent_id,
-                            conversation_id=conversation.id,
-                            user_id=user_id,
-                            template_name=template_name,
-                            regenerate=False
-                        )
-                        
-                        if generated_file:
-                            assistant_content += f"\n\n📎 已生成文件：{generated_file.file_name}"
-                            assistant_content += "\n您可以点击下方的下载按钮获取文件。"
-                    except Exception as e:
-                        print(f"生成PPT失败: {e}")
         else:
             assistant_content = "智能体对话功能开发中..."
             structured_result = None
@@ -673,21 +669,29 @@ class AgentService:
         for f in files:
             file_dicts.append({
                 "id": f.id,
+                "user_id": f.user_id,
+                "user_agent_id": f.user_agent_id,
+                "conversation_id": f.conversation_id,
                 "file_type": f.file_type,
                 "file_name": f.file_name,
+                "file_path": f.file_path,
                 "file_size": f.file_size,
+                "mime_type": f.mime_type,
                 "template_name": f.template_name,
+                "source_type": f.source_type,
                 "version_no": f.version_no,
                 "generation_status": f.generation_status,
+                "error_message": f.error_message,
                 "created_at": f.created_at.isoformat() if f.created_at else None,
+                "updated_at": f.updated_at.isoformat() if f.updated_at else None,
             })
         
         from app.schemas import AgentConversationResponse
         
         return ConversationDetailResponse(
             conversation=AgentConversationResponse.model_validate(conversation),
-            messages=[],
-            structured_result=None,
+            messages=conversation.messages_json or [],
+            structured_result=conversation.structured_result_json,
             files=file_dicts,
         ), "获取成功"
     
@@ -717,6 +721,9 @@ class AgentService:
         
         if not conversation.template_confirmed:
             return None, "模板风格未确认，无法生成"
+
+        if conversation.current_stage not in ["final_generating", "completed"]:
+            return None, "请先完成最终确认，再生成 PPT"
         
         existing_files = self.db.query(AgentGeneratedFile).filter(
             AgentGeneratedFile.conversation_id == conversation_id,
@@ -739,15 +746,11 @@ class AgentService:
         knowledge_categories = self._get_knowledge_categories_from_template(user_agent)
         knowledge_context = None
         
+        requirements_data = self._get_conversation_requirements_data(conversation)
+
         if knowledge_categories is not None:
             knowledge_retrieval_service = KnowledgeRetrievalService(self.db)
-            topic = "未设置主题"
-            if conversation.requirements_json:
-                try:
-                    reqs = json.loads(conversation.requirements_json)
-                    topic = reqs.get("topic", "未设置主题")
-                except:
-                    pass
+            topic = requirements_data.get("topic", "未设置主题")
             
             knowledge_context = knowledge_retrieval_service.get_knowledge_context(
                 query=topic,
@@ -769,6 +772,8 @@ class AgentService:
         except Exception as e:
             return None, f"生成PPT失败: {str(e)}"
         
+        effective_template_name = template_name or requirements_data.get("style") or "默认模板"
+
         generated_file = AgentGeneratedFile(
             user_id=user_id,
             user_agent_id=agent_id,
@@ -778,7 +783,7 @@ class AgentService:
             file_path=file_path,
             file_size=file_size,
             mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            template_name=template_name or "默认模板",
+            template_name=effective_template_name,
             source_type="regenerated" if regenerate else "generated",
             version_no=next_version,
             generation_status=1,
@@ -793,6 +798,11 @@ class AgentService:
         conversation.status = 2
         conversation.completed_at = datetime.utcnow()
         conversation.final_generation_confirmed = True
+        conversation.messages_json = (conversation.messages_json or []) + [{
+            "role": "assistant",
+            "content": f"正式 PPT 已生成完成，文件名：{generated_file.file_name}",
+        }]
+        conversation.message_count = len(conversation.messages_json)
         
         self.db.commit()
         
@@ -805,7 +815,7 @@ class AgentService:
             success=True,
             details={
                 "conversation_id": conversation_id,
-                "template_name": template_name,
+                "template_name": effective_template_name,
                 "version_no": next_version,
             },
         )
@@ -826,27 +836,18 @@ class AgentService:
         """
         try:
             from pptx import Presentation
-            from pptx.util import Inches, Pt
-            from pptx.dml.color import RGBColor
             
             prs = Presentation()
             
-            topic = "未设置主题"
-            audience = None
-            scene = None
-            page_count = None
-            style = None
-            
-            if conversation.requirements_json:
-                try:
-                    reqs = json.loads(conversation.requirements_json)
-                    topic = reqs.get("topic", "未设置主题")
-                    audience = reqs.get("audience")
-                    scene = reqs.get("scene")
-                    page_count = reqs.get("page_count")
-                    style = reqs.get("style")
-                except:
-                    pass
+            requirements_data = self._get_conversation_requirements_data(conversation)
+            structured_result = conversation.structured_result_json or {}
+
+            topic = requirements_data.get("topic", "未设置主题")
+            audience = requirements_data.get("audience")
+            scene = requirements_data.get("scene")
+            page_count = requirements_data.get("page_count")
+            style = requirements_data.get("style")
+            slides_data = structured_result.get("slides") if isinstance(structured_result, dict) else None
             
             title_slide_layout = prs.slide_layouts[0]
             slide = prs.slides.add_slide(title_slide_layout)
@@ -863,17 +864,16 @@ class AgentService:
             slide = prs.slides.add_slide(outline_slide_layout)
             title = slide.shapes.title
             body = slide.placeholders[1]
-            
+
             title.text = "目录"
             tf = body.text_frame
             tf.text = ""
-            
+
             if audience or scene or page_count:
                 p = tf.add_paragraph()
                 p.text = "【基本信息】"
                 p.bold = True
-                p.level = 0
-                
+
                 if audience:
                     p = tf.add_paragraph()
                     p.text = f"• 目标受众：{audience}"
@@ -886,63 +886,78 @@ class AgentService:
                     p = tf.add_paragraph()
                     p.text = f"• 预计页数：{page_count}页"
                     p.level = 1
-            
+
             p = tf.add_paragraph()
             p.text = ""
             p = tf.add_paragraph()
             p.text = "【内容结构】"
             p.bold = True
-            p.level = 0
-            
-            p = tf.add_paragraph()
-            p.text = "• 第1页：封面（本页）"
-            p.level = 1
-            p = tf.add_paragraph()
-            p.text = "• 第2页：目录（本页）"
-            p.level = 1
-            p = tf.add_paragraph()
-            p.text = "• 第3页：正文内容"
-            p.level = 1
-            
-            if knowledge_context and knowledge_context.get("has_knowledge"):
-                p = tf.add_paragraph()
-                p.text = "• 第4页：参考资料（来自知识库）"
-                p.level = 1
-                p = tf.add_paragraph()
-                p.text = "• 第5页：总结与说明"
-                p.level = 1
+
+            outline_titles = []
+            if isinstance(slides_data, list) and slides_data:
+                outline_titles = [f"• 第{slide_item.get('index', idx + 1)}页：{slide_item.get('title', '未命名页面')}" for idx, slide_item in enumerate(slides_data)]
             else:
+                outline_titles = [
+                    "• 第1页：封面",
+                    "• 第2页：目录",
+                    "• 第3页：正文内容",
+                ]
+
+            for outline_title in outline_titles[: min(len(outline_titles), 10)]:
                 p = tf.add_paragraph()
-                p.text = "• 第4页：总结与说明"
+                p.text = outline_title
                 p.level = 1
-            
-            content_slide_layout = prs.slide_layouts[1]
-            slide = prs.slides.add_slide(content_slide_layout)
-            title = slide.shapes.title
-            body = slide.placeholders[1]
-            
-            title.text = "正文内容"
-            tf = body.text_frame
-            tf.text = "这是一个由 AgentNow 智能体平台生成的 PPT。"
-            
-            p = tf.add_paragraph()
-            p.text = ""
-            p = tf.add_paragraph()
-            p.text = "【需求信息】"
-            p.bold = True
-            
-            if audience:
-                p = tf.add_paragraph()
-                p.text = f"• 目标受众：{audience}"
-            if scene:
-                p = tf.add_paragraph()
-                p.text = f"• 使用场景：{scene}"
-            if page_count:
-                p = tf.add_paragraph()
-                p.text = f"• 预计页数：{page_count}"
-            if style:
-                p = tf.add_paragraph()
-                p.text = f"• 展示风格：{style}"
+
+            if isinstance(slides_data, list) and slides_data:
+                for slide_item in slides_data:
+                    content_slide_layout = prs.slide_layouts[1]
+                    slide = prs.slides.add_slide(content_slide_layout)
+                    title = slide.shapes.title
+                    body = slide.placeholders[1]
+
+                    title.text = slide_item.get("title") or f"第{slide_item.get('index', '')}页"
+                    tf = body.text_frame
+                    subtitle = slide_item.get("subtitle")
+                    if subtitle:
+                        tf.text = subtitle
+                    else:
+                        tf.text = ""
+
+                    bullets = slide_item.get("bullets") or []
+                    for bullet in bullets:
+                        p = tf.add_paragraph()
+                        p.text = str(bullet)
+                        p.level = 0
+
+                    speaker_notes = slide_item.get("speaker_notes")
+                    if speaker_notes:
+                        p = tf.add_paragraph()
+                        p.text = ""
+                        p = tf.add_paragraph()
+                        p.text = f"演讲备注：{speaker_notes}"
+                        p.level = 0
+            else:
+                content_slide_layout = prs.slide_layouts[1]
+                slide = prs.slides.add_slide(content_slide_layout)
+                title = slide.shapes.title
+                body = slide.placeholders[1]
+
+                title.text = "正文内容"
+                tf = body.text_frame
+                tf.text = "这是一个由 AgentNow 智能体平台生成的 PPT。"
+
+                if audience:
+                    p = tf.add_paragraph()
+                    p.text = f"• 目标受众：{audience}"
+                if scene:
+                    p = tf.add_paragraph()
+                    p.text = f"• 使用场景：{scene}"
+                if page_count:
+                    p = tf.add_paragraph()
+                    p.text = f"• 预计页数：{page_count}"
+                if style:
+                    p = tf.add_paragraph()
+                    p.text = f"• 展示风格：{style}"
             
             if knowledge_context and knowledge_context.get("has_knowledge"):
                 sources = knowledge_context.get("sources", [])
@@ -1041,7 +1056,7 @@ class AgentService:
 - 请安装 python-pptx 库以启用完整功能
 
 需求信息：
-{conversation.requirements_json or '未记录详细需求'}
+{json.dumps(requirements_data, ensure_ascii=False, indent=2) if requirements_data else '未记录详细需求'}
 
 知识检索状态：
 """

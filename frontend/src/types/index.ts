@@ -861,7 +861,7 @@ export interface ConversationDetailResponse {
   conversation: AgentConversation
   messages: ChatMessage[]
   structured_result: StructuredResult | null
-  files: Array<Record<string, any>>
+  files: AgentGeneratedFile[]
 }
 
 export interface AgentGeneratedFile {
