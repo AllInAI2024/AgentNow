@@ -80,50 +80,47 @@ class AgentService:
         
         return messages
     
-    def _try_hermes_chat(
+    def _chat_with_hermes(
         self,
         conversation: AgentConversation,
         message: Optional[str],
         is_new_conversation: bool,
-    ) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, Any]]]:
+    ) -> Tuple[str, str, Optional[Dict[str, Any]]]:
         """
-        尝试使用 Hermes 进行对话
+        调用 Hermes 进行对话
         
         Returns:
             (assistant_content, new_stage, structured_result)
-            如果失败，返回 (None, None, None)
+            
+        Raises:
+            Exception: 如果 Hermes 服务不可用或调用失败
         """
-        try:
-            hermes_service = self._get_hermes_chat_service()
-            
-            if is_new_conversation and not message:
-                welcome_msg = hermes_service.generate_welcome_message()
-                return welcome_msg, "welcome", None
-            
-            messages = self._build_messages_history(conversation, message)
-            
-            assistant_content, stage, ppt_content = hermes_service.chat_with_ppt_assistant(
-                messages=messages,
-                session_id=str(conversation.id)
-            )
-            
-            structured_result = None
-            if ppt_content:
-                structured_result = {
-                    "type": "ppt_content",
-                    "title": ppt_content.title,
-                    "subtitle": ppt_content.subtitle,
-                    "scene": ppt_content.scene,
-                    "audience": ppt_content.audience,
-                    "style": ppt_content.style,
-                    "slides": ppt_content.slides,
-                }
-            
-            return assistant_content, stage.value if stage else "clarifying", structured_result
-            
-        except Exception as e:
-            logger.error(f"Hermes chat failed: {e}")
-            return None, None, None
+        hermes_service = self._get_hermes_chat_service()
+        
+        messages = self._build_messages_history(conversation, message)
+        
+        logger.info(f"Calling Hermes API, messages count: {len(messages)}, session_id: {conversation.id}")
+        
+        assistant_content, stage, ppt_content = hermes_service.chat_with_ppt_assistant(
+            messages=messages,
+            session_id=str(conversation.id)
+        )
+        
+        structured_result = None
+        if ppt_content:
+            structured_result = {
+                "type": "ppt_content",
+                "title": ppt_content.title,
+                "subtitle": ppt_content.subtitle,
+                "scene": ppt_content.scene,
+                "audience": ppt_content.audience,
+                "style": ppt_content.style,
+                "slides": ppt_content.slides,
+            }
+        
+        logger.info(f"Hermes API response received, stage: {stage}, has_content: {structured_result is not None}")
+        
+        return assistant_content, stage.value if stage else "clarifying", structured_result
     
     def _update_conversation_from_hermes(
         self,
@@ -654,19 +651,15 @@ class AgentService:
         
         assistant_content = ""
         structured_result = None
+        new_stage = "welcome"
         
         if self._is_ppt_assistant(user_agent):
-            hermes_content, hermes_stage, hermes_result = self._try_hermes_chat(
-                conversation=conversation,
-                message=message,
-                is_new_conversation=is_new_conversation
-            )
-            
-            if hermes_content is not None:
-                logger.info(f"Hermes chat succeeded, stage: {hermes_stage}")
-                assistant_content = hermes_content
-                new_stage = hermes_stage
-                structured_result = hermes_result
+            try:
+                assistant_content, new_stage, structured_result = self._chat_with_hermes(
+                    conversation=conversation,
+                    message=message,
+                    is_new_conversation=is_new_conversation
+                )
                 
                 self._update_conversation_from_hermes(
                     conversation=conversation,
@@ -675,88 +668,13 @@ class AgentService:
                     new_stage=new_stage,
                     structured_result=structured_result
                 )
-            else:
-                logger.info("Hermes chat failed, falling back to legacy logic")
-                interaction_service = self._get_interaction_service_from_conversation(conversation)
-                if metadata:
-                    reqs = interaction_service.get_requirements()
-                    if metadata.get("page_count") and not reqs.page_count:
-                        reqs.page_count = int(metadata["page_count"])
-                    if metadata.get("audience") and not reqs.audience:
-                        reqs.audience = str(metadata["audience"])
-                    if metadata.get("scene") and not reqs.scene:
-                        reqs.scene = str(metadata["scene"])
-                    if metadata.get("style") and not reqs.style:
-                        reqs.style = str(metadata["style"])
                 
-                knowledge_categories = self._get_knowledge_categories_from_template(user_agent)
-                knowledge_context = None
-                knowledge_retrieval_service = None
-                
-                if knowledge_categories is not None:
-                    knowledge_retrieval_service = KnowledgeRetrievalService(self.db)
-                    current_reqs = interaction_service.get_requirements()
-                    knowledge_query = self._build_knowledge_query(current_reqs, message or "")
-                    
-                    if knowledge_query:
-                        knowledge_context = knowledge_retrieval_service.get_knowledge_context(
-                            query=knowledge_query,
-                            categories=knowledge_categories if knowledge_categories else None,
-                            max_docs=3
-                        )
-                
-                if is_new_conversation and not message:
-                    welcome_msg = self._get_welcome_message_from_template(user_agent)
-                    assistant_content = welcome_msg
-                    structured_result = None
-                    conversation.messages_json = [{
-                        "role": "assistant",
-                        "content": welcome_msg,
-                    }]
-                    conversation.message_count = 1
-                else:
-                    actual_message = message if message else ""
-                    assistant_content, structured_result, new_stage = interaction_service.process_message(
-                        message=actual_message,
-                        action_type=action_type,
-                        is_new_conversation=is_new_conversation
-                    )
-                    
-                    if knowledge_retrieval_service and knowledge_context:
-                        current_reqs = interaction_service.get_requirements()
-                        topic_for_output = current_reqs.topic if current_reqs else None
-                        
-                        if new_stage == ConversationStage.OUTLINE_DRAFT:
-                            if knowledge_context.get("has_knowledge"):
-                                sources = knowledge_context.get("sources", [])
-                                if sources:
-                                    assistant_content += "\n\n📚 以上大纲参考了以下企业资料："
-                                    for i, source in enumerate(sources, 1):
-                                        ref = f"\n{i}. 《{source['title']}》"
-                                        if source.get("category"):
-                                            ref += f"（{source['category']}）"
-                                        assistant_content += ref
-                            else:
-                                assistant_content += "\n\n⚠️ 说明："
-                                if topic_for_output:
-                                    assistant_content += f"关于「{topic_for_output}」"
-                                else:
-                                    assistant_content += "这份大纲"
-                                assistant_content += "未找到企业知识库中的相关资料，以上为通用结构建议。"
-                                assistant_content += "\n如需更贴合企业实际的内容，请上传相关资料到知识库。"
-                        elif new_stage == ConversationStage.CLARIFYING:
-                            if message and len(message) > 3:
-                                if not knowledge_context.get("has_knowledge"):
-                                    pass
-                    
-                    self._update_conversation_from_service(
-                        conversation, 
-                        interaction_service, 
-                        structured_result
-                    )
+            except Exception as e:
+                logger.error(f"Hermes service unavailable: {e}")
+                error_msg = f"Hermes 智能体服务未启动或不可用：{str(e)}"
+                return None, error_msg
         else:
-            assistant_content = "智能体对话功能开发中..."
-            structured_result = None
+            return None, "该智能体类型暂不支持"
         
         self.db.commit()
         
