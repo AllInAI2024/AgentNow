@@ -133,7 +133,12 @@ class AgentService:
         """
         使用 Hermes 的结果更新会话
         """
-        messages = conversation.messages_json or []
+        messages = []
+        old_messages = conversation.messages_json or []
+        for msg in old_messages:
+            if isinstance(msg, dict):
+                messages.append(dict(msg))
+        
         old_count = len(messages)
         
         if user_message:
