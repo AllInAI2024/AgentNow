@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.config import settings
-
 from app.models import (
     User,
     UserAgent,
@@ -29,6 +28,7 @@ from app.services.ppt_assistant_interaction_service import (
     PPTAssistantInteractionService,
     ConversationStage,
 )
+from app.services.knowledge_retrieval_service import KnowledgeRetrievalService
 
 
 class AgentService:
@@ -425,6 +425,46 @@ class AgentService:
         
         return True
     
+    def _get_knowledge_categories_from_template(self, user_agent: UserAgent) -> Optional[List[str]]:
+        """
+        从模板快照中获取知识分类配置
+        """
+        try:
+            config_snapshot = user_agent.config_snapshot
+            if config_snapshot and isinstance(config_snapshot, dict):
+                knowledge_scope = config_snapshot.get("knowledge_scope", "none")
+                knowledge_categories = config_snapshot.get("knowledge_categories")
+                
+                if knowledge_scope == "none":
+                    return None
+                elif knowledge_scope == "global":
+                    return []
+                elif knowledge_scope == "category" and knowledge_categories:
+                    if isinstance(knowledge_categories, list):
+                        return [str(c) for c in knowledge_categories if c]
+        except Exception as e:
+            print(f"获取知识分类配置失败: {e}")
+        
+        return None
+    
+    def _build_knowledge_query(self, requirements, message: str) -> str:
+        """
+        根据需求和消息构建知识检索查询
+        """
+        query_parts = []
+        
+        if requirements.topic:
+            query_parts.append(requirements.topic)
+        if requirements.audience:
+            query_parts.append(requirements.audience)
+        if requirements.scene:
+            query_parts.append(requirements.scene)
+        
+        if message and len(message) > 3:
+            query_parts.append(message)
+        
+        return " ".join(query_parts) if query_parts else ""
+    
     def send_chat_message(
         self,
         agent_id: int,
@@ -476,6 +516,22 @@ class AgentService:
         if self._is_ppt_assistant(user_agent):
             interaction_service = self._get_interaction_service_from_conversation(conversation)
             
+            knowledge_categories = self._get_knowledge_categories_from_template(user_agent)
+            knowledge_context = None
+            knowledge_retrieval_service = None
+            
+            if knowledge_categories is not None:
+                knowledge_retrieval_service = KnowledgeRetrievalService(self.db)
+                current_reqs = interaction_service.get_requirements()
+                knowledge_query = self._build_knowledge_query(current_reqs, message or "")
+                
+                if knowledge_query:
+                    knowledge_context = knowledge_retrieval_service.get_knowledge_context(
+                        query=knowledge_query,
+                        categories=knowledge_categories if knowledge_categories else None,
+                        max_docs=3
+                    )
+            
             if is_new_conversation and not message:
                 welcome_msg = self._get_welcome_message_from_template(user_agent)
                 assistant_content = welcome_msg
@@ -487,6 +543,33 @@ class AgentService:
                     action_type=action_type,
                     is_new_conversation=is_new_conversation
                 )
+                
+                if knowledge_retrieval_service and knowledge_context:
+                    current_reqs = interaction_service.get_requirements()
+                    topic_for_output = current_reqs.topic if current_reqs else None
+                    
+                    if new_stage == ConversationStage.OUTLINE_DRAFT:
+                        if knowledge_context.get("has_knowledge"):
+                            sources = knowledge_context.get("sources", [])
+                            if sources:
+                                assistant_content += "\n\n📚 以上大纲参考了以下企业资料："
+                                for i, source in enumerate(sources, 1):
+                                    ref = f"\n{i}. 《{source['title']}》"
+                                    if source.get("category"):
+                                        ref += f"（{source['category']}）"
+                                    assistant_content += ref
+                        else:
+                            assistant_content += "\n\n⚠️ 说明："
+                            if topic_for_output:
+                                assistant_content += f"关于「{topic_for_output}」"
+                            else:
+                                assistant_content += "这份大纲"
+                            assistant_content += "未找到企业知识库中的相关资料，以上为通用结构建议。"
+                            assistant_content += "\n如需更贴合企业实际的内容，请上传相关资料到知识库。"
+                    elif new_stage == ConversationStage.CLARIFYING:
+                        if message and len(message) > 3:
+                            if not knowledge_context.get("has_knowledge"):
+                                pass
                 
                 self._update_conversation_from_service(
                     conversation, 
@@ -653,8 +736,32 @@ class AgentService:
         file_name = f"PPT_{conversation_id}_v{next_version}.pptx"
         file_path = os.path.join(output_dir, file_name)
         
+        knowledge_categories = self._get_knowledge_categories_from_template(user_agent)
+        knowledge_context = None
+        
+        if knowledge_categories is not None:
+            knowledge_retrieval_service = KnowledgeRetrievalService(self.db)
+            topic = "未设置主题"
+            if conversation.requirements_json:
+                try:
+                    reqs = json.loads(conversation.requirements_json)
+                    topic = reqs.get("topic", "未设置主题")
+                except:
+                    pass
+            
+            knowledge_context = knowledge_retrieval_service.get_knowledge_context(
+                query=topic,
+                categories=knowledge_categories if knowledge_categories else None,
+                max_docs=3
+            )
+        
         try:
-            ppt_content = self._create_demo_ppt(conversation, next_version, template_name)
+            ppt_content = self._create_demo_ppt(
+                conversation=conversation,
+                version=next_version,
+                template_name=template_name,
+                knowledge_context=knowledge_context
+            )
             with open(file_path, "wb") as f:
                 f.write(ppt_content)
             
@@ -709,7 +816,8 @@ class AgentService:
         self, 
         conversation: AgentConversation, 
         version: int,
-        template_name: Optional[str]
+        template_name: Optional[str],
+        knowledge_context: Optional[Dict[str, Any]] = None
     ) -> bytes:
         """
         创建一个演示用的 PPT 文件
@@ -724,10 +832,19 @@ class AgentService:
             prs = Presentation()
             
             topic = "未设置主题"
+            audience = None
+            scene = None
+            page_count = None
+            style = None
+            
             if conversation.requirements_json:
                 try:
                     reqs = json.loads(conversation.requirements_json)
                     topic = reqs.get("topic", "未设置主题")
+                    audience = reqs.get("audience")
+                    scene = reqs.get("scene")
+                    page_count = reqs.get("page_count")
+                    style = reqs.get("style")
                 except:
                     pass
             
@@ -737,7 +854,10 @@ class AgentService:
             subtitle = slide.placeholders[1]
             
             title.text = topic
-            subtitle.text = f"版本 v{version} | 模板: {template_name or '默认'}"
+            subtitle_text = f"版本 v{version}\n模板: {template_name or '默认'}"
+            if style:
+                subtitle_text += f"\n风格: {style}"
+            subtitle.text = subtitle_text
             
             outline_slide_layout = prs.slide_layouts[1]
             slide = prs.slides.add_slide(outline_slide_layout)
@@ -746,19 +866,55 @@ class AgentService:
             
             title.text = "目录"
             tf = body.text_frame
-            tf.text = "演示内容结构"
+            tf.text = ""
+            
+            if audience or scene or page_count:
+                p = tf.add_paragraph()
+                p.text = "【基本信息】"
+                p.bold = True
+                p.level = 0
+                
+                if audience:
+                    p = tf.add_paragraph()
+                    p.text = f"• 目标受众：{audience}"
+                    p.level = 1
+                if scene:
+                    p = tf.add_paragraph()
+                    p.text = f"• 使用场景：{scene}"
+                    p.level = 1
+                if page_count:
+                    p = tf.add_paragraph()
+                    p.text = f"• 预计页数：{page_count}页"
+                    p.level = 1
+            
             p = tf.add_paragraph()
-            p.text = "• 第1页：封面"
+            p.text = ""
+            p = tf.add_paragraph()
+            p.text = "【内容结构】"
+            p.bold = True
+            p.level = 0
+            
+            p = tf.add_paragraph()
+            p.text = "• 第1页：封面（本页）"
             p.level = 1
             p = tf.add_paragraph()
-            p.text = "• 第2页：目录"
+            p.text = "• 第2页：目录（本页）"
             p.level = 1
             p = tf.add_paragraph()
             p.text = "• 第3页：正文内容"
             p.level = 1
-            p = tf.add_paragraph()
-            p.text = "• 第4页：总结"
-            p.level = 1
+            
+            if knowledge_context and knowledge_context.get("has_knowledge"):
+                p = tf.add_paragraph()
+                p.text = "• 第4页：参考资料（来自知识库）"
+                p.level = 1
+                p = tf.add_paragraph()
+                p.text = "• 第5页：总结与说明"
+                p.level = 1
+            else:
+                p = tf.add_paragraph()
+                p.text = "• 第4页：总结与说明"
+                p.level = 1
             
             content_slide_layout = prs.slide_layouts[1]
             slide = prs.slides.add_slide(content_slide_layout)
@@ -767,39 +923,103 @@ class AgentService:
             
             title.text = "正文内容"
             tf = body.text_frame
-            tf.text = "这是一个由 AgentNow 智能体平台生成的演示 PPT。"
+            tf.text = "这是一个由 AgentNow 智能体平台生成的 PPT。"
+            
             p = tf.add_paragraph()
             p.text = ""
             p = tf.add_paragraph()
-            p.text = "当前状态："
-            p = tf.add_paragraph()
-            p.text = f"• 会话ID: {conversation.id}"
-            p.level = 1
-            p = tf.add_paragraph()
-            p.text = f"• 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            p.level = 1
-            p = tf.add_paragraph()
-            p.text = f"• 阶段: {conversation.current_stage}"
-            p.level = 1
+            p.text = "【需求信息】"
+            p.bold = True
+            
+            if audience:
+                p = tf.add_paragraph()
+                p.text = f"• 目标受众：{audience}"
+            if scene:
+                p = tf.add_paragraph()
+                p.text = f"• 使用场景：{scene}"
+            if page_count:
+                p = tf.add_paragraph()
+                p.text = f"• 预计页数：{page_count}"
+            if style:
+                p = tf.add_paragraph()
+                p.text = f"• 展示风格：{style}"
+            
+            if knowledge_context and knowledge_context.get("has_knowledge"):
+                sources = knowledge_context.get("sources", [])
+                if sources:
+                    reference_slide_layout = prs.slide_layouts[1]
+                    slide = prs.slides.add_slide(reference_slide_layout)
+                    title = slide.shapes.title
+                    body = slide.placeholders[1]
+                    
+                    title.text = "参考资料（企业知识库）"
+                    tf = body.text_frame
+                    tf.text = "以下内容来自企业知识库："
+                    
+                    for i, source in enumerate(sources, 1):
+                        p = tf.add_paragraph()
+                        p.text = ""
+                        p = tf.add_paragraph()
+                        p.text = f"{i}. 《{source['title']}》"
+                        p.bold = True
+                        if source.get("category"):
+                            p = tf.add_paragraph()
+                            p.text = f"   分类：{source['category']}"
+                    
+                    knowledge_text = knowledge_context.get("knowledge_text", "")
+                    if knowledge_text and len(knowledge_text) > 0:
+                        p = tf.add_paragraph()
+                        p.text = ""
+                        p = tf.add_paragraph()
+                        p.text = "【资料摘要】"
+                        p.bold = True
+                        
+                        content_lines = knowledge_text[:800].split('\n')
+                        for line in content_lines[:15]:
+                            if line.strip():
+                                p = tf.add_paragraph()
+                                p.text = line[:80]
+                                p.level = 1
             
             summary_slide_layout = prs.slide_layouts[1]
             slide = prs.slides.add_slide(summary_slide_layout)
             title = slide.shapes.title
             body = slide.placeholders[1]
             
-            title.text = "总结"
+            title.text = "总结与说明"
             tf = body.text_frame
             tf.text = "PPT 生成完成！"
+            
             p = tf.add_paragraph()
             p.text = ""
             p = tf.add_paragraph()
-            p.text = "下一步："
+            p.text = "【生成信息】"
+            p.bold = True
+            
             p = tf.add_paragraph()
-            p.text = "• 您可以下载此演示文件查看效果"
-            p.level = 1
+            p.text = f"• 会话ID: {conversation.id}"
             p = tf.add_paragraph()
-            p.text = "• 正式版本将接入专业 PPT 生成服务"
-            p.level = 1
+            p.text = f"• 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            p = tf.add_paragraph()
+            p.text = f"• 版本: v{version}"
+            
+            p = tf.add_paragraph()
+            p.text = ""
+            p = tf.add_paragraph()
+            p.text = "【说明】"
+            p.bold = True
+            
+            if knowledge_context and knowledge_context.get("has_knowledge"):
+                p = tf.add_paragraph()
+                p.text = "✓ 本 PPT 内容参考了企业知识库中的相关资料"
+                p.level = 1
+            else:
+                p = tf.add_paragraph()
+                p.text = "⚠ 本 PPT 为通用结构建议，未找到企业知识库中的相关资料"
+                p.level = 1
+                p = tf.add_paragraph()
+                p.text = "  如需更贴合企业实际的内容，请上传相关资料到知识库"
+                p.level = 1
             
             import io
             output = io.BytesIO()
@@ -815,11 +1035,29 @@ class AgentService:
 模板: {template_name or '默认'}
 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-说明：此为演示版本，正式版本将生成真实的 .pptx 文件。
+说明：
+- 此为演示版本
+- 正式版本将生成真实的 .pptx 文件
+- 请安装 python-pptx 库以启用完整功能
 
 需求信息：
 {conversation.requirements_json or '未记录详细需求'}
+
+知识检索状态：
 """
+            
+            if knowledge_context and knowledge_context.get("has_knowledge"):
+                placeholder_content += "✓ 已检索到企业知识库资料\n"
+                sources = knowledge_context.get("sources", [])
+                for i, source in enumerate(sources, 1):
+                    placeholder_content += f"  {i}. {source['title']}"
+                    if source.get("category"):
+                        placeholder_content += f"（{source['category']}）"
+                    placeholder_content += "\n"
+            else:
+                placeholder_content += "⚠ 未检索到企业知识库中的相关资料\n"
+                placeholder_content += "  本内容为通用建议\n"
+            
             return placeholder_content.encode('utf-8')
     
     def download_generated_file(
