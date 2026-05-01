@@ -387,6 +387,32 @@ class PPTAssistantInteractionService:
         
         return False
     
+    def _parse_numeric_selection(self, message: str) -> Optional[int]:
+        """
+        解析用户输入的数字选择（如"1"、"2"等）
+        返回选择的数字，如果没有数字选择则返回 None
+        """
+        import re
+        
+        stripped_message = message.strip()
+        
+        match = re.match(r'^(\d+)[、.．，,：:\s]*$', stripped_message)
+        if match:
+            return int(match.group(1))
+        
+        match = re.match(r'^选[择]?[：:：]?\s*(\d+)', stripped_message)
+        if match:
+            return int(match.group(1))
+        
+        match = re.match(r'^第(\d+)[个项]?$', stripped_message)
+        if match:
+            return int(match.group(1))
+        
+        if stripped_message in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
+            return int(stripped_message)
+        
+        return None
+    
     def process_message(
         self, 
         message: str, 
@@ -527,18 +553,46 @@ class PPTAssistantInteractionService:
             return response, None, ConversationStage.TEMPLATE_SELECT
         
         elif self._current_stage == ConversationStage.TEMPLATE_SELECT:
-            if self._is_confirmation_message(message) or "标准" in message or "正式" in message or "销售" in message:
+            numeric_selection = self._parse_numeric_selection(message)
+            
+            if numeric_selection is not None:
+                self._requirements.style = {
+                    1: "公司标准模板",
+                    2: "正式汇报风格",
+                    3: "客户介绍风格",
+                    4: "销售展示风格"
+                }.get(numeric_selection, "标准风格")
+                self._requirements.use_standard_template = (numeric_selection == 1)
+                
+                self._current_stage = ConversationStage.FINAL_GENERATING
+                response = f"好的，已选择「{self._requirements.style}」。\n\n我准备开始生成正式 PPT 文件了。\n\n我先最后确认三件事：\n1. 页数你这边确认了\n2. 大纲结构没有问题\n3. 展示风格或模板已经定下来\n\n如果你确认，我就按这个版本出正式文件。"
+                self._add_message("assistant", response)
+                return response, None, ConversationStage.FINAL_GENERATING
+            
+            if self._is_confirmation_message(message) or "标准" in message or "正式" in message or "销售" in message or "客户" in message:
+                if "标准" in message:
+                    self._requirements.style = "公司标准模板"
+                    self._requirements.use_standard_template = True
+                elif "正式" in message:
+                    self._requirements.style = "正式汇报风格"
+                elif "销售" in message:
+                    self._requirements.style = "销售展示风格"
+                elif "客户" in message:
+                    self._requirements.style = "客户介绍风格"
+                
                 self._current_stage = ConversationStage.FINAL_GENERATING
                 response = "我准备开始生成正式 PPT 文件了。\n\n我先最后确认三件事：\n1. 页数你这边确认了\n2. 大纲结构没有问题\n3. 展示风格或模板已经定下来\n\n如果你确认，我就按这个版本出正式文件。"
                 self._add_message("assistant", response)
                 return response, None, ConversationStage.FINAL_GENERATING
             else:
-                response = "你可以告诉我想用哪种风格：\n1. 公司标准模板\n2. 正式汇报风格\n3. 客户介绍风格\n4. 销售展示风格"
+                response = "你可以告诉我想用哪种风格，直接回复数字即可：\n1. 公司标准模板\n2. 正式汇报风格\n3. 客户介绍风格\n4. 销售展示风格"
                 self._add_message("assistant", response)
                 return response, None, ConversationStage.TEMPLATE_SELECT
         
         elif self._current_stage == ConversationStage.FINAL_GENERATING:
-            if self._is_confirmation_message(message):
+            numeric_selection = self._parse_numeric_selection(message)
+            
+            if numeric_selection is not None or self._is_confirmation_message(message):
                 self._current_stage = ConversationStage.COMPLETED
                 response = "好的，我开始生成正式 PPT 文件。\n\n（注：第一版先生成结构化内容，后续接入 PPT 生成服务后可导出 .pptx 文件）\n\n当前已确认的信息：\n"
                 if self._requirements.topic:
@@ -549,12 +603,14 @@ class PPTAssistantInteractionService:
                     response += f"- 场景：{self._requirements.scene}\n"
                 if self._requirements.page_count:
                     response += f"- 页数：{self._requirements.page_count}\n"
+                if self._requirements.style:
+                    response += f"- 风格：{self._requirements.style}\n"
                 
                 response += "\nPPT 已准备就绪！"
                 self._add_message("assistant", response)
                 return response, None, ConversationStage.COMPLETED
             else:
-                response = "我已经准备好了。如果你确认要生成正式 PPT，请说「确认」或「生成」。"
+                response = "我已经准备好了。如果你确认要生成正式 PPT，直接回复「确认」或「1」即可。"
                 self._add_message("assistant", response)
                 return response, None, ConversationStage.FINAL_GENERATING
         

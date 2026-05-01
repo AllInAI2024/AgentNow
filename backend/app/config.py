@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     KNOWLEDGE_MAX_FILE_SIZE: int = 100 * 1024 * 1024
     KNOWLEDGE_ALLOWED_TYPES: str = ".pdf,.doc,.docx,.txt,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt,.html,.htm,.xml"
     
+    GENERATED_FILES_PATH: str = os.path.expanduser("~/.agentnow/generated")
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

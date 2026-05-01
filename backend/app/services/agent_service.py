@@ -1,9 +1,12 @@
 import math
 import json
+import os
 from typing import Optional, Tuple, List, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+
+from app.config import settings
 
 from app.models import (
     User,
@@ -490,6 +493,27 @@ class AgentService:
                     interaction_service, 
                     structured_result
                 )
+                
+                if new_stage == ConversationStage.COMPLETED and not conversation.final_file_id:
+                    try:
+                        reqs = interaction_service.get_requirements()
+                        template_name = None
+                        if reqs and hasattr(reqs, 'style'):
+                            template_name = reqs.style
+                        
+                        generated_file, gen_msg = self.generate_ppt(
+                            agent_id=agent_id,
+                            conversation_id=conversation.id,
+                            user_id=user_id,
+                            template_name=template_name,
+                            regenerate=False
+                        )
+                        
+                        if generated_file:
+                            assistant_content += f"\n\n📎 已生成文件：{generated_file.file_name}"
+                            assistant_content += "\n您可以点击下方的下载按钮获取文件。"
+                    except Exception as e:
+                        print(f"生成PPT失败: {e}")
         else:
             assistant_content = "智能体对话功能开发中..."
             structured_result = None
@@ -619,14 +643,34 @@ class AgentService:
         
         next_version = len(existing_files) + 1
         
+        output_dir = os.path.join(
+            settings.GENERATED_FILES_PATH,
+            str(user_id),
+            str(conversation_id)
+        )
+        os.makedirs(output_dir, exist_ok=True)
+        
+        file_name = f"PPT_{conversation_id}_v{next_version}.pptx"
+        file_path = os.path.join(output_dir, file_name)
+        
+        try:
+            ppt_content = self._create_demo_ppt(conversation, next_version, template_name)
+            with open(file_path, "wb") as f:
+                f.write(ppt_content)
+            
+            file_size = os.path.getsize(file_path)
+        except Exception as e:
+            return None, f"生成PPT失败: {str(e)}"
+        
         generated_file = AgentGeneratedFile(
             user_id=user_id,
             user_agent_id=agent_id,
             conversation_id=conversation_id,
             file_type="pptx",
-            file_name=f"PPT_{conversation_id}_v{next_version}.pptx",
-            file_path=f"/data/agent-files/{user_id}/{conversation_id}/PPT_v{next_version}.pptx",
-            file_size=0,
+            file_name=file_name,
+            file_path=file_path,
+            file_size=file_size,
+            mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             template_name=template_name or "默认模板",
             source_type="regenerated" if regenerate else "generated",
             version_no=next_version,
@@ -661,6 +705,123 @@ class AgentService:
         
         return generated_file, "PPT生成成功"
     
+    def _create_demo_ppt(
+        self, 
+        conversation: AgentConversation, 
+        version: int,
+        template_name: Optional[str]
+    ) -> bytes:
+        """
+        创建一个演示用的 PPT 文件
+        如果有 python-pptx 库，使用它创建真实的 PPT
+        否则，创建一个简单的占位文件
+        """
+        try:
+            from pptx import Presentation
+            from pptx.util import Inches, Pt
+            from pptx.dml.color import RGBColor
+            
+            prs = Presentation()
+            
+            topic = "未设置主题"
+            if conversation.requirements_json:
+                try:
+                    reqs = json.loads(conversation.requirements_json)
+                    topic = reqs.get("topic", "未设置主题")
+                except:
+                    pass
+            
+            title_slide_layout = prs.slide_layouts[0]
+            slide = prs.slides.add_slide(title_slide_layout)
+            title = slide.shapes.title
+            subtitle = slide.placeholders[1]
+            
+            title.text = topic
+            subtitle.text = f"版本 v{version} | 模板: {template_name or '默认'}"
+            
+            outline_slide_layout = prs.slide_layouts[1]
+            slide = prs.slides.add_slide(outline_slide_layout)
+            title = slide.shapes.title
+            body = slide.placeholders[1]
+            
+            title.text = "目录"
+            tf = body.text_frame
+            tf.text = "演示内容结构"
+            p = tf.add_paragraph()
+            p.text = "• 第1页：封面"
+            p.level = 1
+            p = tf.add_paragraph()
+            p.text = "• 第2页：目录"
+            p.level = 1
+            p = tf.add_paragraph()
+            p.text = "• 第3页：正文内容"
+            p.level = 1
+            p = tf.add_paragraph()
+            p.text = "• 第4页：总结"
+            p.level = 1
+            
+            content_slide_layout = prs.slide_layouts[1]
+            slide = prs.slides.add_slide(content_slide_layout)
+            title = slide.shapes.title
+            body = slide.placeholders[1]
+            
+            title.text = "正文内容"
+            tf = body.text_frame
+            tf.text = "这是一个由 AgentNow 智能体平台生成的演示 PPT。"
+            p = tf.add_paragraph()
+            p.text = ""
+            p = tf.add_paragraph()
+            p.text = "当前状态："
+            p = tf.add_paragraph()
+            p.text = f"• 会话ID: {conversation.id}"
+            p.level = 1
+            p = tf.add_paragraph()
+            p.text = f"• 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            p.level = 1
+            p = tf.add_paragraph()
+            p.text = f"• 阶段: {conversation.current_stage}"
+            p.level = 1
+            
+            summary_slide_layout = prs.slide_layouts[1]
+            slide = prs.slides.add_slide(summary_slide_layout)
+            title = slide.shapes.title
+            body = slide.placeholders[1]
+            
+            title.text = "总结"
+            tf = body.text_frame
+            tf.text = "PPT 生成完成！"
+            p = tf.add_paragraph()
+            p.text = ""
+            p = tf.add_paragraph()
+            p.text = "下一步："
+            p = tf.add_paragraph()
+            p.text = "• 您可以下载此演示文件查看效果"
+            p.level = 1
+            p = tf.add_paragraph()
+            p.text = "• 正式版本将接入专业 PPT 生成服务"
+            p.level = 1
+            
+            import io
+            output = io.BytesIO()
+            prs.save(output)
+            output.seek(0)
+            return output.read()
+            
+        except ImportError:
+            placeholder_content = f"""PPT 演示文件
+================
+会话ID: {conversation.id}
+版本: v{version}
+模板: {template_name or '默认'}
+生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+说明：此为演示版本，正式版本将生成真实的 .pptx 文件。
+
+需求信息：
+{conversation.requirements_json or '未记录详细需求'}
+"""
+            return placeholder_content.encode('utf-8')
+    
     def download_generated_file(
         self,
         file_id: int,
@@ -680,4 +841,13 @@ class AgentService:
         if generated_file.generation_status != 1:
             return None, None, "", "文件生成未完成或已失败"
         
-        return None, generated_file.mime_type, generated_file.file_name, "获取成功"
+        file_path = generated_file.file_path
+        if not file_path or not os.path.exists(file_path):
+            return None, None, "", "文件已删除或不可访问"
+        
+        try:
+            with open(file_path, "rb") as f:
+                file_content = f.read()
+            return file_content, generated_file.mime_type, generated_file.file_name, "获取成功"
+        except Exception as e:
+            return None, None, "", f"读取文件失败: {str(e)}"
