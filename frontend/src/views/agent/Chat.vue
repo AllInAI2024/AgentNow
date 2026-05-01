@@ -115,7 +115,11 @@
                       {{ msg.role === 'user' ? (userStore.userInfo?.username || '我') : (currentAgent?.display_name || '智能体') }}
                     </div>
                     <div class="message-bubble">
-                      <div class="message-text">{{ msg.content }}</div>
+                      <div 
+                        class="message-text" 
+                        :class="{ 'markdown-content': msg.role === 'assistant' }"
+                        v-html="renderMarkdown(msg.content)"
+                      ></div>
                     </div>
                     <div class="message-time" v-if="msg.timestamp">
                       {{ formatMessageTime(msg.timestamp) }}
@@ -315,6 +319,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { marked } from 'marked'
 import {
   RobotOutlined,
   MessageOutlined,
@@ -358,6 +363,21 @@ const loadingConversations = ref(false)
 const loadingMessages = ref(false)
 const isTyping = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
+
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+})
+
+const renderMarkdown = (content: string | null | undefined): string => {
+  if (!content) return ''
+  try {
+    return marked.parse(content) as string
+  } catch (e) {
+    console.error('Markdown parse error:', e)
+    return content || ''
+  }
+}
 
 const quickActions = computed(() => [
   { text: '帮我写一个公司介绍的 10 页 PPT', icon: 'file' },
@@ -1207,8 +1227,106 @@ onMounted(() => {
 
 .message-text {
   font-size: 14px;
-  white-space: pre-wrap;
   word-break: break-word;
+  line-height: 1.7;
+}
+
+.message-text.markdown-content :deep(h1) {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 12px 0 8px 0;
+  color: #1d2129;
+}
+
+.message-text.markdown-content :deep(h2) {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 10px 0 6px 0;
+  color: #1d2129;
+}
+
+.message-text.markdown-content :deep(h3) {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 8px 0 4px 0;
+  color: #1d2129;
+}
+
+.message-text.markdown-content :deep(p) {
+  margin: 6px 0;
+}
+
+.message-text.markdown-content :deep(ul),
+.message-text.markdown-content :deep(ol) {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.message-text.markdown-content :deep(li) {
+  margin: 4px 0;
+}
+
+.message-text.markdown-content :deep(strong) {
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.message-text.markdown-content :deep(em) {
+  font-style: italic;
+}
+
+.message-text.markdown-content :deep(code) {
+  background: #f2f3f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  color: #f53f3f;
+}
+
+.message-text.markdown-content :deep(pre) {
+  background: #f7f8fa;
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.message-text.markdown-content :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  color: #1d2129;
+}
+
+.message-text.markdown-content :deep(blockquote) {
+  border-left: 3px solid #165dff;
+  padding-left: 12px;
+  margin: 8px 0;
+  color: #4e5969;
+}
+
+.message-text.markdown-content :deep(hr) {
+  border: none;
+  border-top: 1px solid #e5e6eb;
+  margin: 12px 0;
+}
+
+.message-text.markdown-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.message-text.markdown-content :deep(th),
+.message-text.markdown-content :deep(td) {
+  border: 1px solid #e5e6eb;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.message-text.markdown-content :deep(th) {
+  background: #f7f8fa;
+  font-weight: 600;
 }
 
 .message-time {

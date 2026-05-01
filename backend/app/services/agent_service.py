@@ -134,6 +134,7 @@ class AgentService:
         使用 Hermes 的结果更新会话
         """
         messages = conversation.messages_json or []
+        old_count = len(messages)
         
         if user_message:
             messages.append({
@@ -149,6 +150,14 @@ class AgentService:
         conversation.messages_json = messages
         conversation.message_count = len(messages)
         conversation.current_stage = new_stage
+        
+        logger.info(
+            f"Updated conversation {conversation.id}: "
+            f"message_count: {old_count} -> {len(messages)}, "
+            f"stage: {new_stage}, "
+            f"has_structured_result: {structured_result is not None}"
+        )
+        logger.debug(f"Messages JSON: {json.dumps(messages, ensure_ascii=False)}")
         
         if structured_result:
             conversation.structured_result_json = structured_result
