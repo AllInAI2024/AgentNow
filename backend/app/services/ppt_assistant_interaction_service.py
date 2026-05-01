@@ -464,6 +464,54 @@ class PPTAssistantInteractionService:
         ]
         return any(keyword in message for keyword in revision_keywords)
 
+    def _is_redo_request(self, message: str) -> bool:
+        redo_keywords = [
+            "重做", "重新做", "再做一遍", "重来", "从头来",
+            "改一改", "调整一下", "再改一版",
+        ]
+        return any(keyword in message for keyword in redo_keywords)
+
+    def _is_regenerate_request(self, message: str) -> bool:
+        regenerate_keywords = [
+            "再生成", "重新生成", "再导一份", "再出一版",
+            "重试", "再试一次", "重新来",
+        ]
+        return any(keyword in message for keyword in regenerate_keywords)
+
+    def _is_local_modification(self, message: str) -> Tuple[bool, str]:
+        local_keywords = [
+            ("第", "页"), ("第", "章"), ("第", "节"),
+            ("封面",), ("目录",), ("总结",), ("结尾",),
+            ("第\\d+",), ("第一",), ("第二",), ("第三",),
+            ("首页",), ("最后一页",), ("最后一",),
+        ]
+        
+        for pattern in local_keywords:
+            if len(pattern) == 1:
+                if pattern[0] in message:
+                    return True, pattern[0]
+            else:
+                if pattern[0] in message and pattern[1] in message:
+                    return True, f"{pattern[0]}{pattern[1]}"
+        
+        return False, ""
+
+    def _parse_modification_type(self, message: str) -> str:
+        if self._is_regenerate_request(message):
+            return "regenerate"
+        elif self._is_redo_request(message):
+            return "redo"
+        else:
+            is_local, target = self._is_local_modification(message)
+            if is_local:
+                return "local"
+            elif self._is_revision_message(message):
+                return "revision"
+            elif self._is_confirmation_message(message):
+                return "confirm"
+            else:
+                return "unknown"
+
     def _parse_numeric_selection(self, message: str) -> Optional[int]:
         stripped_message = message.strip()
         match = re.match(r"^(\d+)[、.．，,：:\s]*$", stripped_message)
@@ -601,7 +649,142 @@ class PPTAssistantInteractionService:
             self._add_message("assistant", response)
             return response, self._structured_result, self._current_stage
 
-        response = "这轮会话已经完成。如果你还想继续修改，我可以基于当前内容帮你新开一轮继续调整。"
+        if self._current_stage == ConversationStage.COMPLETED:
+            modification_type = self._parse_modification_type(message)
+            
+            if modification_type == "regenerate":
+                self._current_stage = ConversationStage.FINAL_GENERATING
+                response = (
+                    "好的，我准备再次生成 PPT 文件。\n\n"
+                    f"{self._format_requirements_summary()}\n\n"
+                    "如果你确认这些信息没有变化，直接点击“生成 PPT”即可生成新版本。"
+                )
+                self._add_message("assistant", response)
+                return response, self._structured_result, self._current_stage
+            
+            elif modification_type == "redo":
+                self._current_stage = ConversationStage.OUTLINE_DRAFT
+                self._outline_draft, outline_text = self._generate_outline(revision_note=message or "根据用户意见重新调整")
+                structured_result = self._build_structured_result()
+                response = (
+                    "好的，我基于当前信息重新调整一下大纲。\n\n"
+                    f"{outline_text}\n\n---\n\n"
+                    "你先看这版结构是否更合适。如果想调整风格、页数或其他信息，也可以直接告诉我。"
+                )
+                self._add_message("assistant", response)
+                return response, structured_result, self._current_stage
+            
+            elif modification_type == "local":
+                is_local, target = self._is_local_modification(message)
+                response = (
+                    f"我理解你想调整「{target}」相关内容。\n\n"
+                    "由于这是第一版，我建议我们分两步来：\n"
+                    "1. 先把整体结构和关键信息确认清楚\n"
+                    "2. 再进行局部调整\n\n"
+                    "如果你想调整局部内容，可以告诉我：\n"
+                    "- 具体想改哪一页的什么内容\n"
+                    "- 或者想调整整体风格/页数\n\n"
+                    "我会先按你的意见更新大纲，然后你可以确认后再生成新版本。"
+                )
+                
+                if self._is_revision_message(message):
+                    self._current_stage = ConversationStage.OUTLINE_DRAFT
+                    self._outline_draft, outline_text = self._generate_outline(revision_note=message)
+                    structured_result = self._build_structured_result()
+                    response = (
+                        f"好的，我根据你的意见调整一下相关内容。\n\n"
+                        f"{outline_text}\n\n---\n\n"
+                        "你先看这版是否更合适。如果还需要调整，可以继续告诉我。"
+                    )
+                    self._add_message("assistant", response)
+                    return response, structured_result, self._current_stage
+                
+                self._add_message("assistant", response)
+                return response, self._structured_result, self._current_stage
+            
+            elif modification_type == "revision":
+                parsed = self._parse_user_input(message)
+                updated_fields = self._update_requirements(parsed) if message else []
+                
+                if updated_fields:
+                    self._current_stage = ConversationStage.OUTLINE_DRAFT
+                    self._outline_draft, outline_text = self._generate_outline(revision_note="已吸收你刚补充的信息")
+                    structured_result = self._build_structured_result()
+                    
+                    field_labels = {
+                        "topic": "主题",
+                        "audience": "受众",
+                        "scene": "场景",
+                        "page_count": "页数",
+                        "style": "风格",
+                    }
+                    collected = []
+                    for field in updated_fields:
+                        if field in field_labels:
+                            collected.append(field_labels[field])
+                    
+                    update_note = f"收到，你补充了{ '、'.join(collected) }。" if collected else "收到，我根据你的意见调整一下。"
+                    
+                    response = (
+                        f"{update_note}\n\n"
+                        f"{outline_text}\n\n---\n\n"
+                        "这是更新后的大纲。你先确认整体结构没问题，我再进入下一步。"
+                    )
+                    self._add_message("assistant", response)
+                    return response, structured_result, self._current_stage
+                
+                else:
+                    response = (
+                        "这份 PPT 已经完成了。\n\n"
+                        "如果你想继续调整，可以：\n"
+                        "1. 告诉我想改哪部分（如「第3页调整一下」）\n"
+                        "2. 或者告诉我想修改的信息（如「改成20页」「风格改成销售展示」）\n"
+                        "3. 或者直接说「再生成一版」来创建新版本\n\n"
+                        f"当前已确认的信息：\n{self._format_requirements_summary()}"
+                    )
+                    self._add_message("assistant", response)
+                    return response, self._structured_result, self._current_stage
+            
+            elif modification_type == "confirm":
+                response = (
+                    "这份 PPT 已经完成了。\n\n"
+                    "如果你想：\n"
+                    "- 生成新版本：说「再生成一版」或点击「生成 PPT」\n"
+                    "- 调整内容：告诉我具体想改什么\n\n"
+                    f"当前已确认的信息：\n{self._format_requirements_summary()}"
+                )
+                self._add_message("assistant", response)
+                return response, self._structured_result, self._current_stage
+            
+            else:
+                parsed = self._parse_user_input(message)
+                updated_fields = self._update_requirements(parsed) if message else []
+                
+                if updated_fields:
+                    self._current_stage = ConversationStage.OUTLINE_DRAFT
+                    self._outline_draft, outline_text = self._generate_outline(revision_note="已吸收你刚补充的信息")
+                    structured_result = self._build_structured_result()
+                    
+                    response = (
+                        "收到，我根据你补充的信息更新一下大纲。\n\n"
+                        f"{outline_text}\n\n---\n\n"
+                        "你先确认整体结构没问题，我再进入下一步。"
+                    )
+                    self._add_message("assistant", response)
+                    return response, structured_result, self._current_stage
+                
+                else:
+                    response = (
+                        "这份 PPT 已经完成了。\n\n"
+                        "如果你想继续调整，可以告诉我：\n"
+                        "1. 想修改的具体内容（如「改成15页」「风格改成正式汇报」）\n"
+                        "2. 或者直接说「再生成一版」\n\n"
+                        f"当前已确认的信息：\n{self._format_requirements_summary()}"
+                    )
+                    self._add_message("assistant", response)
+                    return response, self._structured_result, self._current_stage
+
+        response = "这轮会话已经完成。如果你还想继续修改，我可以基于当前内容帮你继续调整。"
         self._add_message("assistant", response)
         return response, self._structured_result, self._current_stage
 
