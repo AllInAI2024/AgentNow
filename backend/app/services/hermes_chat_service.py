@@ -289,25 +289,28 @@ class HermesChatService:
 
         Returns:
             (assistant_content, current_stage, ppt_content)
+            
+        Raises:
+            Exception: 如果 Hermes API 调用失败
         """
-        try:
-            response = self.chat_completions(
-                messages=messages,
-                system_prompt=self.PPT_ASSISTANT_PROMPT,
-                session_id=session_id,
-            )
+        logger.info(f"Calling Hermes chat/completions with {len(messages)} messages, session_id: {session_id}")
+        logger.debug(f"Messages: {json.dumps(messages, ensure_ascii=False)}")
 
-            assistant_content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        response = self.chat_completions(
+            messages=messages,
+            system_prompt=self.PPT_ASSISTANT_PROMPT,
+            session_id=session_id,
+        )
 
-            stage = self._detect_stage_from_content(assistant_content)
-            ppt_content = self.parse_ppt_content(assistant_content)
+        assistant_content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        
+        logger.info(f"Hermes response received, content length: {len(assistant_content)}")
+        logger.debug(f"Response content: {assistant_content[:500]}...")
 
-            return assistant_content, stage, ppt_content
+        stage = self._detect_stage_from_content(assistant_content)
+        ppt_content = self.parse_ppt_content(assistant_content)
 
-        except Exception as e:
-            logger.error(f"Chat with PPT assistant failed: {e}")
-            error_msg = f"抱歉，处理您的请求时出现了问题：{str(e)}"
-            return error_msg, ConversationStage.CLARIFYING, None
+        return assistant_content, stage, ppt_content
 
     def generate_welcome_message(self) -> str:
         """
