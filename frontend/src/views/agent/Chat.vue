@@ -248,8 +248,8 @@
               <a-textarea
                 v-model:value="inputMessage"
                 placeholder="输入您的问题或需求..."
-                :rows="2"
-                :auto-size="{ minRows: 2, maxRows: 6 }"
+                :rows="4"
+                :auto-size="{ minRows: 4, maxRows: 8 }"
                 class="chat-input"
                 @keydown="handleKeyDown"
                 :disabled="!currentAgent || isTyping"
@@ -465,6 +465,8 @@ const scrollToBottom = () => {
 const sendMessageWithAction = async (msg: string, actionType: string = 'message') => {
   if (!currentAgent.value || isTyping.value) return
 
+  const originalMessage = inputMessage.value
+  
   if (msg && msg.trim()) {
     const userMessage: ChatMessage = {
       role: 'user',
@@ -518,6 +520,7 @@ const sendMessageWithAction = async (msg: string, actionType: string = 'message'
     if (msg && msg.trim()) {
       messages.value = messages.value.slice(0, -1)
     }
+    inputMessage.value = originalMessage
   } finally {
     isTyping.value = false
   }
