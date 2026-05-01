@@ -747,6 +747,7 @@ class AgentService:
         knowledge_context = None
         
         requirements_data = self._get_conversation_requirements_data(conversation)
+        effective_template_name = template_name or requirements_data.get("style") or "默认模板"
 
         if knowledge_categories is not None:
             knowledge_retrieval_service = KnowledgeRetrievalService(self.db)
@@ -758,49 +759,78 @@ class AgentService:
                 max_docs=3
             )
         
-        try:
-            ppt_content = self._create_demo_ppt(
-                conversation=conversation,
-                version=next_version,
-                template_name=template_name,
-                knowledge_context=knowledge_context
-            )
-            with open(file_path, "wb") as f:
-                f.write(ppt_content)
-            
-            file_size = os.path.getsize(file_path)
-        except Exception as e:
-            return None, f"生成PPT失败: {str(e)}"
-        
-        effective_template_name = template_name or requirements_data.get("style") or "默认模板"
-
-        generated_file = AgentGeneratedFile(
+        pending_file = AgentGeneratedFile(
             user_id=user_id,
             user_agent_id=agent_id,
             conversation_id=conversation_id,
             file_type="pptx",
             file_name=file_name,
             file_path=file_path,
-            file_size=file_size,
+            file_size=0,
             mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             template_name=effective_template_name,
             source_type="regenerated" if regenerate else "generated",
             version_no=next_version,
-            generation_status=1,
+            generation_status=0,
         )
         
-        self.db.add(generated_file)
+        self.db.add(pending_file)
         self.db.commit()
-        self.db.refresh(generated_file)
+        self.db.refresh(pending_file)
         
-        conversation.final_file_id = generated_file.id
+        try:
+            ppt_content = self._create_demo_ppt(
+                conversation=conversation,
+                version=next_version,
+                template_name=effective_template_name,
+                knowledge_context=knowledge_context
+            )
+            with open(file_path, "wb") as f:
+                f.write(ppt_content)
+            
+            file_size = os.path.getsize(file_path)
+            
+            pending_file.file_size = file_size
+            pending_file.generation_status = 1
+            pending_file.error_message = None
+            pending_file.updated_at = datetime.utcnow()
+            
+            self.db.commit()
+            self.db.refresh(pending_file)
+            
+        except Exception as e:
+            error_msg = str(e)
+            pending_file.generation_status = 2
+            pending_file.error_message = error_msg
+            pending_file.updated_at = datetime.utcnow()
+            self.db.commit()
+            self.db.refresh(pending_file)
+            
+            self._log_operation(
+                operator_user_id=user_id,
+                target_type="file",
+                target_id=pending_file.id,
+                action="ppt:generate",
+                action_name="生成PPT",
+                success=False,
+                details={
+                    "conversation_id": conversation_id,
+                    "template_name": effective_template_name,
+                    "version_no": next_version,
+                },
+                error_message=error_msg,
+            )
+            
+            return None, f"生成PPT失败: {error_msg}"
+        
+        conversation.final_file_id = pending_file.id
         conversation.current_stage = "completed"
         conversation.status = 2
         conversation.completed_at = datetime.utcnow()
         conversation.final_generation_confirmed = True
         conversation.messages_json = (conversation.messages_json or []) + [{
             "role": "assistant",
-            "content": f"正式 PPT 已生成完成，文件名：{generated_file.file_name}",
+            "content": f"正式 PPT 已生成完成，文件名：{pending_file.file_name}",
         }]
         conversation.message_count = len(conversation.messages_json)
         
@@ -809,7 +839,7 @@ class AgentService:
         self._log_operation(
             operator_user_id=user_id,
             target_type="file",
-            target_id=generated_file.id,
+            target_id=pending_file.id,
             action="ppt:generate",
             action_name="生成PPT",
             success=True,
@@ -820,7 +850,7 @@ class AgentService:
             },
         )
         
-        return generated_file, "PPT生成成功"
+        return pending_file, "PPT生成成功"
     
     def _create_demo_ppt(
         self, 

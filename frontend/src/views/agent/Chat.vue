@@ -170,35 +170,70 @@
             <div class="files-header">
               <FileTextOutlined class="files-icon" />
               <span class="files-title">生成的文件</span>
+              <span class="files-count">{{ generatedFiles.length }} 个版本</span>
             </div>
             <div class="files-list">
               <div 
-                v-for="file in generatedFiles" 
+                v-for="file in sortedGeneratedFiles" 
                 :key="file.id"
                 class="file-item"
+                :class="{ 'file-item-failed': file.generation_status === 2 }"
               >
                 <div class="file-info">
-                  <FileTextOutlined class="file-type-icon" />
+                  <FileTextOutlined 
+                    class="file-type-icon" 
+                    :class="{ 'file-type-icon-failed': file.generation_status === 2 }"
+                  />
                   <div class="file-details">
-                    <div class="file-name">{{ file.file_name }}</div>
+                    <div class="file-name">
+                      {{ file.file_name }}
+                      <span v-if="file.template_name" class="file-template">
+                        ({{ file.template_name }})
+                      </span>
+                    </div>
                     <div class="file-meta">
                       <span class="file-size">{{ formatFileSize(file.file_size) }}</span>
                       <span class="file-status" :class="getGenerationStatusClass(file.generation_status)">
                         {{ getGenerationStatusLabel(file.generation_status) }}
                       </span>
                       <span class="file-version">v{{ file.version_no }}</span>
+                      <span v-if="file.created_at" class="file-time">
+                        {{ formatFileTime(file.created_at) }}
+                      </span>
+                    </div>
+                    <div v-if="file.generation_status === 2 && file.error_message" class="file-error">
+                      <a-alert
+                        message="失败原因"
+                        :description="file.error_message"
+                        type="error"
+                        show-icon
+                        :closable="false"
+                        class="error-alert"
+                      />
                     </div>
                   </div>
                 </div>
-                <a-button 
-                  type="primary"
-                  size="small"
-                  class="download-btn"
-                  :disabled="file.generation_status !== 1"
-                  @click="handleDownloadFile(file)"
-                >
-                  <DownloadOutlined /> 下载
-                </a-button>
+                <div class="file-actions">
+                  <a-button 
+                    type="primary"
+                    size="small"
+                    class="download-btn"
+                    :disabled="file.generation_status !== 1"
+                    @click="handleDownloadFile(file)"
+                  >
+                    <DownloadOutlined /> 下载
+                  </a-button>
+                  <a-button 
+                    v-if="file.generation_status === 2"
+                    type="primary"
+                    size="small"
+                    class="retry-btn"
+                    danger
+                    @click="handleRetryGenerate(file)"
+                  >
+                    <SyncOutlined /> 重试
+                  </a-button>
+                </div>
               </div>
             </div>
           </div>
@@ -295,6 +330,7 @@ import {
   CheckOutlined,
   EditOutlined,
   DownloadOutlined,
+  SyncOutlined,
 } from '@ant-design/icons-vue'
 import { agentApi } from '@/api/agent'
 import type { 
@@ -575,6 +611,52 @@ const handleGeneratePPT = async () => {
   } catch (error) {
     console.error('生成 PPT 失败:', error)
     message.error('生成 PPT 失败，请稍后重试')
+  } finally {
+    isTyping.value = false
+  }
+}
+
+const sortedGeneratedFiles = computed(() => {
+  return [...generatedFiles.value].sort((a, b) => {
+    if (b.version_no !== a.version_no) {
+      return b.version_no - a.version_no
+    }
+    if (b.created_at && a.created_at) {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    }
+    return b.id - a.id
+  })
+})
+
+const formatFileTime = (timeStr: string): string => {
+  if (!timeStr) return ''
+  const date = new Date(timeStr)
+  const month = (date.getMonth() + 1).toString().padStart(2, '0')
+  const day = date.getDate().toString().padStart(2, '0')
+  const hour = date.getHours().toString().padStart(2, '0')
+  const minute = date.getMinutes().toString().padStart(2, '0')
+  return `${month}-${day} ${hour}:${minute}`
+}
+
+const handleRetryGenerate = async (_file: AgentGeneratedFile) => {
+  if (!currentConversationId.value) {
+    message.warning('请先完成当前对话')
+    return
+  }
+
+  if (isTyping.value) return
+
+  isTyping.value = true
+  try {
+    const response = await agentApi.generatePPT(agentId.value, currentConversationId.value, undefined, true)
+    if (response.code === 200) {
+      message.success('重试成功')
+      await loadConversationDetail(currentConversationId.value)
+      await loadConversations()
+    }
+  } catch (error) {
+    console.error('重试生成 PPT 失败:', error)
+    message.error('重试失败，请稍后重试')
   } finally {
     isTyping.value = false
   }
@@ -1288,6 +1370,12 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
+.files-count {
+  font-size: 12px;
+  color: #86909c;
+  margin-left: 4px;
+}
+
 .files-icon {
   font-size: 18px;
   color: #ff7d00;
@@ -1315,6 +1403,11 @@ onMounted(() => {
   border-radius: 12px;
 }
 
+.file-item-failed {
+  background: #fff5f5;
+  border-color: #ffcccc;
+}
+
 .file-info {
   display: flex;
   align-items: center;
@@ -1327,6 +1420,10 @@ onMounted(() => {
   font-size: 24px;
   color: #165dff;
   flex-shrink: 0;
+}
+
+.file-type-icon-failed {
+  color: #f53f3f;
 }
 
 .file-details {
@@ -1345,6 +1442,12 @@ onMounted(() => {
   text-overflow: ellipsis;
 }
 
+.file-template {
+  font-size: 12px;
+  color: #86909c;
+  margin-left: 4px;
+}
+
 .file-meta {
   display: flex;
   align-items: center;
@@ -1360,6 +1463,10 @@ onMounted(() => {
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 11px;
+}
+
+.file-time {
+  color: #c9cdd4;
 }
 
 .status-generating {
@@ -1381,8 +1488,30 @@ onMounted(() => {
   color: #86909c;
 }
 
+.file-error {
+  margin-top: 8px;
+}
+
+.error-alert {
+  border-radius: 8px;
+}
+
+.file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .download-btn {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.retry-btn {
   display: flex;
   align-items: center;
   gap: 4px;
