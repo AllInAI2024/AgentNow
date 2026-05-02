@@ -61,6 +61,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '文档列表', requiresAuth: true },
   },
   {
+    path: '/knowledge/setting',
+    name: 'KnowledgeSetting',
+    component: () => import('@/views/KnowledgeSetting.vue'),
+    meta: { title: '知识库配置', requiresAuth: true },
+  },
+  {
     path: '/agents',
     name: 'MyAgents',
     component: () => import('@/views/agent/MyAgents.vue'),
