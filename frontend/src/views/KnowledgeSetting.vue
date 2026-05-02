@@ -29,18 +29,24 @@
                       style="width: 400px"
                       @pressEnter="handleSaveConfig('storage.base_path')"
                     />
-                    <a-button type="primary" style="margin-left: 8px" @click="handleSaveConfig('storage.base_path')">
-                      保存
-                    </a-button>
-                    <a-button style="margin-left: 8px" @click="handleCancelEdit">
-                      取消
-                    </a-button>
+                    <div style="margin-top: 12px">
+                      <a-button type="primary" @click="handleSaveConfig('storage.base_path')">
+                        保存
+                      </a-button>
+                      <a-button style="margin-left: 8px" @click="handleCancelEdit">
+                        取消
+                      </a-button>
+                    </div>
                   </template>
                   <template v-else>
-                    <code class="config-value">{{ getConfigValue('storage.base_path') }}</code>
-                    <a-button type="link" size="small" @click="handleStartEdit('storage.base_path')">
-                      <EditOutlined /> 编辑
-                    </a-button>
+                    <div class="path-value-row">
+                      <code class="config-value">{{ getConfigValue('storage.base_path') }}</code>
+                    </div>
+                    <div style="margin-top: 8px">
+                      <a-button type="link" size="small" @click="handleStartEdit('storage.base_path')">
+                        <EditOutlined /> 编辑
+                      </a-button>
+                    </div>
                   </template>
                 </a-descriptions-item>
               </a-descriptions>
@@ -206,13 +212,6 @@
                   <span class="status-text">
                     {{ mcpEnabled ? '已启用' : '已禁用' }}
                   </span>
-                  <a-tooltip title="MCP 服务为预留功能，暂不支持手动切换">
-                    <a-switch
-                      v-model:checked="mcpEnabled"
-                      disabled
-                      style="margin-left: 16px"
-                    />
-                  </a-tooltip>
                   <a-tag color="orange" style="margin-left: 12px">预留功能</a-tag>
                 </a-descriptions-item>
               </a-descriptions>
@@ -650,7 +649,11 @@ onMounted(() => {
   word-wrap: break-word;
   white-space: pre-wrap;
   max-width: 100%;
-  display: inline-block;
+  display: block;
+}
+
+.path-value-row {
+  margin-bottom: 4px;
 }
 
 .text-muted {
