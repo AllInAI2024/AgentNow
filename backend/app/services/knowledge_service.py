@@ -15,17 +15,32 @@ from app.schemas import (
 )
 from app.utils import FileHandler
 from app.config import settings
+from app.services.knowledge_config_service import KnowledgeConfigService
 
 
 class KnowledgeService:
     def __init__(self, db: Session):
         self.db = db
+        self._config_service: Optional[KnowledgeConfigService] = None
         self._file_handler: Optional[FileHandler] = None
+        self._init_config_service()
         self._init_file_handler()
 
+    def _init_config_service(self) -> None:
+        self._config_service = KnowledgeConfigService(self.db)
+
     def _init_file_handler(self) -> None:
-        base_path = settings.KNOWLEDGE_BASE_PATH
+        if self._config_service:
+            base_path = self._config_service.get_storage_base_path()
+        else:
+            base_path = settings.KNOWLEDGE_BASE_PATH
         self._file_handler = FileHandler(base_path)
+
+    @property
+    def config_service(self) -> KnowledgeConfigService:
+        if self._config_service is None:
+            self._init_config_service()
+        return self._config_service
 
     @property
     def file_handler(self) -> FileHandler:
@@ -118,14 +133,20 @@ class KnowledgeService:
         return response, "获取成功"
 
     def _is_file_type_allowed(self, filename: str) -> bool:
-        allowed_types = settings.KNOWLEDGE_ALLOWED_TYPES.split(',')
-        allowed_types = [t.strip().lower() for t in allowed_types if t.strip()]
+        if self._config_service:
+            allowed_types = self._config_service.get_allowed_types_list()
+        else:
+            allowed_types = [t.strip().lower() for t in settings.KNOWLEDGE_ALLOWED_TYPES.split(',') if t.strip()]
         
         ext = os.path.splitext(filename)[1].lower()
         return ext in allowed_types if allowed_types else True
 
     def _is_file_size_allowed(self, file_size: int) -> bool:
-        return file_size <= settings.KNOWLEDGE_MAX_FILE_SIZE
+        if self._config_service:
+            max_size = self._config_service.get_max_file_size()
+        else:
+            max_size = settings.KNOWLEDGE_MAX_FILE_SIZE
+        return file_size <= max_size
 
     def create_document(
         self,
@@ -138,11 +159,18 @@ class KnowledgeService:
             return None, "文件处理器未初始化"
         
         if not self._is_file_type_allowed(original_filename):
-            allowed = settings.KNOWLEDGE_ALLOWED_TYPES
+            if self._config_service:
+                allowed = self._config_service.get_allowed_types()
+            else:
+                allowed = settings.KNOWLEDGE_ALLOWED_TYPES
             return None, f"不允许的文件类型。允许的类型：{allowed}"
         
         if not self._is_file_size_allowed(len(file_content)):
-            max_mb = settings.KNOWLEDGE_MAX_FILE_SIZE / 1024 / 1024
+            if self._config_service:
+                max_size = self._config_service.get_max_file_size()
+            else:
+                max_size = settings.KNOWLEDGE_MAX_FILE_SIZE
+            max_mb = max_size / 1024 / 1024
             return None, f"文件太大。最大允许：{max_mb} MB"
         
         existing = self.db.query(KnowledgeDoc).filter(
@@ -381,7 +409,27 @@ class KnowledgeService:
     def get_storage_info(self) -> Optional[Dict[str, Any]]:
         if not self._file_handler:
             return None
-        return self._file_handler.get_storage_stats()
+        
+        fs_stats = self._file_handler.get_storage_stats()
+        
+        total_docs = self.db.query(KnowledgeDoc).filter(
+            KnowledgeDoc.deleted_at.is_(None)
+        ).count()
+        
+        total_size = 0
+        docs = self.db.query(KnowledgeDoc).filter(
+            KnowledgeDoc.deleted_at.is_(None)
+        ).all()
+        for doc in docs:
+            if doc.file_size:
+                total_size += doc.file_size
+        
+        return {
+            "base_path": fs_stats.get("base_path", ""),
+            "total_files": total_docs,
+            "total_size": total_size,
+            "free_space": fs_stats.get("free_space", 0)
+        }
 
     def can_edit(self, doc: KnowledgeDoc, user: User) -> bool:
         if user.is_super_admin:

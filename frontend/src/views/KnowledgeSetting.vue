@@ -206,12 +206,14 @@
                   <span class="status-text">
                     {{ mcpEnabled ? '已启用' : '已禁用' }}
                   </span>
-                  <a-switch
-                    v-model:checked="mcpEnabled"
-                    :loading="savingMcp"
-                    style="margin-left: 16px"
-                    @change="handleToggleMcp"
-                  />
+                  <a-tooltip title="MCP 服务为预留功能，暂不支持手动切换">
+                    <a-switch
+                      v-model:checked="mcpEnabled"
+                      disabled
+                      style="margin-left: 16px"
+                    />
+                  </a-tooltip>
+                  <a-tag color="orange" style="margin-left: 12px">预留功能</a-tag>
                 </a-descriptions-item>
               </a-descriptions>
 
@@ -228,6 +230,7 @@
                     <li>提供标准化的知识库访问接口</li>
                     <li>支持跨系统的知识共享</li>
                   </ul>
+                  <p class="note-text"><strong>注意：</strong>此功能为预留功能，目前 MCP 服务状态由系统默认配置决定，暂不支持手动切换。</p>
                 </template>
               </a-alert>
             </a-card>
@@ -283,11 +286,6 @@
 
           <a-tab-pane key="category" tab="分类管理">
             <a-card title="文档分类" class="setting-card">
-              <template #extra>
-                <a-button type="primary" @click="handleAddCategory" :disabled="!canEditCategory">
-                  <PlusOutlined /> 添加分类
-                </a-button>
-              </template>
 
               <a-table
                 :columns="categoryColumns"
@@ -322,28 +320,19 @@
               <a-empty v-if="categoryList.length === 0 && !loadingCategories" description="暂无分类" />
             </a-card>
 
-            <a-modal
-              v-model:open="categoryModalVisible"
-              title="添加分类"
-              @ok="handleCategorySubmit"
-              @cancel="handleCategoryCancel"
-              :confirmLoading="submittingCategory"
-            >
-              <a-form
-                :model="categoryForm"
-                :rules="categoryRules"
-                ref="categoryFormRef"
-                layout="vertical"
-              >
-                <a-form-item label="分类名称" name="name">
-                  <a-input
-                    v-model:value="categoryForm.name"
-                    placeholder="请输入分类名称"
-                    :disabled="submittingCategory"
-                  />
-                </a-form-item>
-              </a-form>
-            </a-modal>
+            <a-alert type="info" show-icon>
+              <template #message>
+                <span>分类管理说明</span>
+              </template>
+              <template #description>
+                <p>文档分类是从已有文档中自动提取的：</p>
+                <ul class="info-list">
+                  <li>上传文档时指定分类名称即可创建新分类</li>
+                  <li>删除所有该分类的文档后，分类会自动消失</li>
+                  <li>无需手动管理分类列表</li>
+                </ul>
+              </template>
+            </a-alert>
           </a-tab-pane>
         </a-tabs>
 
@@ -367,12 +356,11 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import type { FormInstance, TableColumnsType } from 'ant-design-vue'
+import type { TableColumnsType } from 'ant-design-vue'
 import {
   SettingOutlined,
   ReloadOutlined,
   EditOutlined,
-  PlusOutlined,
   DeleteOutlined,
   FolderOutlined,
   SafetyOutlined,
@@ -386,15 +374,12 @@ const userStore = useUserStore()
 
 const activeTab = ref('storage')
 const loading = ref(false)
-const savingMcp = ref(false)
 const loadingStorage = ref(false)
 const loadingStats = ref(false)
 const loadingCategories = ref(false)
 const editingKey = ref('')
 const editValue = ref('')
 const editSizeValue = ref(0)
-const submittingCategory = ref(false)
-const categoryModalVisible = ref(false)
 
 const configList = ref<KnowledgeConfig[]>([])
 
@@ -419,15 +404,6 @@ interface CategoryItem {
 }
 
 const categoryList = ref<CategoryItem[]>([])
-
-const categoryFormRef = ref<FormInstance>()
-const categoryForm = reactive({
-  name: '',
-})
-
-const categoryRules = {
-  name: [{ required: true, message: '请输入分类名称', trigger: 'blur' }],
-}
 
 const canEditCategory = computed(() => userStore.hasPermission('knowledge:config:edit'))
 
@@ -591,61 +567,11 @@ const handleSaveSizeConfig = async () => {
   }
 }
 
-const handleToggleMcp = async (checked: boolean) => {
-  const config = configList.value.find(c => c.config_key === 'mcp.enabled')
-  if (!config) return
-
-  savingMcp.value = true
-  const strValue = checked ? 'true' : 'false'
-
-  try {
-    const res = await knowledgeApi.updateConfig(config.id, strValue)
-    if (res.code === 200) {
-      message.success(`MCP 服务已${checked ? '启用' : '禁用'}`)
-      config.config_value = strValue
-    }
-  } catch (error) {
-    console.error('Failed to update MCP config:', error)
-    message.error('操作失败')
-    mcpEnabled.value = !checked
-  } finally {
-    savingMcp.value = false
-  }
-}
-
 const handleRefresh = () => {
   loadConfigs()
   loadStorageInfo()
   loadStatistics()
   loadCategories()
-}
-
-const handleAddCategory = () => {
-  categoryForm.name = ''
-  categoryModalVisible.value = true
-}
-
-const handleCategoryCancel = () => {
-  categoryModalVisible.value = false
-  categoryFormRef.value?.resetFields()
-}
-
-const handleCategorySubmit = async () => {
-  try {
-    await categoryFormRef.value?.validate()
-  } catch {
-    return
-  }
-
-  submittingCategory.value = true
-  try {
-    message.info('分类管理功能：目前分类是从已有文档中自动提取的，上传文档时指定分类即可创建新分类')
-    categoryModalVisible.value = false
-  } catch (error) {
-    console.error('Failed to add category:', error)
-  } finally {
-    submittingCategory.value = false
-  }
 }
 
 const handleDeleteCategory = async (_name: string) => {
@@ -720,6 +646,11 @@ onMounted(() => {
 .config-value {
   font-weight: 500;
   color: #1d2129;
+  word-break: break-all;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  max-width: 100%;
+  display: inline-block;
 }
 
 .text-muted {
@@ -739,10 +670,20 @@ onMounted(() => {
   margin: 4px 0;
 }
 
+.note-text {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #d9d9d9;
+}
+
 .path-text {
   font-size: 12px;
   color: #86909c;
   word-break: break-all;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  max-width: 100%;
+  display: inline-block;
 }
 
 .file-types {
