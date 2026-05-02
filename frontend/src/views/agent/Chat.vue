@@ -249,7 +249,8 @@
                 size="large"
                 class="action-btn confirm-btn"
                 v-if="canConfirmOutline"
-                @click="handleConfirmOutline"
+                html-type="button"
+                @click.prevent.stop="handleConfirmOutline"
               >
                 <CheckOutlined /> 确认大纲
               </a-button>
@@ -257,7 +258,8 @@
                 size="large"
                 class="action-btn revise-btn"
                 v-if="canReviseOutline"
-                @click="handleReviseOutline"
+                html-type="button"
+                @click.prevent.stop="handleReviseOutline"
               >
                 <EditOutlined /> 调整大纲
               </a-button>
@@ -266,7 +268,8 @@
                 size="large"
                 class="action-btn confirm-btn"
                 v-if="canConfirmTemplate"
-                @click="handleConfirmTemplate"
+                html-type="button"
+                @click.prevent.stop="handleConfirmTemplate"
               >
                 <CheckOutlined /> 确认模板
               </a-button>
@@ -275,7 +278,8 @@
                 size="large"
                 class="action-btn generate-btn"
                 v-if="canGeneratePPT"
-                @click="handleGeneratePPT"
+                html-type="button"
+                @click.prevent.stop="handleGeneratePPT"
               >
                 <FileTextOutlined /> 生成 PPT
               </a-button>
@@ -297,9 +301,10 @@
                 <a-button
                   type="primary"
                   shape="circle"
+                html-type="button"
                   :disabled="!inputMessage.trim() || isTyping || !currentAgent"
                   :loading="isTyping"
-                  @click="handleSendMessage"
+                @click.prevent.stop="handleSendMessage"
                 >
                   <SendOutlined />
                 </a-button>
@@ -343,6 +348,7 @@ import type {
   AgentConversation, 
   ChatMessage,
   AgentGeneratedFile,
+  StructuredResult,
 } from '@/types'
 import { useUserStore } from '@/stores/user'
 import MainLayout from '@/components/MainLayout.vue'
@@ -358,6 +364,7 @@ const currentConversation = ref<AgentConversation | null>(null)
 const conversations = ref<AgentConversation[]>([])
 const messages = ref<ChatMessage[]>([])
 const generatedFiles = ref<AgentGeneratedFile[]>([])
+const structuredResult = ref<StructuredResult | null>(null)
 const inputMessage = ref('')
 const loadingConversations = ref(false)
 const loadingMessages = ref(false)
@@ -386,9 +393,7 @@ const quickActions = computed(() => [
 ])
 
 const showActionButtons = computed(() => {
-  if (!currentConversation.value) return false
-  const stage = currentConversation.value.current_stage
-  return ['outline_draft', 'outline_confirmed', 'template_select', 'final_generating'].includes(stage)
+  return !!currentConversationId.value
 })
 
 const canConfirmOutline = computed(() => {
@@ -404,7 +409,7 @@ const canConfirmTemplate = computed(() => {
 })
 
 const canGeneratePPT = computed(() => {
-  return currentConversation.value?.current_stage === 'final_generating'
+  return !!currentConversationId.value
 })
 
 const getQuickActionIcon = (icon: string) => {
@@ -425,6 +430,7 @@ const getStageLabel = (stage: string | null | undefined): string => {
     'outline_confirmed': '大纲已确认',
     'template_select': '选择模板',
     'final_generating': '生成中',
+    'content_ready': '内容已就绪',
     'completed': '已完成',
     'chatting': '对话中',
   }
@@ -481,6 +487,7 @@ const loadConversationDetail = async (conversationId: number) => {
       currentConversation.value = response.data.conversation
       messages.value = response.data.messages || []
       generatedFiles.value = (response.data.files || []) as AgentGeneratedFile[]
+      structuredResult.value = response.data.structured_result || null
       await nextTick()
       scrollToBottom()
     }
@@ -500,6 +507,7 @@ const handleNewChat = () => {
   currentConversationId.value = null
   currentConversation.value = null
   messages.value = []
+  structuredResult.value = null
   inputMessage.value = ''
 }
 
@@ -594,6 +602,7 @@ const sendMessageWithAction = async (
 }
 
 const handleSendMessage = async () => {
+  if (!currentAgent.value || isTyping.value) return
   const msg = inputMessage.value.trim()
   if (!msg) return
   inputMessage.value = ''
@@ -630,7 +639,9 @@ const handleGeneratePPT = async () => {
     }
   } catch (error) {
     console.error('生成 PPT 失败:', error)
-    message.error('生成 PPT 失败，请稍后重试')
+    const err = error as any
+    const detail = err?.response?.data?.detail || err?.response?.data?.message
+    message.error(detail || '生成 PPT 失败，请稍后重试')
   } finally {
     isTyping.value = false
   }
@@ -676,7 +687,9 @@ const handleRetryGenerate = async (_file: AgentGeneratedFile) => {
     }
   } catch (error) {
     console.error('重试生成 PPT 失败:', error)
-    message.error('重试失败，请稍后重试')
+    const err = error as any
+    const detail = err?.response?.data?.detail || err?.response?.data?.message
+    message.error(detail || '重试失败，请稍后重试')
   } finally {
     isTyping.value = false
   }

@@ -1,8 +1,8 @@
 import os
-import re
 import subprocess
 import platform
 import logging
+import shutil
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
@@ -25,16 +25,24 @@ class HermesProfileService:
         logger.info(f"Hermes profiles home: {self._hermes_profiles_home}")
     
     def _get_hermes_home(self) -> Path:
+        base_override = os.environ.get("HERMES_BASE_HOME")
+        if base_override and base_override.strip():
+            return Path(base_override.strip()).expanduser()
+
         hermes_home = os.environ.get("HERMES_HOME")
-        if hermes_home:
-            return Path(hermes_home)
+        if hermes_home and hermes_home.strip():
+            p = Path(hermes_home.strip()).expanduser()
+            if p.parent.name == "profiles":
+                return p.parent.parent
+            return p
+
         return Path.home() / ".hermes"
     
     def _get_hermes_profiles_home(self) -> Path:
         profiles_home = os.environ.get("HERMES_PROFILES_HOME")
-        if profiles_home:
-            return Path(profiles_home)
-        return Path.home() / ".hermes-profiles"
+        if profiles_home and profiles_home.strip():
+            return Path(profiles_home.strip()).expanduser()
+        return self._hermes_home / "profiles"
     
     def _find_hermes_path(self) -> None:
         possible_paths = [
@@ -192,11 +200,56 @@ class HermesProfileService:
         
         if returncode == 0:
             logger.info(f"Profile '{profile_name}' created successfully")
-            return True, "Profile 创建成功"
+            ok, bootstrap_message = self._bootstrap_profile_from_base(profile_name)
+            if ok:
+                return True, "Profile 创建成功"
+            return True, f"Profile 创建成功，但初始化配置失败：{bootstrap_message}"
         else:
             error_msg = stderr or stdout or "未知错误"
             logger.error(f"Failed to create profile '{profile_name}': {error_msg}")
             return False, f"Profile 创建失败: {error_msg}"
+
+    def _bootstrap_profile_from_base(self, profile_name: str) -> Tuple[bool, str]:
+        profile_dir = self._hermes_profiles_home / profile_name
+        if not profile_dir.exists():
+            profile_dir.mkdir(parents=True, exist_ok=True)
+
+        base_config = self._hermes_home / "config.yaml"
+        base_env = self._hermes_home / ".env"
+
+        profile_config = profile_dir / "config.yaml"
+        profile_env = profile_dir / ".env"
+
+        copied = []
+        missing = []
+
+        if not profile_config.exists():
+            if base_config.exists():
+                shutil.copyfile(base_config, profile_config)
+                copied.append("config.yaml")
+            else:
+                missing.append("~/.hermes/config.yaml")
+
+        if not profile_env.exists():
+            if base_env.exists():
+                shutil.copyfile(base_env, profile_env)
+                copied.append(".env")
+            else:
+                missing.append("~/.hermes/.env")
+
+        if missing and not copied:
+            return False, "全局配置缺失：" + "、".join(missing)
+
+        if missing and copied:
+            return True, "部分初始化完成，仍缺少：" + "、".join(missing)
+
+        return True, "初始化完成"
+
+    def ensure_profile_bootstrapped(self, profile_name: str) -> Tuple[bool, str]:
+        profile_dir = self._hermes_profiles_home / profile_name
+        if not profile_dir.exists():
+            return False, "Profile 目录不存在"
+        return self._bootstrap_profile_from_base(profile_name)
     
     def ensure_profile(self, user_id: int, tenant_id: int = 1) -> Tuple[str, bool, str]:
         profile_name = self.generate_profile_name(user_id, tenant_id)
@@ -208,6 +261,10 @@ class HermesProfileService:
             if not success:
                 return profile_name, False, message
             return profile_name, True, "Profile 创建成功"
+
+        ok, bootstrap_message = self._bootstrap_profile_from_base(profile_name)
+        if not ok:
+            return profile_name, False, f"Profile 已存在，但初始化配置失败：{bootstrap_message}"
         
         return profile_name, False, "Profile 已存在"
     

@@ -111,6 +111,28 @@ YYYY-MM-DDTHH:mm:ss
 2. 先降低前后端联调复杂度
 3. 后续如果要补流式输出，再增量扩展
 
+### 3.7 术语与命名口径
+
+为避免接口联调时对概念理解不一致，建议统一按 `md/AGENT_GLOSSARY.md` 的术语对照执行。
+
+接口字段口径建议如下：
+
+1. `template_id`
+   - 指 `agent_templates.id`，即岗位智能体模板
+
+2. `agent_id`（员工侧路由中的 `{agent_id}`）
+   - 指 `user_agents.id`，即员工已开通的智能体实例
+
+3. `conversation_id`
+   - 指 `agent_conversations.id`，即一次业务会话
+
+4. `file_id`
+   - 指 `agent_generated_files.id`，即一次生成的交付文件
+
+5. `action_type`
+   - 用于区分“普通聊天消息”与“业务动作（确认/生成/重试等）”
+   - 业务动作不应被前端当作普通用户消息写进聊天气泡
+
 ---
 
 ## 四、权限约定
