@@ -6,6 +6,7 @@ from sqlalchemy import or_
 from app.models import KnowledgeDoc
 from app.utils import FileHandler
 from app.config import settings
+from app.services.knowledge_config_service import KnowledgeConfigService
 
 
 class KnowledgeRetrievalService:
@@ -16,11 +17,19 @@ class KnowledgeRetrievalService:
     
     def __init__(self, db: Session):
         self.db = db
+        self._config_service: Optional[KnowledgeConfigService] = None
         self._file_handler: Optional[FileHandler] = None
+        self._init_config_service()
         self._init_file_handler()
     
+    def _init_config_service(self) -> None:
+        self._config_service = KnowledgeConfigService(self.db)
+    
     def _init_file_handler(self) -> None:
-        base_path = settings.KNOWLEDGE_BASE_PATH
+        if self._config_service:
+            base_path = self._config_service.get_storage_base_path()
+        else:
+            base_path = settings.KNOWLEDGE_BASE_PATH
         self._file_handler = FileHandler(base_path)
     
     @property
