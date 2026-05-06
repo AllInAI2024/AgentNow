@@ -33,6 +33,15 @@ class PPTContent:
     slides: List[Dict[str, Any]] = None
 
 
+@dataclass
+class PPTPlannerResult:
+    stage: str
+    requirements: Dict[str, Any]
+    questions: List[str]
+    ppt_content: Optional[Dict[str, Any]] = None
+    hermes_session_id: Optional[str] = None
+
+
 class HermesChatService:
     """
     Hermes 对话服务 - 通过 Hermes CLI 调用 Hermes 进行对话
@@ -173,6 +182,33 @@ class HermesChatService:
 
         return None
 
+    def _extract_any_json_from_content(self, content: str) -> Optional[Dict[str, Any]]:
+        content = (content or "").strip()
+        if not content:
+            return None
+
+        json_match = re.search(r"```json\s*([\s\S]*?)\s*```", content)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        if content.startswith("{") and content.endswith("}"):
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                pass
+
+        m = re.search(r"(\{[\s\S]*\})", content)
+        if m:
+            try:
+                return json.loads(m.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        return None
+
     def _detect_stage_from_content(self, content: str) -> ConversationStage:
         """
         根据对话内容推断当前阶段
@@ -246,6 +282,83 @@ class HermesChatService:
         ppt_content = self.parse_ppt_content(assistant_content)
 
         return assistant_content, stage, ppt_content, new_session_id or hermes_session_id
+
+    def plan_ppt_flow(
+        self,
+        *,
+        user_message: str,
+        existing_requirements: Optional[Dict[str, Any]],
+        current_stage: Optional[str],
+        profile_name: Optional[str],
+        hermes_session_id: Optional[str] = None,
+    ) -> PPTPlannerResult:
+        """
+        使用 Hermes 的模型能力做“流程规划/需求抽取”，而不是让平台写规则或正则。
+
+        Returns:
+            PPTPlannerResult(stage, requirements, questions, ppt_content)
+        """
+        base_requirements = existing_requirements if isinstance(existing_requirements, dict) else {}
+        stage = (current_stage or "").strip() or "collecting_requirements"
+
+        planner_prompt = (
+            "你是企业 PPT 生成流程的“规划器”，只负责：\n"
+            "1) 从用户自然语言中抽取 PPT 需求（无需用户按格式回答）\n"
+            "2) 判断当前处于哪个阶段，并给出下一步需要问的最少问题\n"
+            "3) 当信息足够时，产出每页内容草稿（结构化 ppt_content JSON）供用户确认\n\n"
+            "阶段只有四种：\n"
+            "- collecting_requirements：确认 PPT 内容/主题 + 页数\n"
+            "- template_select：确认模板（template_path 或 style 二选一）\n"
+            "- content_draft：生成每页内容草稿（ppt_content），让用户确认/修改\n"
+            "- ready_generate：用户已确认草稿，可以生成 PPT 文件\n\n"
+            "输入：\n"
+            f"- current_stage: {stage}\n"
+            f"- existing_requirements(json): {json.dumps(base_requirements, ensure_ascii=False)}\n"
+            f"- user_message: {user_message}\n\n"
+            "输出要求：\n"
+            "1) 只输出一个 JSON 对象，不要任何解释、不要 markdown、不要代码块。\n"
+            "2) JSON schema：\n"
+            "{\n"
+            '  "stage": "collecting_requirements|template_select|content_draft|ready_generate",\n'
+            '  "requirements": {\n'
+            '    "topic": string|null,\n'
+            '    "page_count": number|null,\n'
+            '    "audience": string|null,\n'
+            '    "scene": string|null,\n'
+            '    "style": string|null,\n'
+            '    "template_path": string|null\n'
+            "  },\n"
+            '  "questions": [string],\n'
+            '  "ppt_content": null | {\n'
+            '     "type":"ppt_content","title":string,"subtitle":string|null,"scene":string|null,"audience":string|null,"style":string|null,\n'
+            '     "slides":[{"index":number,"title":string,"bullets":[string], "layout":"title_and_content"}]\n'
+            "  }\n"
+            "}\n"
+            "3) questions 必须尽量少，且每条都是一句可直接问用户的话。\n"
+            "4) 当 stage=content_draft 时，必须输出 ppt_content，slides 数量尽量等于 page_count（允许少 1 页用于封面/目录）。\n"
+        )
+
+        assistant_content, new_sid = self._run_hermes_chat(
+            query=user_message,
+            system_prompt=planner_prompt,
+            resume_session_id=hermes_session_id,
+            profile_name=profile_name,
+        )
+
+        data = self._extract_any_json_from_content(assistant_content) or {}
+        result_stage = str(data.get("stage") or "collecting_requirements")
+        requirements = data.get("requirements") if isinstance(data.get("requirements"), dict) else {}
+        questions = data.get("questions") if isinstance(data.get("questions"), list) else []
+        questions = [str(q).strip() for q in questions if str(q).strip()]
+        ppt_content = data.get("ppt_content") if isinstance(data.get("ppt_content"), dict) else None
+
+        return PPTPlannerResult(
+            stage=result_stage,
+            requirements=requirements,
+            questions=questions,
+            ppt_content=ppt_content,
+            hermes_session_id=new_sid or hermes_session_id,
+        )
 
     def generate_welcome_message(self) -> str:
         """

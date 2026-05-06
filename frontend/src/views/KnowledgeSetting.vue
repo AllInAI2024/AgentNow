@@ -20,36 +20,35 @@
         <a-tabs v-model:activeKey="activeTab" class="setting-tabs">
           <a-tab-pane key="storage" tab="存储配置">
             <a-card title="存储配置" class="setting-card">
-              <a-descriptions :column="1" bordered>
-                <a-descriptions-item label="存储路径">
-                  <template v-if="editingKey === 'storage.base_path'">
-                    <a-input
-                      v-model:value="editValue"
-                      placeholder="请输入存储路径"
-                      style="width: 400px"
-                      @pressEnter="handleSaveConfig('storage.base_path')"
-                    />
-                    <div style="margin-top: 12px">
-                      <a-button type="primary" @click="handleSaveConfig('storage.base_path')">
-                        保存
-                      </a-button>
-                      <a-button style="margin-left: 8px" @click="handleCancelEdit">
-                        取消
-                      </a-button>
-                    </div>
-                  </template>
-                  <template v-else>
-                    <div class="path-value-row">
-                      <code class="config-value">{{ getConfigValue('storage.base_path') }}</code>
-                    </div>
-                    <div style="margin-top: 8px">
-                      <a-button type="link" size="small" @click="handleStartEdit('storage.base_path')">
-                        <EditOutlined /> 编辑
-                      </a-button>
-                    </div>
-                  </template>
-                </a-descriptions-item>
-              </a-descriptions>
+              <div class="config-section">
+                <div class="config-label">存储路径</div>
+                <template v-if="editingKey === 'storage.base_path'">
+                  <a-input
+                    v-model:value="editValue"
+                    placeholder="请输入存储路径"
+                    style="width: 100%"
+                    @pressEnter="handleSaveConfig('storage.base_path')"
+                  />
+                  <div class="config-actions">
+                    <a-button type="primary" @click="handleSaveConfig('storage.base_path')">
+                      保存
+                    </a-button>
+                    <a-button style="margin-left: 8px" @click="handleCancelEdit">
+                      取消
+                    </a-button>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="path-container">
+                    <code class="config-value">{{ getConfigValue('storage.base_path') }}</code>
+                  </div>
+                  <div class="config-actions">
+                    <a-button type="link" size="small" @click="handleStartEdit('storage.base_path')">
+                      <EditOutlined /> 编辑
+                    </a-button>
+                  </div>
+                </template>
+              </div>
 
               <a-divider />
 
@@ -70,27 +69,29 @@
 
             <a-card title="存储状态" class="setting-card" style="margin-top: 16px">
               <a-row :gutter="24">
-                <a-col :span="6">
+                <a-col :span="8">
                   <a-statistic title="总文档数" :value="storageInfo.total_files" :loading="loadingStorage">
                     <template #suffix>
                       个
                     </template>
                   </a-statistic>
                 </a-col>
-                <a-col :span="6">
+                <a-col :span="8">
                   <a-statistic title="已使用空间" :value="formatFileSize(storageInfo.total_size)" :loading="loadingStorage" />
                 </a-col>
-                <a-col :span="6">
+                <a-col :span="8">
                   <a-statistic title="可用空间" :value="formatFileSize(storageInfo.free_space)" :loading="loadingStorage" />
                 </a-col>
-                <a-col :span="6">
-                  <a-statistic title="存储路径" :value="storageInfo.base_path" :loading="loadingStorage">
-                    <template #value>
-                      <span class="path-text">{{ storageInfo.base_path || '-' }}</span>
-                    </template>
-                  </a-statistic>
-                </a-col>
               </a-row>
+
+              <a-divider />
+
+              <div class="storage-path-section">
+                <div class="storage-path-label">存储路径</div>
+                <div class="storage-path-value">
+                  <span class="path-text-full">{{ storageInfo.base_path || '-' }}</span>
+                </div>
+              </div>
             </a-card>
           </a-tab-pane>
 
@@ -642,6 +643,21 @@ onMounted(() => {
   margin-top: 16px;
 }
 
+.config-section {
+  margin-bottom: 16px;
+}
+
+.config-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1d2129;
+  margin-bottom: 8px;
+}
+
+.config-actions {
+  margin-top: 8px;
+}
+
 .config-value {
   font-weight: 500;
   color: #1d2129;
@@ -654,6 +670,25 @@ onMounted(() => {
 
 .path-value-row {
   margin-bottom: 4px;
+}
+
+.path-container {
+  width: 100%;
+  overflow: hidden;
+}
+
+.path-container .config-value {
+  width: 100%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-all;
+  white-space: pre-wrap;
+  display: block;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  line-height: 1.6;
 }
 
 .text-muted {
@@ -687,6 +722,37 @@ onMounted(() => {
   white-space: pre-wrap;
   max-width: 100%;
   display: inline-block;
+}
+
+.storage-path-section {
+  margin-top: 8px;
+}
+
+.storage-path-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1d2129;
+  margin-bottom: 8px;
+}
+
+.storage-path-value {
+  width: 100%;
+}
+
+.path-text-full {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 14px;
+  color: #1d2129;
+  word-break: break-all;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  line-height: 1.6;
 }
 
 .file-types {

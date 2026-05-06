@@ -184,10 +184,59 @@ class AgentService:
             except Exception:
                 pass
 
+        if not str(data.get("topic") or "").strip():
+            topic_candidates = [
+                "公司介绍",
+                "企业介绍",
+                "产品介绍",
+                "客户拜访汇报",
+                "售前宣讲",
+                "解决方案",
+                "商业计划书",
+                "季度汇报",
+                "年终总结",
+                "路演融资",
+            ]
+            for cand in topic_candidates:
+                if cand in t:
+                    data["topic"] = cand
+                    break
+
+        if not str(data.get("topic") or "").strip():
+            m_topic1 = re.search(r"(?:帮我|请|麻烦)?(?:做|写|生成)(?:一份|一个)?(.+?)(?:的)?\s*(?:PPT|ppt)", t)
+            if m_topic1:
+                topic = (m_topic1.group(1) or "").strip("：:，,。. ")
+                topic = re.sub(r"(\d{1,2})\s*页.*$", "", topic).strip("：:，,。. ")
+                if topic and len(topic) <= 80 and topic not in ["PPT", "ppt", "演示", "演示文稿"]:
+                    data["topic"] = topic
+
+        if not str(data.get("topic") or "").strip():
+            m_topic2 = re.search(r"(\d{1,2})\s*页\s*([^\n]{2,80}?)(?:PPT|ppt)", t)
+            if m_topic2:
+                topic = (m_topic2.group(2) or "").strip("：:，,。. ")
+                if topic and topic not in ["PPT", "ppt"]:
+                    data["topic"] = topic
+
+        template_path = self._extract_template_path_from_message(t)
+        if template_path:
+            data["template_path"] = template_path
+        if not str(data.get("style") or "").strip():
+            normalized_style = self._normalize_template_style_from_message(t)
+            if normalized_style:
+                data["style"] = normalized_style
+
+        if not str(data.get("topic") or "").strip():
+            lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+            if len(lines) == 1:
+                candidate = lines[0]
+                if candidate and len(candidate) <= 80:
+                    if not re.search(r"\b(\d{1,2})\s*页\b", candidate) and "页" not in candidate:
+                        data["topic"] = candidate[:80]
+
         return data
 
     def _is_ppt_requirements_complete(self, requirements: Dict[str, Any]) -> bool:
-        required_keys = ["topic", "audience", "scene", "page_count", "style"]
+        required_keys = ["topic", "page_count"]
         for k in required_keys:
             v = requirements.get(k)
             if v is None:
@@ -240,26 +289,81 @@ class AgentService:
             return f"{summary}\n\n【用户补充】\n{user_message}"
         return user_message
 
-    def _get_missing_requirements(self, requirements: Dict[str, Any]) -> List[str]:
+    def _detect_user_confirmation(self, text: str) -> Optional[bool]:
+        t = (text or "").strip().lower()
+        if not t:
+            return None
+        confirm_keywords = ["确认", "可以", "没问题", "好的", "ok", "okay", "行", "就这样", "开始生成", "生成吧"]
+        reject_keywords = ["不", "不对", "不行", "不满意", "改", "修改", "调整", "重来", "重新", "不要这样"]
+        if any(k in t for k in confirm_keywords):
+            return True
+        if any(k in t for k in reject_keywords):
+            return False
+        return None
+
+    def _extract_template_path_from_message(self, text: str) -> Optional[str]:
+        t = (text or "").strip()
+        if not t:
+            return None
+        candidates = re.findall(
+            r"(?i)(file:///\\S+?\\.pptx|/\\S+?\\.pptx|[A-Za-z]:\\\\\\S+?\\.pptx|\\S+?\\.pptx)",
+            t,
+        )
+        if not candidates:
+            return None
+
+        raw = str(candidates[0]).strip()
+        raw = raw.strip('"').strip("'").strip("`").strip("<>").strip()
+        raw = raw.rstrip("，,。.;；")
+        if raw.lower().startswith("file:///"):
+            raw = raw[len("file://") :]
+        return raw or None
+
+    def _normalize_template_style_from_message(self, text: str) -> Optional[str]:
+        t = (text or "").strip()
+        if not t:
+            return None
+        if "公司" in t and ("模板" in t or "标准" in t):
+            return "公司标准"
+        if "正式" in t or "商务" in t or "汇报" in t:
+            return "正式汇报"
+        if "客户" in t:
+            return "客户介绍"
+        if "销售" in t:
+            return "销售展示"
+        if "科技" in t:
+            return "深色科技"
+        if "简洁" in t or "极简" in t:
+            return "默认"
+        return None
+
+    def _get_missing_requirements_for_stage(self, stage: str, requirements: Dict[str, Any]) -> List[str]:
         missing: List[str] = []
-        if not str(requirements.get("topic") or "").strip():
-            missing.append("主题")
-        if not str(requirements.get("audience") or "").strip():
-            missing.append("受众")
-        if not str(requirements.get("scene") or "").strip():
-            missing.append("场景")
-        if requirements.get("page_count") is None:
-            missing.append("页数")
-        if not str(requirements.get("style") or "").strip():
-            missing.append("风格")
+        st = (stage or "").strip() or "welcome"
+        if st in ["welcome", "clarifying", "collecting_requirements"]:
+            if not str(requirements.get("topic") or "").strip():
+                missing.append("PPT 主题/内容")
+            if requirements.get("page_count") is None:
+                missing.append("页数/篇幅")
+            return missing
+
+        if st in ["template_select", "template_confirm"]:
+            template_path = str(requirements.get("template_path") or "").strip()
+            style = str(requirements.get("style") or "").strip()
+            if not template_path and not style:
+                missing.append("模板（上传/路径/或选择一种风格）")
+            return missing
+
         return missing
 
     def _append_message(self, conversation: AgentConversation, role: str, content: str) -> None:
-        items = conversation.messages_json or []
-        if not isinstance(items, list):
+        existing = conversation.messages_json
+        if isinstance(existing, list):
+            items: List[Dict[str, Any]] = list(existing)
+        else:
             items = []
         items.append({"role": role, "content": content})
-        conversation.messages_json = items
+        conversation.messages_json = list(items)
         conversation.message_count = len(items)
 
     def _format_outline_markdown(self, structured_result: Dict[str, Any]) -> str:
@@ -292,16 +396,18 @@ class AgentService:
         hermes_service = self._get_hermes_chat_service()
         system_prompt = self._build_hermes_system_prompt(user_agent)
         summary = self._build_requirements_summary(requirements)
+        revision_note = str(requirements.get("revision_note") or "").strip()
+        revision_text = f"\n\n【用户修改要求】\n{revision_note}" if revision_note else ""
         attempts = [
             (
-                f"{summary}\n\n"
+                f"{summary}{revision_text}\n\n"
                 "请直接输出最终结构化 JSON（type=ppt_content）。"
                 "不要再提问，不要输出多余解释。"
                 "输出必须只有一个 JSON 对象，不能包裹 ```。"
                 "slides 里每页给出 title 与 3-5 条 bullets。"
             ).strip(),
             (
-                f"{summary}\n\n"
+                f"{summary}{revision_text}\n\n"
                 "只输出 JSON，不要任何中文解释、不要 markdown、不要代码块。"
                 "JSON 结构必须满足："
                 "{\"type\":\"ppt_content\",\"title\":\"...\",\"subtitle\":null,\"scene\":\"...\",\"audience\":\"...\",\"style\":\"...\",\"slides\":[{\"index\":1,\"title\":\"...\",\"bullets\":[\"...\"],\"layout\":\"title_and_content\"}]}"
@@ -906,118 +1012,83 @@ class AgentService:
         
         if self._is_ppt_assistant(user_agent):
             try:
-                if action_type != "message":
-                    if action_type == "confirm_outline":
-                        conversation.outline_confirmed = True
-                        conversation.current_stage = "outline_confirmed"
-                        self._append_message(conversation, "assistant", "已确认大纲。")
-                    elif action_type == "confirm_template":
-                        req = self._get_conversation_requirements_data(conversation)
-                        if not str(req.get("style") or "").strip():
-                            req["style"] = "公司标准"
-                            conversation.requirements_json = req
-                        conversation.template_confirmed = True
-                        conversation.current_stage = "template_select"
-                        self._append_message(conversation, "assistant", "已确认模板风格。")
-                    elif action_type == "confirm_generation":
-                        conversation.final_generation_confirmed = True
-                        conversation.current_stage = "final_generating"
-                        self._append_message(conversation, "assistant", "已确认生成，可以点击生成 PPT。")
-                    else:
-                        self._append_message(conversation, "assistant", "已收到操作。")
+                if not message or not message.strip():
+                    return None, "消息不能为空"
 
-                    self.db.commit()
-                    assistant_message = {
-                        "role": "assistant",
-                        "content": str(conversation.messages_json[-1]["content"]) if conversation.messages_json else "已完成",
-                    }
-                    return ChatResponse(
-                        conversation=conversation,
-                        assistant_message=assistant_message,
-                        structured_result=conversation.structured_result_json if isinstance(conversation.structured_result_json, dict) else None,
-                    ), "发送成功"
+                action_message_map = {
+                    "confirm_template": "我确认使用公司标准模板。",
+                    "confirm_outline": "我确认每页内容草稿，可以生成。",
+                    "confirm_generation": "确认生成 PPT 文件。",
+                }
+                effective_user_message = action_message_map.get(action_type, message)
 
-                if action_type == "message":
-                    if not message or not message.strip():
-                        return None, "消息不能为空"
+                self._append_message(conversation, "user", effective_user_message)
 
-                    self._append_message(conversation, "user", message)
+                hermes_service = self._get_hermes_chat_service()
+                planner_result = hermes_service.plan_ppt_flow(
+                    user_message=effective_user_message,
+                    existing_requirements=self._get_conversation_requirements_data(conversation),
+                    current_stage=conversation.current_stage,
+                    profile_name=conversation.hermes_profile or user_agent.hermes_profile,
+                    hermes_session_id=conversation.hermes_conversation_id,
+                )
+                if planner_result.hermes_session_id and planner_result.hermes_session_id != conversation.hermes_conversation_id:
+                    conversation.hermes_conversation_id = planner_result.hermes_session_id
 
-                    requirements_now = self._get_conversation_requirements_data(conversation)
-                    missing_now = self._get_missing_requirements(requirements_now)
-                    if missing_now:
-                        conversation.current_stage = "clarifying"
-                        self._append_message(
-                            conversation,
-                            "assistant",
-                            "为了继续生成 PPT，我还需要补齐："
-                            + "、".join(missing_now)
-                            + "。\n你随便说就行，不需要按任何格式。",
-                        )
-                        self.db.commit()
-                        assistant_message = {
-                            "role": "assistant",
-                            "content": str(conversation.messages_json[-1]["content"]) if conversation.messages_json else "",
-                        }
-                        return ChatResponse(
-                            conversation=conversation,
-                            assistant_message=assistant_message,
-                            structured_result=conversation.structured_result_json if isinstance(conversation.structured_result_json, dict) else None,
-                        ), "发送成功"
+                merged: Dict[str, Any] = dict(self._get_conversation_requirements_data(conversation) or {})
+                if isinstance(planner_result.requirements, dict):
+                    for k, v in planner_result.requirements.items():
+                        if v is None:
+                            continue
+                        if isinstance(v, str) and not v.strip():
+                            continue
+                        merged[k] = v
+                conversation.requirements_json = merged
+                conversation.current_stage = planner_result.stage or conversation.current_stage
 
-                    structured_now = conversation.structured_result_json if isinstance(conversation.structured_result_json, dict) else None
-                    slides_now = None
-                    if isinstance(structured_now, dict):
-                        slides = structured_now.get("slides")
-                        if isinstance(slides, list) and slides:
-                            slides_now = slides
+                assistant_content = ""
+                structured_result = None
 
-                    if not slides_now:
-                        generated = self._generate_ppt_structured_result(
-                            user_agent=user_agent,
-                            conversation=conversation,
-                            requirements=requirements_now,
-                        )
-                        if not generated:
-                            conversation.current_stage = "clarifying"
-                            self._append_message(
-                                conversation,
-                                "assistant",
-                                "我已收到需求，但暂时没能生成结构化 PPT 内容。你可以补充一些公司信息（公司背景/业务/产品/优势/案例），我再试一次。",
-                            )
-                            self.db.commit()
-                            assistant_message = {
-                                "role": "assistant",
-                                "content": str(conversation.messages_json[-1]["content"]) if conversation.messages_json else "",
-                            }
-                            return ChatResponse(
-                                conversation=conversation,
-                                assistant_message=assistant_message,
-                                structured_result=conversation.structured_result_json if isinstance(conversation.structured_result_json, dict) else None,
-                            ), "发送成功"
-
-                        conversation.structured_result_json = generated
-                        structured_now = generated
-
-                    conversation.current_stage = "content_ready"
-                    conversation.outline_confirmed = True
-                    conversation.template_confirmed = True
+                if isinstance(planner_result.ppt_content, dict) and planner_result.ppt_content.get("type") == "ppt_content":
+                    structured_result = planner_result.ppt_content
+                    conversation.structured_result_json = structured_result
+                    conversation.current_stage = "content_draft"
+                    assistant_content = self._format_outline_markdown(structured_result) or "已生成每页内容草稿。"
+                    assistant_content += "\n\n请确认是否可以生成（回复“确认”或点击「确认大纲」），或直接告诉我需要改哪一页。"
+                    conversation.outline_confirmed = False
+                    conversation.template_confirmed = bool(str(merged.get("template_path") or "").strip() or str(merged.get("style") or "").strip())
                     conversation.final_generation_confirmed = False
 
-                    assistant_content = self._format_outline_markdown(structured_now or {}) or "PPT 大纲已生成，可以点击生成 PPT。"
-                    self._append_message(conversation, "assistant", assistant_content)
-                    self.db.commit()
+                else:
+                    qs = planner_result.questions or []
+                    if qs:
+                        assistant_content = "\n".join([f"- {q}" for q in qs])
+                    else:
+                        assistant_content = "我已收到。你可以继续补充需求信息，或者确认模板/内容。"
 
-                    assistant_message = {
-                        "role": "assistant",
-                        "content": assistant_content,
-                    }
+                    if conversation.current_stage == "collecting_requirements":
+                        conversation.outline_confirmed = False
+                        conversation.template_confirmed = False
+                        conversation.final_generation_confirmed = False
+                    elif conversation.current_stage == "template_select":
+                        conversation.outline_confirmed = False
+                        conversation.template_confirmed = False
+                        conversation.final_generation_confirmed = False
+                    elif conversation.current_stage == "ready_generate":
+                        conversation.outline_confirmed = True
+                        conversation.template_confirmed = True
+                        conversation.final_generation_confirmed = False
+                        assistant_content = "已确认内容与模板，可以点击「生成 PPT」生成文件。"
 
-                    return ChatResponse(
-                        conversation=conversation,
-                        assistant_message=assistant_message,
-                        structured_result=structured_now if isinstance(structured_now, dict) else None,
-                    ), "发送成功"
+                self._append_message(conversation, "assistant", assistant_content)
+                self.db.commit()
+
+                assistant_message = {"role": "assistant", "content": assistant_content}
+                return ChatResponse(
+                    conversation=conversation,
+                    assistant_message=assistant_message,
+                    structured_result=structured_result if isinstance(structured_result, dict) else (conversation.structured_result_json if isinstance(conversation.structured_result_json, dict) else None),
+                ), "发送成功"
 
             except Exception as e:
                 err_text = str(e)
@@ -1150,7 +1221,10 @@ class AgentService:
         if not slides_data:
             try:
                 requirements_data = self._get_conversation_requirements_data(conversation)
-                missing = self._get_missing_requirements(requirements_data)
+                missing = []
+                missing.extend(self._get_missing_requirements_for_stage("collecting_requirements", requirements_data))
+                missing.extend(self._get_missing_requirements_for_stage("template_select", requirements_data))
+                missing = list(dict.fromkeys(missing))
                 if missing:
                     return None, "生成 PPT 前仍缺少：" + "、".join(missing)
 
@@ -1326,8 +1400,19 @@ class AgentService:
             audience = requirements_data.get("audience")
             scene = requirements_data.get("scene")
             style = requirements_data.get("style")
+            template_path = str(requirements_data.get("template_path") or "").strip()
             slides_data = structured_result.get("slides") if isinstance(structured_result, dict) else None
             
+            if template_path and os.path.isfile(template_path):
+                logger.info(f"Using template pptx as base: {template_path}")
+                return self._create_demo_ppt_fallback(
+                    conversation=conversation,
+                    version=version,
+                    template_name=template_name,
+                    knowledge_context=knowledge_context,
+                    template_path=template_path,
+                )
+
             if slides_data and isinstance(slides_data, list) and len(slides_data) > 0:
                 logger.info(f"Using new PPT renderer with {len(slides_data)} slides")
                 
@@ -1360,6 +1445,7 @@ class AgentService:
                 version=version,
                 template_name=template_name,
                 knowledge_context=knowledge_context,
+                template_path=None,
             )
             
         except ImportError:
@@ -1386,7 +1472,8 @@ class AgentService:
         conversation: AgentConversation, 
         version: int,
         template_name: Optional[str],
-        knowledge_context: Optional[Dict[str, Any]] = None
+        knowledge_context: Optional[Dict[str, Any]] = None,
+        template_path: Optional[str] = None,
     ) -> bytes:
         """
         旧的 PPT 生成逻辑（作为 fallback）
@@ -1394,7 +1481,10 @@ class AgentService:
         from pptx import Presentation
         import io
         
-        prs = Presentation()
+        if template_path and os.path.isfile(template_path):
+            prs = Presentation(template_path)
+        else:
+            prs = Presentation()
         
         requirements_data = self._get_conversation_requirements_data(conversation)
         structured_result = conversation.structured_result_json or {}
