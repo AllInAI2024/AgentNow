@@ -267,20 +267,24 @@ const renderMarkdown = (content: string | null | undefined): string => {
 }
 
 const normalizeText = (content: string | null | undefined) => {
-  let s = String(content || '').replace(/\u200b/g, '')
-  s = s.replace(/Fatal Python error:[\s\S]*$/i, '').trim()
-  s = s.replace(/^\s*┊\s*review diff[\s\S]*?(?=\n\s*⚠️|\n\s*PPT\s+已创建完成|\n\s*$)/gm, '').trim()
-  s = s.replace(/^\s*⚠️\s*DANGEROUS COMMAND:[\s\S]*?(?=\n\s*PPT\s+已创建完成|\n\s*$)/gm, '').trim()
-  s = s.replace(/^\s*Choice\s*\[o\/s\/a\/D\]:.*$/gmi, '').trim()
-  s = s.replace(/^\s*⏱\s*Timeout\s*-.*$/gmi, '').trim()
-  return s.trim()
+  return String(content || '').replace(/\u200b/g, '').trim()
 }
 
 const splitAssistantParts = (content: string | null | undefined): { thinking: string; conclusion: string } => {
   const t = normalizeText(content)
   if (!t) return { thinking: '', conclusion: '' }
 
+  const thinkTagRe = /<think>\s*([\s\S]*?)\s*<\/think>/gi
+  const thinkMatches = Array.from(t.matchAll(thinkTagRe))
+  if (thinkMatches.length > 0) {
+    const thinking = thinkMatches.map(m => String(m[1] || '').trim()).filter(Boolean).join('\n\n')
+    const conclusion = t.replace(thinkTagRe, '').trim()
+    return { thinking, conclusion }
+  }
+
   const paragraphs = t.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
+  const toolPreviewRe =
+    /(^|\n)\s*(┊\s*review diff|⚠️\s*DANGEROUS COMMAND|Choice\s*\[o\/s\/a\/D\]|⏱\s*Timeout\s*-|Timeout\s*-|denying command|review diff)\b/i
   const processRe =
     /(^|\n)\s*(我来|我会|我将|我先|我通过|我正在|我打算|我准备|我需要|我再|我继续|我尝试|正在|让我|接下来|然后|先从|开始|准备|搜索|查找|分析|整理|规划|生成|制作|下面我|第一步|第二步|第三步|下一步)\b/
   const conclusionRe =
@@ -290,6 +294,10 @@ const splitAssistantParts = (content: string | null | undefined): { thinking: st
   const conclusionParts: string[] = []
 
   for (const p of paragraphs) {
+    if (toolPreviewRe.test(p)) {
+      thinkingParts.push(p)
+      continue
+    }
     if (processRe.test(p) || /(未找到|正在|准备|接下来|下一步|我会|我将|我通过).*(搜索|查找|获取|分析|整理|生成|制作)/.test(p)) {
       thinkingParts.push(p)
       continue
@@ -751,6 +759,7 @@ const handleSend = async () => {
       workspace: selectedWorkspace.value || undefined,
       model: usedModel || undefined,
       reasoning_effort: usedReasoning || undefined,
+      show_reasoning: usedReasoning !== 'none',
       attachments: attachmentsPayload,
     })
     const streamId = res.data.stream_id

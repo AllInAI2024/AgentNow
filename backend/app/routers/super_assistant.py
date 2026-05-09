@@ -262,9 +262,9 @@ def chat_stream(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
     return StreamingResponse(
         stream_sse_generator(stream_id),
-        media_type="text/event-stream",
+        media_type="text/event-stream; charset=utf-8",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
