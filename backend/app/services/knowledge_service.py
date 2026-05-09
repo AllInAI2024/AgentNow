@@ -1,5 +1,6 @@
 import os
 import math
+import re
 from typing import Optional, Tuple, List, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -13,7 +14,7 @@ from app.schemas import (
     KnowledgeDocDetailResponse,
     KnowledgeDocListResponse,
 )
-from app.utils import FileHandler
+from app.utils import FileHandler, calculate_file_hash, get_file_extension, get_mime_type
 from app.config import settings
 from app.services.knowledge_config_service import KnowledgeConfigService
 
@@ -440,3 +441,180 @@ class KnowledgeService:
         if user.is_super_admin:
             return True
         return doc.created_by == user.id
+
+    def sync_from_storage(
+        self,
+        *,
+        user_id: int,
+        dry_run: bool = False,
+        purge_missing: bool = False,
+        mark_public: bool = True,
+    ) -> Dict[str, Any]:
+        if not self._file_handler:
+            return {"ok": False, "message": "文件处理器未初始化"}
+
+        base_path = self._file_handler.base_path
+        allowed_types = []
+        if self._config_service:
+            allowed_types = self._config_service.get_allowed_types_list()
+        if not allowed_types:
+            allowed_types = [t.strip().lower() for t in settings.KNOWLEDGE_ALLOWED_TYPES.split(",") if t.strip()]
+        allowed_exts = set([t if t.startswith(".") else f".{t}" for t in allowed_types])
+
+        scanned = 0
+        created = 0
+        updated = 0
+        unchanged = 0
+        deleted_marked = 0
+        errors: List[Dict[str, str]] = []
+
+        found_paths: set[str] = set()
+
+        def _count_words(text: str) -> int:
+            if not text:
+                return 0
+            chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
+            english_words = len(re.findall(r"\b[a-zA-Z]+\b", text))
+            return chinese_chars + english_words
+
+        try:
+            for root, dirs, files in os.walk(base_path):
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d != ".markdown_vault_mcp"]
+                for file_name in files:
+                    if not file_name or file_name.startswith(".") or file_name.startswith("_"):
+                        continue
+                    full_path = os.path.join(root, file_name)
+                    ext = get_file_extension(file_name).lower()
+                    if allowed_exts and ext not in allowed_exts:
+                        continue
+                    try:
+                        rel_path = os.path.relpath(full_path, base_path)
+                        found_paths.add(rel_path)
+                        scanned += 1
+
+                        stat = os.stat(full_path)
+                        file_size = stat.st_size
+                        modified_at = datetime.fromtimestamp(stat.st_mtime)
+                        content_hash = calculate_file_hash(full_path)
+                        mime_type = get_mime_type(file_name)
+
+                        parent_dir = os.path.dirname(rel_path)
+                        category = parent_dir if parent_dir and parent_dir != "." else None
+
+                        title = os.path.splitext(os.path.basename(file_name))[0]
+                        word_count = None
+                        if ext.lstrip(".") in {"txt", "md", "json", "csv", "xml", "html", "htm"}:
+                            try:
+                                with open(full_path, "r", encoding="utf-8") as f:
+                                    text = f.read()
+                                word_count = _count_words(text)
+                            except Exception:
+                                word_count = None
+
+                        existing = self.db.query(KnowledgeDoc).filter(
+                            KnowledgeDoc.file_path == rel_path,
+                        ).first()
+
+                        if existing is None:
+                            if dry_run:
+                                created += 1
+                                continue
+                            doc = KnowledgeDoc(
+                                title=title,
+                                file_name=file_name,
+                                file_path=rel_path,
+                                file_size=file_size,
+                                file_type=ext,
+                                mime_type=mime_type,
+                                content_hash=content_hash,
+                                description=None,
+                                tags=[],
+                                category=category,
+                                created_by=user_id,
+                                updated_by=user_id,
+                                is_public=bool(mark_public),
+                                word_count=word_count,
+                                file_modified_at=modified_at,
+                            )
+                            self.db.add(doc)
+                            created += 1
+                            continue
+
+                        changed = False
+                        if existing.deleted_at is not None:
+                            existing.deleted_at = None
+                            changed = True
+                        if existing.file_name != file_name:
+                            existing.file_name = file_name
+                            changed = True
+                        if existing.file_size != file_size:
+                            existing.file_size = file_size
+                            changed = True
+                        if (existing.file_type or "") != ext:
+                            existing.file_type = ext
+                            changed = True
+                        if (existing.mime_type or "") != mime_type:
+                            existing.mime_type = mime_type
+                            changed = True
+                        if (existing.content_hash or "") != content_hash:
+                            existing.content_hash = content_hash
+                            changed = True
+                        if existing.file_modified_at != modified_at:
+                            existing.file_modified_at = modified_at
+                            changed = True
+                        if word_count is not None and existing.word_count != word_count:
+                            existing.word_count = word_count
+                            changed = True
+                        if category is not None and (existing.category or "") != category:
+                            existing.category = category
+                            changed = True
+                        if mark_public and existing.is_public is False:
+                            existing.is_public = True
+                            changed = True
+                        if existing.updated_by != user_id:
+                            existing.updated_by = user_id
+                            changed = True
+
+                        if changed:
+                            if dry_run:
+                                updated += 1
+                            else:
+                                updated += 1
+                        else:
+                            unchanged += 1
+                    except Exception as e:
+                        errors.append({"file": file_name, "error": str(e)})
+                        continue
+
+            if purge_missing:
+                db_docs = self.db.query(KnowledgeDoc).filter(KnowledgeDoc.deleted_at.is_(None)).all()
+                for d in db_docs:
+                    if d.file_path and d.file_path not in found_paths:
+                        if dry_run:
+                            deleted_marked += 1
+                            continue
+                        d.deleted_at = datetime.utcnow()
+                        d.updated_by = user_id
+                        deleted_marked += 1
+
+            if not dry_run:
+                self.db.commit()
+
+            return {
+                "ok": True,
+                "base_path": base_path,
+                "scanned": scanned,
+                "created": created,
+                "updated": updated,
+                "unchanged": unchanged,
+                "deleted_marked": deleted_marked,
+                "dry_run": dry_run,
+                "purge_missing": purge_missing,
+                "errors": errors[:50],
+            }
+        except Exception as e:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            return {"ok": False, "message": str(e)}

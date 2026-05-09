@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.models import Base, engine, SessionLocal
-from app.routers import auth_router, permission_router, department_router, employee_router, role_router, knowledge_router, hermes_router, agent_template_router, agent_router
+from app.routers import auth_router, permission_router, department_router, employee_router, role_router, knowledge_router, hermes_router, agent_template_router, agent_router, super_assistant_router
 
 
 @asynccontextmanager
@@ -42,6 +42,7 @@ app.include_router(knowledge_router, prefix=settings.API_PREFIX)
 app.include_router(hermes_router, prefix=settings.API_PREFIX)
 app.include_router(agent_template_router, prefix=settings.API_PREFIX)
 app.include_router(agent_router, prefix=settings.API_PREFIX)
+app.include_router(super_assistant_router, prefix=settings.API_PREFIX)
 
 
 @app.get("/")

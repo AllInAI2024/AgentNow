@@ -42,7 +42,16 @@ class HermesProfileService:
         profiles_home = os.environ.get("HERMES_PROFILES_HOME")
         if profiles_home and profiles_home.strip():
             return Path(profiles_home.strip()).expanduser()
-        return self._hermes_home / "profiles"
+
+        new_layout = Path.home() / ".hermes-profiles"
+        if new_layout.exists():
+            return new_layout
+
+        old_layout = self._hermes_home / "profiles"
+        if old_layout.exists():
+            return old_layout
+
+        return new_layout
     
     def _find_hermes_path(self) -> None:
         possible_paths = [
@@ -306,7 +315,15 @@ class HermesProfileService:
             else:
                 config = {}
             
-            config.update(config_updates)
+            def _deep_update(dst: Dict[str, Any], src: Dict[str, Any]) -> None:
+                for k, v in (src or {}).items():
+                    if isinstance(v, dict) and isinstance(dst.get(k), dict):
+                        _deep_update(dst[k], v)
+                    else:
+                        dst[k] = v
+
+            if isinstance(config_updates, dict):
+                _deep_update(config, config_updates)
             
             with open(config_path, "w", encoding="utf-8") as f:
                 yaml.dump(config, f, default_flow_style=False, allow_unicode=True)

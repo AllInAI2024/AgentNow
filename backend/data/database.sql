@@ -358,7 +358,7 @@ VALUES
 -- 插入系统权限/功能点（菜单结构）
 INSERT INTO permissions (parent_id, name, code, type, path, icon, sort)
 VALUES 
-(0, '工作台', 'dashboard', 1, '/dashboard', 'dashboard', 1),
+(0, '超级助理', 'dashboard', 1, '/dashboard', 'message', 1),
 (0, '智能体', 'agent', 1, '/agent', 'robot', 2),
 (0, '知识库', 'knowledge', 1, '/knowledge', 'folder-open', 3),
 (0, '系统管理', 'system', 1, '/system', 'team', 4);

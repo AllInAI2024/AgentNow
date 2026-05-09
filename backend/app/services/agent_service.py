@@ -1280,9 +1280,12 @@ class AgentService:
         if knowledge_categories is not None:
             knowledge_retrieval_service = KnowledgeRetrievalService(self.db)
             topic = requirements_data.get("topic", "未设置主题")
+            audience = requirements_data.get("audience")
+            scene = requirements_data.get("scene")
+            query_text = " ".join([str(x).strip() for x in [topic, audience, scene] if str(x or "").strip()])
             
             knowledge_context = knowledge_retrieval_service.get_knowledge_context(
-                query=topic,
+                query=query_text or topic,
                 categories=knowledge_categories if knowledge_categories else None,
                 max_docs=3
             )

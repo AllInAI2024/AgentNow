@@ -26,9 +26,9 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/dashboard',
-    name: 'Dashboard',
-    component: () => import('@/views/Dashboard.vue'),
-    meta: { title: '工作台', requiresAuth: true },
+    name: 'SuperAssistant',
+    component: () => import('@/views/SuperAssistant.vue'),
+    meta: { title: '超级助理', requiresAuth: true },
   },
   {
     path: '/organization/department',
@@ -186,7 +186,7 @@ router.beforeEach(async (to, _from, next) => {
     if (userStore.needsChangePassword) {
       next({ name: 'ChangePassword' })
     } else {
-      next({ name: 'Dashboard' })
+      next({ name: 'SuperAssistant' })
     }
     return
   }
@@ -197,7 +197,7 @@ router.beforeEach(async (to, _from, next) => {
   }
   
   if (userStore.isLoggedIn && !userStore.needsChangePassword && to.meta.requiresChangePassword) {
-    next({ name: 'Dashboard' })
+    next({ name: 'SuperAssistant' })
     return
   }
   

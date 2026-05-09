@@ -475,6 +475,31 @@ def get_storage_info(
     )
 
 
+@router.post(
+    "/sync",
+    response_model=APIResponse[dict],
+    summary="从存储目录同步/重建知识库索引",
+    description="扫描知识库存储目录，将磁盘文件同步到知识库数据库记录中；可选清理数据库中已不存在的文件记录"
+)
+def sync_knowledge_index(
+    dry_run: bool = Query(False, description="仅模拟，不写入数据库"),
+    purge_missing: bool = Query(False, description="将数据库中缺失文件的记录标记为删除"),
+    mark_public: bool = Query(True, description="同步时将文档设置为公开（仅对已存在记录生效）"),
+    current_user: User = Depends(permission_required("knowledge:doc:update")),
+    db: Session = Depends(get_db),
+):
+    service = KnowledgeService(db)
+    result = service.sync_from_storage(
+        user_id=current_user.id,
+        dry_run=dry_run,
+        purge_missing=purge_missing,
+        mark_public=mark_public,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("message") or "同步失败")
+    return APIResponse(code=200, message="同步完成", data=result)
+
+
 @router.get(
     "/configs",
     response_model=APIResponse[List[KnowledgeConfigResponse]],

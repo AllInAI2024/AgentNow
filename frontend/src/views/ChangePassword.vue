@@ -229,7 +229,7 @@ const handleChangePassword = async () => {
       content: '您的密码已成功修改，即将跳转到工作台...',
       okText: '确定',
       onOk: () => {
-        router.push({ name: 'Dashboard' })
+        router.push({ name: 'SuperAssistant' })
       },
     })
   } catch (error) {
