@@ -92,13 +92,13 @@ mysql -u root -p < data/database.sql
 ### 5. 启动开发服务器
 
 ```bash
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5116
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5117
 ```
 
 ### 6. 访问 API 文档
 
-- Swagger UI: http://localhost:5116/docs
-- ReDoc: http://localhost:5116/redoc
+- Swagger UI: http://localhost:5117/docs
+- ReDoc: http://localhost:5117/redoc
 
 ## API 接口
 
@@ -133,7 +133,7 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5116
 ### 1. 登录
 
 ```bash
-curl -X POST http://localhost:5116/api/v1/auth/login \
+curl -X POST http://localhost:5117/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"phone":"13651165117","password":"123456"}'
 ```
@@ -222,9 +222,9 @@ RUN pip install uv && uv sync --frozen
 
 COPY . .
 
-EXPOSE 5116
+EXPOSE 5117
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5116"]
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5117"]
 ```
 
 ## 许可证

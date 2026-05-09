@@ -185,12 +185,12 @@ cp .env.example .env
 # 编辑 .env，修改数据库连接配置
 
 # 启动开发服务器
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5116
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5117
 ```
 
 后端服务启动后访问：
-- API 文档：http://localhost:5116/docs
-- 健康检查：http://localhost:5116/health
+- API 文档：http://localhost:5117/docs
+- 健康检查：http://localhost:5117/health
 
 #### 步骤 4：启动前端服务
 
@@ -205,14 +205,14 @@ npm run dev
 ```
 
 前端服务启动后访问：
-- 应用地址：http://localhost:5117
+- 应用地址：http://localhost:5116
 
 ### 3.3 端口说明
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
-| 后端 API | 5116 | FastAPI 服务 |
-| 前端应用 | 5117 | Vue 开发服务器 |
+| 后端 API | 5117 | FastAPI 服务 |
+| 前端应用 | 5116 | Vue 开发服务器 |
 
 ### 3.4 默认账号
 

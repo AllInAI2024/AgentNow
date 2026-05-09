@@ -89,6 +89,17 @@
             </div>
           </div>
 
+          <div v-if="debugEnabled" style="position: fixed; right: 16px; bottom: 90px; width: 380px; max-height: 45vh; overflow: auto; z-index: 9999; background: rgba(0,0,0,0.75); color: #fff; padding: 12px; border-radius: 12px; font-size: 12px;">
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 8px;">
+              <div>AGENT_DEBUG</div>
+              <a-button size="small" type="primary" @click.prevent.stop="clearDebug">清空</a-button>
+            </div>
+            <div v-for="(evt, idx) in debugEvents.slice(-60)" :key="idx" style="margin-bottom: 6px; word-break: break-all;">
+              <div style="opacity:0.85;">{{ evt.ts }} · {{ evt.type }}</div>
+              <div v-if="evt.data !== undefined" style="opacity:0.95;">{{ typeof evt.data === 'string' ? evt.data : JSON.stringify(evt.data) }}</div>
+            </div>
+          </div>
+
           <div class="chat-messages" ref="messagesContainer">
             <a-spin :spinning="loadingMessages">
               <template v-if="messages.length > 0">
@@ -371,6 +382,75 @@ const loadingMessages = ref(false)
 const isTyping = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
 
+const debugEnabled = ref(false)
+const debugEvents = ref<Array<{ ts: string; type: string; data?: unknown }>>([])
+const pushDebug = (type: string, data?: unknown) => {
+  if (!debugEnabled.value) return
+  const evt = { ts: new Date().toISOString(), type, data }
+  debugEvents.value.push(evt)
+  if (debugEvents.value.length > 120) {
+    debugEvents.value = debugEvents.value.slice(-120)
+  }
+  try {
+    sessionStorage.setItem('AGENT_DEBUG_EVENTS', JSON.stringify(debugEvents.value))
+  } catch {}
+  try {
+    ;(window as any).__agentDebugEvents = debugEvents.value
+  } catch {}
+  console.info('[AGENT_DEBUG]', type, data)
+}
+
+const initDebug = () => {
+  debugEnabled.value = localStorage.getItem('AGENT_DEBUG') === '1'
+  if (!debugEnabled.value) return
+  try {
+    const raw = sessionStorage.getItem('AGENT_DEBUG_EVENTS')
+    if (raw) debugEvents.value = JSON.parse(raw)
+  } catch {}
+
+  pushDebug('debug_enabled')
+
+  window.addEventListener('beforeunload', () => {
+    try {
+      sessionStorage.setItem(
+        'AGENT_DEBUG_LAST_BEFOREUNLOAD',
+        JSON.stringify({ ts: new Date().toISOString(), href: window.location.href })
+      )
+    } catch {}
+  })
+  window.addEventListener('pagehide', (e) => {
+    pushDebug('pagehide', { persisted: (e as PageTransitionEvent).persisted })
+  })
+  window.addEventListener('visibilitychange', () => {
+    pushDebug('visibilitychange', { state: document.visibilityState })
+  })
+  window.addEventListener('error', (e) => {
+    pushDebug('window_error', {
+      message: (e as ErrorEvent).message,
+      filename: (e as ErrorEvent).filename,
+      lineno: (e as ErrorEvent).lineno,
+      colno: (e as ErrorEvent).colno,
+    })
+  })
+  window.addEventListener('unhandledrejection', (e) => {
+    pushDebug('unhandledrejection', { reason: (e as PromiseRejectionEvent).reason })
+  })
+
+  try {
+    const last = sessionStorage.getItem('AGENT_DEBUG_LAST_BEFOREUNLOAD')
+    if (last) pushDebug('last_beforeunload', JSON.parse(last))
+  } catch {}
+}
+
+const clearDebug = () => {
+  if (!debugEnabled.value) return
+  debugEvents.value = []
+  try {
+    sessionStorage.removeItem('AGENT_DEBUG_EVENTS')
+  } catch {}
+  pushDebug('debug_cleared')
+}
+
 marked.setOptions({
   breaks: true,
   gfm: true,
@@ -397,11 +477,11 @@ const showActionButtons = computed(() => {
 })
 
 const canConfirmOutline = computed(() => {
-  return currentConversation.value?.current_stage === 'outline_draft'
+  return currentConversation.value?.current_stage === 'content_draft'
 })
 
 const canReviseOutline = computed(() => {
-  return currentConversation.value?.current_stage === 'outline_draft'
+  return currentConversation.value?.current_stage === 'content_draft'
 })
 
 const canConfirmTemplate = computed(() => {
@@ -426,9 +506,10 @@ const getStageLabel = (stage: string | null | undefined): string => {
   const stageMap: Record<string, string> = {
     'welcome': '欢迎',
     'clarifying': '需求确认',
-    'outline_draft': '大纲草拟',
-    'outline_confirmed': '大纲已确认',
-    'template_select': '选择模板',
+    'collecting_requirements': '确认需求',
+    'template_select': '确认模板',
+    'content_draft': '内容草稿',
+    'ready_generate': '待生成',
     'final_generating': '生成中',
     'content_ready': '内容已就绪',
     'completed': '已完成',
@@ -441,9 +522,10 @@ const getStageClass = (stage: string | null | undefined): string => {
   const classMap: Record<string, string> = {
     'welcome': 'stage-welcome',
     'clarifying': 'stage-clarifying',
-    'outline_draft': 'stage-outline',
-    'outline_confirmed': 'stage-confirmed',
+    'collecting_requirements': 'stage-clarifying',
     'template_select': 'stage-template',
+    'content_draft': 'stage-outline',
+    'ready_generate': 'stage-confirmed',
     'final_generating': 'stage-generating',
     'completed': 'stage-completed',
   }
@@ -481,19 +563,37 @@ const loadConversations = async () => {
 const loadConversationDetail = async (conversationId: number) => {
   if (!agentId.value) return
   loadingMessages.value = true
+  pushDebug('detail_load_start', { conversationId })
   try {
     const response = await agentApi.getConversationDetail(agentId.value, conversationId)
     if (response.code === 200 && response.data) {
       currentConversation.value = response.data.conversation
-      messages.value = response.data.messages || []
+      const serverMessages = response.data.messages || []
+      if (serverMessages.length > 0 || messages.value.length === 0) {
+        messages.value = serverMessages
+      }
       generatedFiles.value = (response.data.files || []) as AgentGeneratedFile[]
       structuredResult.value = response.data.structured_result || null
+      pushDebug('detail_load_ok', {
+        conversationId,
+        serverMessagesLen: serverMessages.length,
+        clientMessagesLen: messages.value.length,
+        filesLen: (response.data.files || []).length,
+        hasStructured: !!response.data.structured_result,
+        stage: response.data.conversation?.current_stage,
+      })
       await nextTick()
       scrollToBottom()
     }
   } catch (error) {
     console.error('获取会话详情失败:', error)
     message.error('加载对话失败')
+    const err = error as any
+    pushDebug('detail_load_error', {
+      conversationId,
+      status: err?.response?.status,
+      detail: err?.response?.data?.detail || err?.response?.data?.message,
+    })
   } finally {
     loadingMessages.value = false
   }
@@ -532,6 +632,12 @@ const sendMessageWithAction = async (
   restoreInputOnError: boolean = false
 ) => {
   if (!currentAgent.value || isTyping.value) return
+  pushDebug('send_start', {
+    actionType,
+    agentId: agentId.value,
+    conversationId: currentConversationId.value,
+    msgLen: msg?.length || 0,
+  })
 
   const shouldAppendUserMessage = actionType === 'message'
 
@@ -557,6 +663,7 @@ const sendMessageWithAction = async (
       currentConversationId.value || undefined,
       actionType
     )
+    pushDebug('send_response', { code: (response as any)?.code })
 
     if (response.code === 200 && response.data) {
       const data = response.data
@@ -589,9 +696,20 @@ const sendMessageWithAction = async (
     }
   } catch (error) {
     console.error('发送消息失败:', error)
-    message.error('发送消息失败，请稍后重试')
+    const err = error as any
+    const detail = err?.response?.data?.detail || err?.response?.data?.message
+    pushDebug('send_error', {
+      detail,
+      status: err?.response?.status,
+      url: err?.config?.url,
+    })
+    message.error(detail || '发送消息失败，请稍后重试')
     if (shouldAppendUserMessage && msg && msg.trim()) {
-      messages.value = messages.value.slice(0, -1)
+      messages.value.push({
+        role: 'assistant',
+        content: detail || '发送失败，请稍后重试',
+        timestamp: new Date().toISOString(),
+      })
     }
     if (restoreInputOnError) {
       inputMessage.value = msg
@@ -605,6 +723,7 @@ const handleSendMessage = async () => {
   if (!currentAgent.value || isTyping.value) return
   const msg = inputMessage.value.trim()
   if (!msg) return
+  pushDebug('send_click', { conversationId: currentConversationId.value, msgLen: msg.length })
   inputMessage.value = ''
   await sendMessageWithAction(msg, 'message', true)
 }
@@ -782,6 +901,7 @@ watch(
 )
 
 onMounted(() => {
+  initDebug()
   if (agentId.value) {
     loadAgentDetail()
     loadConversations()

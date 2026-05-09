@@ -195,7 +195,7 @@ const handleLogin = async () => {
       router.push({ name: 'ChangePassword' })
     } else {
       const redirect = route.query.redirect as string
-      router.push(redirect || { name: 'Dashboard' })
+      router.push(redirect || { name: 'SuperAssistant' })
     }
   } catch (error) {
     console.error('Login failed:', error)

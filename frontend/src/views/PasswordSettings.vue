@@ -378,7 +378,7 @@ const handleChangePassword = async () => {
 }
 
 const handleGoHome = () => {
-  router.push({ name: 'Dashboard' })
+  router.push({ name: 'SuperAssistant' })
 }
 
 const handleProfile = () => {

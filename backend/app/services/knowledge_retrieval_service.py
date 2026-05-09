@@ -64,13 +64,13 @@ class KnowledgeRetrievalService:
         if not keywords:
             return []
         
-        query_builder = self.db.query(KnowledgeDoc).filter(
+        base_query = self.db.query(KnowledgeDoc).filter(
             KnowledgeDoc.deleted_at.is_(None),
             KnowledgeDoc.is_public == True
         )
         
         if categories and len(categories) > 0:
-            query_builder = query_builder.filter(
+            base_query = base_query.filter(
                 KnowledgeDoc.category.in_(categories)
             )
         
@@ -79,22 +79,47 @@ class KnowledgeRetrievalService:
             or_conditions.append(KnowledgeDoc.title.contains(keyword))
             or_conditions.append(KnowledgeDoc.description.contains(keyword))
             or_conditions.append(KnowledgeDoc.file_name.contains(keyword))
+            or_conditions.append(KnowledgeDoc.tags.contains(keyword))
         
+        primary_docs: List[KnowledgeDoc] = []
         if or_conditions:
-            query_builder = query_builder.filter(or_(*or_conditions))
+            primary_docs = base_query.filter(or_(*or_conditions)).limit(max_results * 6).all()
         
-        docs = query_builder.limit(max_results * 2).all()
+        docs: List[KnowledgeDoc] = list(primary_docs)
+        if len(docs) < max_results:
+            extra_docs = base_query.order_by(KnowledgeDoc.updated_at.desc()).limit(200).all()
+            existing_ids = {d.id for d in docs}
+            for d in extra_docs:
+                if d.id in existing_ids:
+                    continue
+                docs.append(d)
+                if len(docs) >= 200:
+                    break
         
         scored_docs = []
+        need_content_search = len(primary_docs) < max_results
+        content_scan_budget = 80 if need_content_search else 0
         for doc in docs:
             score = self._calculate_relevance_score(doc, keywords)
+            content: Optional[str] = None
+            if doc.is_text_file() and self._file_handler:
+                if include_content or (need_content_search and score <= 0 and content_scan_budget > 0):
+                    try:
+                        content = self._file_handler.read_file_as_text(doc.file_path)
+                    except Exception:
+                        content = None
+                    if content is not None:
+                        score += self._calculate_content_score(content, keywords)
+                    if need_content_search and score > 0 and content_scan_budget > 0:
+                        content_scan_budget -= 1
+            
             if score > 0:
-                scored_docs.append((doc, score))
+                scored_docs.append((doc, score, content))
         
         scored_docs.sort(key=lambda x: x[1], reverse=True)
         
         results = []
-        for doc, score in scored_docs[:max_results]:
+        for doc, score, cached_content in scored_docs[:max_results]:
             doc_dict = {
                 "id": doc.id,
                 "title": doc.title,
@@ -107,8 +132,10 @@ class KnowledgeRetrievalService:
             
             if include_content and doc.is_text_file():
                 try:
-                    if self._file_handler:
+                    content = cached_content
+                    if content is None and self._file_handler:
                         content = self._file_handler.read_file_as_text(doc.file_path)
+                    if content is not None:
                         doc_dict["content"] = self._extract_relevant_snippets(content, keywords)
                         doc_dict["full_content"] = content
                 except Exception:
@@ -156,11 +183,14 @@ class KnowledgeRetrievalService:
             (doc.description or "") + " " +
             (doc.file_name or "")
         )
+        tags = doc.tags if isinstance(doc.tags, list) else []
+        tags_text = " ".join([str(t) for t in tags if t])
         
         for keyword in keywords:
             keyword_lower = keyword.lower()
             title_lower = (doc.title or "").lower()
             desc_lower = (doc.description or "").lower()
+            tags_lower = tags_text.lower()
             
             if keyword_lower in title_lower:
                 score += 3.0
@@ -168,9 +198,25 @@ class KnowledgeRetrievalService:
             if keyword_lower in desc_lower:
                 score += 1.5
             
+            if keyword_lower in tags_lower:
+                score += 1.0
+            
             if keyword_lower in text_to_search.lower():
                 score += 0.5
         
+        return score
+
+    def _calculate_content_score(self, content: str, keywords: List[str]) -> float:
+        if not content:
+            return 0.0
+        text = content.lower()
+        score = 0.0
+        for keyword in keywords:
+            k = keyword.lower()
+            if not k:
+                continue
+            if k in text:
+                score += 1.0
         return score
     
     def _extract_relevant_snippets(self, content: str, keywords: List[str], max_snippets: int = 3) -> str:

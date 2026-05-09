@@ -887,3 +887,65 @@ export interface EnableAgentResult {
   user_agent: UserAgent
   created_profile: boolean
 }
+
+export interface SuperAssistantMessage {
+  role: 'user' | 'assistant'
+  content: string
+  ts: number
+}
+
+export interface SuperAssistantSession {
+  session_id: string
+  title: string
+  profile: string
+  hermes_session_id: string | null
+  created_at: number
+  updated_at: number
+  message_count: number
+  messages: SuperAssistantMessage[]
+}
+
+export interface SuperAssistantSessionListItem {
+  session_id: string
+  title: string
+  profile: string
+  created_at: number
+  updated_at: number
+  message_count: number
+  last_message_at: number | null
+}
+
+export interface SuperAssistantSessionListResponse {
+  items: SuperAssistantSessionListItem[]
+}
+
+export interface SuperAssistantChatStartResponse {
+  stream_id: string
+}
+
+export interface SuperAssistantModelListItem {
+  id: string
+}
+
+export interface SuperAssistantModelListResponse {
+  models: SuperAssistantModelListItem[]
+}
+
+export interface SuperAssistantUploadResponse {
+  name: string
+  path: string
+  mime: string | null
+  size: number
+  is_image: boolean
+}
+
+export interface SuperAssistantWorkspaceItem {
+  name: string
+  path: string
+}
+
+export interface SuperAssistantWorkspaceListResponse {
+  items: SuperAssistantWorkspaceItem[]
+  current: string
+  default: string
+}

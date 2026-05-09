@@ -64,18 +64,18 @@ npm install
 
 开发环境已默认配置好 API 代理，无需额外配置：
 
-- 前端端口：`5117`
-- API 代理目标：`http://localhost:5116` (后端服务)
+- 前端端口：`5116`
+- API 代理目标：`http://localhost:5117` (后端服务)
 
 如需修改配置，编辑 `vite.config.ts`：
 
 ```typescript
 server: {
-  port: 5117,
+  port: 5116,
   host: '0.0.0.0',
   proxy: {
     '/api': {
-      target: 'http://localhost:5116',  // 后端服务地址
+      target: 'http://localhost:5117',  // 后端服务地址
       changeOrigin: true,
     },
   },
@@ -88,7 +88,7 @@ server: {
 npm run dev
 ```
 
-访问地址：http://localhost:5117
+访问地址：http://localhost:5116
 
 ### 5. 构建生产版本
 

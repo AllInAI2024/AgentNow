@@ -333,6 +333,7 @@ const getIconComponent = (iconName: string) => {
 }
 
 const topLevelMenuNameMap: Record<string, string> = {
+  dashboard: '超级助理',
   agent: '智能体',
   knowledge: '知识库',
   hermes: 'Hermes管理',
@@ -412,7 +413,7 @@ const isMenuActive = (menu: PermissionTree): boolean => {
 }
 
 const handleGoHome = () => {
-  router.push({ name: 'Dashboard' })
+  router.push({ name: 'SuperAssistant' })
 }
 
 const isActiveRoute = (path: string) => {

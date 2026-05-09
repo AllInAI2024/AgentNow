@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v1"
     
     SERVER_HOST: str = "0.0.0.0"
-    SERVER_PORT: int = 5116
+    SERVER_PORT: int = 5117
     
     DATABASE_URL: str = "mysql+pymysql://root:password@localhost:3306/agentnow"
     

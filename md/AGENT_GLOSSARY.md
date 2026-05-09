@@ -8,6 +8,7 @@
 
 - Hermes 的“Agent”更偏**运行时系统**：Profile + Memory + Skills + Tools + Session + Cron。
 - AgentNow 的 “Agent/智能体”更偏**企业产品对象**：Template（岗位定义）+ UserAgent（员工实例）+ Conversation（业务会话状态）+ Files（交付物）+ Permission/Audit（治理）。
+- AgentNow 的流程壳不能切断 Hermes 的学习性：Profile 稳定、Session 尽量连续，流程控不语义控。
 
 ---
 
@@ -29,6 +30,7 @@
 | Generated File（交付物） | 可能是工作区文件或工具产物 | `agent_generated_files`：平台记录的生成文件（版本、状态、下载） | 交付闭环的一等对象 |
 | Action（动作） | WebUI 会把用户输入、审批、澄清等作为不同事件/入口处理 | AgentNow 聊天接口存在 `action_type`，用于区分“普通消息/确认/生成等动作” | 体验稳定性的关键：动作不应伪装成用户消息 |
 | Confirmation（确认点） | Hermes/ WebUI 常以审批/澄清/工具确认出现 | AgentNow 业务确认点：大纲确认/模板确认/正式生成确认等 | 业务闭环需要显式记录确认状态 |
+| 学习性 / 个性化（越用越聪明） | 通过 Profile + Memory + 对话历史累积偏好与上下文，减少重复补问并持续提高贴合度 | 平台侧必须保证 Profile 稳定、Session 尽量连续；只管理流程与交付闭环，不用硬规则替代语义理解 | 这是质量“长期不变差”的关键前提 |
 | Observability（运行态可见性） | WebUI 强调现场感：会话、工具、工作区、状态清晰可见 | AgentNow 需要补齐：阶段、文件、错误、来源、操作链路可见 | 借鉴的是产品可见性思路，不是技术栈 |
 
 ---
