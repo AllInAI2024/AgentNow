@@ -12,6 +12,8 @@ import time
 import uuid
 import base64
 import mimetypes
+import select
+import pty
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -32,6 +34,8 @@ from app.services.hermes_service import hermes_service
 
 _SESSION_ID_RE = re.compile(r"session_id:\s*([0-9A-Za-z_-]+)")
 _RESUMED_LINE_RE = re.compile(r"(?m)^\s*↻\s*Resumed session.*$")
+_ANSI_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+_ANSI_OSC_RE = re.compile(r"\x1b\][^\x07]*(?:\x07|\x1b\\)")
 
 
 def _now_s() -> float:
@@ -117,6 +121,10 @@ def _safe_json_write(path: Path, data: dict) -> None:
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _sse_bytes(event: str, data: dict) -> bytes:
+    return _sse(event, data).encode("utf-8")
 
 
 def _load_dotenv(env_path: Path) -> Dict[str, str]:
@@ -227,6 +235,126 @@ def _extract_delta_from_openai_chunk(payload: dict) -> str:
                     parts.append(content)
         return "".join(parts)
     return ""
+
+
+def _strip_ansi(s: str) -> str:
+    t = s or ""
+    t = _ANSI_OSC_RE.sub("", t)
+    t = _ANSI_CSI_RE.sub("", t)
+    return t
+
+
+class HermesCliStreamParser:
+    def __init__(self):
+        self._buf = ""
+        self._in_reasoning = False
+        self._in_answer = False
+        self._opened_think = False
+        self._done = False
+
+    def feed(self, chunk: str, *, flush_partial: bool = False) -> tuple[list[str], Optional[str]]:
+        if self._done:
+            return [], None
+        out: list[str] = []
+        captured_session_id: Optional[str] = None
+        self._buf += chunk or ""
+
+        while True:
+            nl = self._buf.find("\n")
+            if nl == -1:
+                break
+            line = self._buf[: nl + 1]
+            self._buf = self._buf[nl + 1 :]
+            emitted, sid = self._handle_line(line)
+            if sid:
+                captured_session_id = sid
+            if emitted:
+                out.extend(emitted)
+
+        if flush_partial and self._buf:
+            emitted, sid = self._handle_line(self._buf, allow_partial=True)
+            self._buf = ""
+            if sid:
+                captured_session_id = sid
+            if emitted:
+                out.extend(emitted)
+
+        return out, captured_session_id
+
+    def _is_border_line(self, s: str) -> bool:
+        t = s.strip()
+        if not t:
+            return True
+        border_chars = set("─┌┐└┘│╭╮╰╯═┃┏┓┗┛┠┨┯┷┳┻╱╲")
+        return all((c in border_chars) for c in t)
+
+    def _clean_box_content(self, s: str) -> str:
+        t = s.rstrip("\n")
+        t = t.strip("\r")
+        if t.startswith("│") and t.endswith("│") and len(t) >= 2:
+            t = t[1:-1]
+        return t.strip()
+
+    def _handle_line(self, line: str, *, allow_partial: bool = False) -> tuple[list[str], Optional[str]]:
+        out: list[str] = []
+        sid: Optional[str] = None
+        raw = line or ""
+        raw = raw.replace("\r", "")
+        raw = _strip_ansi(raw)
+
+        m = _SESSION_ID_RE.search(raw)
+        if m:
+            sid = m.group(1)
+            raw = _SESSION_ID_RE.sub("", raw)
+
+        if "Resume this session with:" in raw or raw.lstrip().startswith("Resume this session"):
+            self._done = True
+            if self._opened_think:
+                out.append("\n</think>\n\n")
+                self._opened_think = False
+            return out, sid
+
+        s = raw.rstrip("\n")
+
+        if not self._in_reasoning and not self._in_answer:
+            if "┌─ Reasoning" in s or "┌─ 思考" in s or "┌─ 推理" in s:
+                self._in_reasoning = True
+                if not self._opened_think:
+                    out.append("<think>\n")
+                    self._opened_think = True
+                return out, sid
+            if ("╭─" in s or s.startswith("╭")) and ("Hermes" in s or "⚕" in s):
+                self._in_answer = True
+                return out, sid
+            return out, sid
+
+        if self._in_reasoning:
+            if s.startswith("└") and "─" in s:
+                self._in_reasoning = False
+                if self._opened_think:
+                    out.append("\n</think>\n\n")
+                    self._opened_think = False
+                return out, sid
+            if self._is_border_line(s):
+                return out, sid
+            content = self._clean_box_content(s)
+            if content:
+                out.append(content + ("\n" if not allow_partial else ""))
+            return out, sid
+
+        if self._in_answer:
+            if (s.startswith("╰") and ("Hermes" in s or "⚕" in s)) or ("╰─" in s and "Hermes" in s):
+                self._in_answer = False
+                self._done = True
+                return out, sid
+            if self._is_border_line(s):
+                return out, sid
+            content = self._clean_box_content(s)
+            if content:
+                out.append(content + ("\n" if not allow_partial else ""))
+            return out, sid
+
+        return out, sid
 
 
 def _is_image_mime(mime: str) -> bool:
@@ -839,10 +967,16 @@ def start_hermes_chat_stream(
         try:
             profile_service = service._get_profile_service()
             global_cfg = _read_global_hermes_config()
+            stream_parser = HermesCliStreamParser()
             if reasoning_effort:
                 profile_service.update_profile_config(profile, {"agent": {"reasoning_effort": reasoning_effort}})
             if show_reasoning is not None:
-                profile_service.update_profile_config(profile, {"display": {"show_reasoning": bool(show_reasoning)}})
+                profile_service.update_profile_config(
+                    profile,
+                    {"display": {"show_reasoning": bool(show_reasoning), "streaming": True}},
+                )
+            else:
+                profile_service.update_profile_config(profile, {"display": {"streaming": True}})
             selected_model = (model or "").strip()
             provider_cfg = profile_service.get_profile_config(profile) or {}
             existing_model_cfg = provider_cfg.get("model", {})
@@ -872,7 +1006,7 @@ def start_hermes_chat_stream(
             cmd: List[str] = [hermes_bin]
             if profile and profile != "default":
                 cmd.extend(["-p", profile])
-            cmd.extend(["chat", "-q", msg_text, "-Q", "--source", "webui"])
+            cmd.extend(["chat", "-q", msg_text, "--source", "webui"])
             if hermes_session_id:
                 cmd.extend(["--resume", hermes_session_id])
 
@@ -881,32 +1015,132 @@ def start_hermes_chat_stream(
             if resolved_ws:
                 env["TERMINAL_CWD"] = str(resolved_ws)
                 env["HERMES_WRITE_SAFE_ROOT"] = str(resolved_ws)
-            env["HERMES_QUIET"] = "true"
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                env=env,
-                cwd=resolved_ws or None,
-            )
+            env["PYTHONUNBUFFERED"] = "1"
+            env.setdefault("TERM", "xterm-256color")
+
+            master_fd: Optional[int] = None
+            proc: Optional[subprocess.Popen] = None
+            try:
+                master_fd, slave_fd = pty.openpty()
+                proc = subprocess.Popen(
+                    cmd,
+                    stdin=slave_fd,
+                    stdout=slave_fd,
+                    stderr=slave_fd,
+                    bufsize=0,
+                    env=env,
+                    cwd=resolved_ws or None,
+                    close_fds=True,
+                )
+                try:
+                    os.close(slave_fd)
+                except Exception:
+                    pass
+            except Exception:
+                if master_fd is not None:
+                    try:
+                        os.close(master_fd)
+                    except Exception:
+                        pass
+                master_fd = None
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    env=env,
+                    cwd=resolved_ws or None,
+                )
+
             st.proc = proc
 
-            if proc.stdout is not None:
-                for line in iter(proc.stdout.readline, ""):
-                    if not line:
-                        break
-                    if st.cancelled:
-                        break
-                    m = _SESSION_ID_RE.search(line)
-                    if m:
-                        captured_session_id = m.group(1)
+            pending = ""
+            last_partial_flush = _now_s()
+
+            def _emit(text: str, *, flush_partial: bool) -> None:
+                nonlocal captured_session_id
+                if not text:
+                    return
+                cleaned = _strip_ansi(text).replace("\r", "")
+                if not cleaned:
+                    return
+                chunks, sid = stream_parser.feed(cleaned, flush_partial=flush_partial)
+                if sid:
+                    captured_session_id = sid
+                for c in chunks:
+                    if not c:
                         continue
-                    if _RESUMED_LINE_RE.search(line):
-                        continue
-                    assistant_chunks.append(line)
-                    st.q.put(("delta", {"text": line}))
+                    assistant_chunks.append(c)
+                    st.q.put(("delta", {"text": c}))
+
+            if master_fd is None:
+                if proc.stdout is not None:
+                    for line in iter(proc.stdout.readline, ""):
+                        if not line:
+                            break
+                        if st.cancelled:
+                            break
+                        m = _SESSION_ID_RE.search(line)
+                        if m:
+                            captured_session_id = m.group(1)
+                            continue
+                        if _RESUMED_LINE_RE.search(line):
+                            continue
+                        _emit(line, flush_partial=False)
+            else:
+                try:
+                    while True:
+                        if st.cancelled:
+                            break
+                        if proc.poll() is not None:
+                            break
+                        r, _, _ = select.select([master_fd], [], [], 0.12)
+                        if not r:
+                            now = _now_s()
+                            if pending and (now - last_partial_flush) >= 0.25 and "session_id:" not in pending:
+                                _emit(pending, flush_partial=True)
+                                pending = ""
+                                last_partial_flush = now
+                            continue
+                        try:
+                            data = os.read(master_fd, 4096)
+                        except Exception:
+                            break
+                        if not data:
+                            break
+                        try:
+                            text = data.decode("utf-8", errors="replace")
+                        except Exception:
+                            text = str(data)
+                        pending += text
+
+                        while True:
+                            nl = pending.find("\n")
+                            if nl == -1:
+                                break
+                            line = pending[: nl + 1]
+                            pending = pending[nl + 1 :]
+                            m = _SESSION_ID_RE.search(line)
+                            if m:
+                                captured_session_id = m.group(1)
+                                continue
+                            if _RESUMED_LINE_RE.search(line):
+                                continue
+                            _emit(line, flush_partial=False)
+                        now = _now_s()
+                        if pending and (now - last_partial_flush) >= 0.2:
+                            if "session_id:" not in pending:
+                                _emit(pending, flush_partial=True)
+                                pending = ""
+                            last_partial_flush = now
+                finally:
+                    if pending and "session_id:" not in pending:
+                        _emit(pending, flush_partial=True)
+                    try:
+                        os.close(master_fd)
+                    except Exception:
+                        pass
 
             if st.cancelled:
                 try:
@@ -971,22 +1205,23 @@ def cancel_stream(stream_id: str, *, user_id: int) -> bool:
 def stream_sse_generator(stream_id: str):
     st = get_stream(stream_id)
     if st is None:
-        yield _sse("error", {"ok": False, "message": "stream not found"})
+        yield _sse_bytes("error", {"ok": False, "message": "stream not found"})
         return
 
-    yield _sse("open", {"ok": True, "stream_id": stream_id})
+    yield (": init " + (" " * 2048) + "\n\n").encode("utf-8")
+    yield _sse_bytes("open", {"ok": True, "stream_id": stream_id})
     last_ping = _now_s()
     while True:
         try:
             evt, payload = st.q.get(timeout=0.75)
-            yield _sse(evt, payload)
+            yield _sse_bytes(evt, payload)
         except queue.Empty:
             if st.done.is_set():
                 break
             now = _now_s()
             if now - last_ping >= 15:
                 last_ping = now
-                yield ": ping\n\n"
+                yield b": ping\n\n"
             continue
 
     remove_stream(stream_id)
