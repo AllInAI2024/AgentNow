@@ -4,7 +4,7 @@ import os
 import asyncio
 import json
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, WebSocket, WebSocketDisconnect, Request, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -37,6 +37,23 @@ from app.services.super_assistant_service import (
 from app.services.hermes_profile_service import HermesProfileService
 
 router = APIRouter(prefix="/assistant", tags=["超级助理"])
+webui_compat_router = APIRouter(tags=["Hermes WebUI 兼容"])
+
+
+def _extract_bearer_token(value: str | None) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.lower().startswith("bearer "):
+        raw = raw[7:].strip()
+    return raw or None
+
+
+def _resolve_user_id_for_stream(request: Request, token: str | None) -> int | None:
+    t = _extract_bearer_token(token) or _extract_bearer_token(request.headers.get("Authorization"))
+    if not t:
+        return None
+    return decode_access_token(t)
 
 
 @router.get(
@@ -145,6 +162,7 @@ def chat_start(
             reasoning_effort=body.reasoning_effort,
             show_reasoning=body.show_reasoning,
             attachments=body.attachments,
+            legacy_delta_enabled=False,
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -342,3 +360,78 @@ def chat_cancel(
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="stream not found")
     return APIResponse(code=200, message="已中断", data={"ok": True})
+
+
+@webui_compat_router.post("/api/chat/start", summary="WebUI 兼容：启动对话流")
+def webui_chat_start(
+    request: Request,
+    body: dict = Body(...),
+):
+    token = _extract_bearer_token(request.headers.get("Authorization"))
+    user_id = decode_access_token(token or "")
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None or not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+        msg = str((body or {}).get("message") or "").strip()
+        if not msg:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="message is required")
+        stream_id, _ = start_hermes_chat_stream(
+            db=db,
+            user=user,
+            session_id=str((body or {}).get("session_id") or "").strip() or None,
+            message=msg,
+            workspace=str((body or {}).get("workspace") or "").strip() or None,
+            model=str((body or {}).get("model") or "").strip() or None,
+            reasoning_effort=str((body or {}).get("reasoning_effort") or "").strip() or None,
+            show_reasoning=(body or {}).get("show_reasoning"),
+            attachments=(body or {}).get("attachments"),
+            legacy_delta_enabled=False,
+        )
+        return {"stream_id": stream_id, "session_id": str((body or {}).get("session_id") or "").strip()}
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+@webui_compat_router.get("/api/chat/stream", summary="WebUI 兼容：SSE 流式输出")
+def webui_chat_stream(
+    request: Request,
+    stream_id: str = Query(..., description="stream_id"),
+    token: str | None = Query(None, description="Bearer token（用于 EventSource）"),
+):
+    user_id = _resolve_user_id_for_stream(request, token)
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    st = get_stream(stream_id)
+    if st is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="stream not found")
+    if st.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+    return StreamingResponse(
+        stream_sse_generator(stream_id),
+        media_type="text/event-stream; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@webui_compat_router.get("/api/chat/cancel", summary="WebUI 兼容：取消对话流")
+def webui_chat_cancel(
+    request: Request,
+    stream_id: str = Query(..., description="stream_id"),
+    token: str | None = Query(None, description="Bearer token（用于 EventSource）"),
+):
+    user_id = _resolve_user_id_for_stream(request, token)
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    ok = cancel_stream(stream_id, user_id=user_id)
+    return {"ok": True, "cancelled": ok, "stream_id": stream_id}

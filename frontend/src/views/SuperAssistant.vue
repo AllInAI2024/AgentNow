@@ -121,13 +121,7 @@
                   <div class="message-content">
                     <div class="message-bubble" :class="getBubbleClass(msg)">
                       <template v-if="msg.role === 'assistant'">
-                        <div v-if="isStreamingTerminal(msg)" class="assistant-terminal-wrap">
-                          <details class="assistant-thinking-details" open>
-                            <summary>思考过程</summary>
-                            <div class="assistant-terminal-surface" :ref="setActiveTerminalSurface"></div>
-                          </details>
-                        </div>
-                        <div v-else class="message-text markdown-content" v-html="renderAssistantHtml(msg.content, msg)"></div>
+                        <div class="message-text markdown-content" v-html="renderAssistantHtml(msg.content, msg)"></div>
                       </template>
                       <div v-else class="message-text">{{ msg.content }}</div>
                     </div>
@@ -210,7 +204,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, onBeforeUnmount, h } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, onBeforeUnmount, h } from 'vue'
 import { message as toast, Modal, Input } from 'ant-design-vue'
 import { marked } from 'marked'
 import { MessageOutlined, PlusOutlined, SendOutlined, StopOutlined, RobotOutlined, MoreOutlined, PaperClipOutlined } from '@ant-design/icons-vue'
@@ -252,15 +246,10 @@ const loadingWorkspaces = ref(false)
 const selectedWorkspace = ref<string>('')
 
 let streamAbort: AbortController | null = null
-let streamWs: WebSocket | null = null
+let streamEs: EventSource | null = null
 const activeStreamId = ref<string | null>(null)
 const cancelRequested = ref(false)
 const activeAssistantMsg = ref<SuperAssistantMessage | null>(null)
-const terminalStreaming = ref(false)
-let terminalSurface: HTMLElement | null = null
-let terminalInstance: any = null
-let terminalFit: any = null
-let terminalPending = ''
 
 marked.setOptions({
   breaks: true,
@@ -289,58 +278,62 @@ const escapeHtml = (s: string) => {
     .replace(/'/g, '&#39;')
 }
 
-const isStreamingTerminal = (msg: SuperAssistantMessage) => {
-  return !!(terminalStreaming.value && sending.value && activeAssistantMsg.value === msg)
-}
+const postProcessAssistantMessage = (msg: SuperAssistantMessage) => {
+  if (!msg || msg.role !== 'assistant') return
+  const rawThinking = String((msg as any).thinking || '')
+  const rawContent = String(msg.content || '')
+  let thinking = rawThinking
+  let content = rawContent
 
-const setActiveTerminalSurface = (refEl: any) => {
-  const el = (refEl && (refEl as any).$el) ? (refEl as any).$el : refEl
-  terminalSurface = el instanceof HTMLElement ? el : null
-  if (terminalSurface && terminalStreaming.value) ensureTerminal()
-}
-
-const ensureTerminal = () => {
-  if (!terminalSurface) return
-  if (terminalInstance) return
-  const w = window as any
-  const TerminalCls = w.Terminal
-  if (typeof TerminalCls !== 'function') return
-  terminalInstance = new TerminalCls({
-    cursorBlink: true,
-    fontSize: 13,
-    scrollback: 1200,
-    convertEol: true,
-  })
-  if (w.FitAddon && typeof w.FitAddon.FitAddon === 'function') {
-    terminalFit = new w.FitAddon.FitAddon()
-    terminalInstance.loadAddon(terminalFit)
+  const stripTrailer = (s: string) => {
+    const idx = s.indexOf('Resume this session with:')
+    if (idx !== -1) return s.slice(0, idx).trimEnd()
+    return s
   }
-  terminalInstance.open(terminalSurface)
-  try { terminalFit?.fit?.() } catch {}
-  if (terminalPending) {
-    terminalInstance.write(terminalPending)
-    terminalPending = ''
-  }
-}
 
-const writeTerminal = (chunk: string) => {
-  if (!chunk) return
-  if (!terminalStreaming.value) terminalStreaming.value = true
-  if (!terminalInstance) {
-    terminalPending += chunk
-    nextTick(() => ensureTerminal())
-    return
+  const filterNoiseLines = (s: string) => {
+    const lines = String(s || '').split(/\r?\n/)
+    const kept: string[] = []
+    for (const line of lines) {
+      const t = line.trim()
+      if (!t) {
+        kept.push(line)
+        continue
+      }
+      if (/^(Query:|Initializing agent)/i.test(t)) continue
+      if (/^正在初始化(智能体|知识库)/.test(t)) continue
+      if (/^正在准备运行环境/.test(t)) continue
+      if (/^(Available Tools|MCP Servers|Available Skills)\b/i.test(t)) continue
+      if (/^\s*Profile:\b/i.test(t)) continue
+      if (/^⚠\s*\d+\s+commits behind\b/i.test(t)) continue
+      kept.push(line)
+    }
+    return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
   }
-  terminalInstance.write(chunk)
-}
 
-const resetTerminal = () => {
-  terminalStreaming.value = false
-  terminalPending = ''
-  try { terminalInstance?.dispose?.() } catch {}
-  terminalInstance = null
-  terminalFit = null
-  terminalSurface = null
+  thinking = filterNoiseLines(stripTrailer(thinking))
+  content = stripTrailer(content).trim()
+
+  if (!content && thinking) {
+    const needle = '⚕ Hermes'
+    const p = thinking.indexOf(needle)
+    if (p !== -1) {
+      const lineStart = Math.max(0, thinking.lastIndexOf('\n', p))
+      const lineEnd = (() => {
+        const e = thinking.indexOf('\n', p)
+        return e === -1 ? thinking.length : e
+      })()
+      const after = thinking.slice(lineEnd).trim()
+      const before = thinking.slice(0, lineStart).trim()
+      if (after) {
+        content = after
+        thinking = before
+      }
+    }
+  }
+
+  ;(msg as any).thinking = thinking
+  msg.content = content
 }
 
 const splitAssistantParts = (content: string | null | undefined): { thinking: string; conclusion: string } => {
@@ -399,9 +392,22 @@ const splitAssistantParts = (content: string | null | undefined): { thinking: st
 }
 
 const renderAssistantHtml = (content: string | null | undefined, msg?: SuperAssistantMessage): string => {
-  const { thinking, conclusion } = splitAssistantParts(content)
-  const isStreamingThisMsg = !!(sending.value && msg && activeAssistantMsg.value === msg)
+  const explicitThinking = msg ? normalizeText((msg.thinking as any) || '') : ''
+  const explicitConclusion = normalizeText(content)
+  const { thinking, conclusion } = explicitThinking
+    ? { thinking: explicitThinking, conclusion: explicitConclusion }
+    : splitAssistantParts(content)
+  const isStreamingThisMsg = !!(msg && (msg as any).streaming)
   if (isStreamingThisMsg) {
+    if (!thinking && !conclusion) {
+      return `
+        <div class="assistant-thinking-spinner">
+          <div class="assistant-thinking-dot"></div>
+          <div class="assistant-thinking-dot"></div>
+          <div class="assistant-thinking-dot"></div>
+        </div>
+      `
+    }
     if (thinking && !conclusion) {
       return `
         <details class="assistant-thinking-details" open>
@@ -410,8 +416,9 @@ const renderAssistantHtml = (content: string | null | undefined, msg?: SuperAssi
         </details>
       `
     }
-    if (!conclusion) return `<pre class="assistant-streaming-raw">${escapeHtml(thinking)}</pre>`
-    if (!thinking) return `<pre class="assistant-streaming-raw">${escapeHtml(conclusion)}</pre>`
+    if (!thinking) {
+      return `<pre class="assistant-streaming-raw">${escapeHtml(conclusion)}</pre>`
+    }
     return `
       <details class="assistant-thinking-details" open>
         <summary>思考过程</summary>
@@ -423,7 +430,7 @@ const renderAssistantHtml = (content: string | null | undefined, msg?: SuperAssi
   if (thinking && !conclusion) {
     const thinkingHtml = renderMarkdown(thinking)
     return `
-      <details class="assistant-thinking-details" open>
+      <details class="assistant-thinking-details">
         <summary>思考过程</summary>
         <div class="assistant-thinking-body markdown-content">${thinkingHtml}</div>
       </details>
@@ -446,19 +453,18 @@ const isUserCancelledMessage = (msg: SuperAssistantMessage) => {
   return msg.role === 'assistant' && (msg.content || '').trim() === '已由用户主动终止。'
 }
 
-const getAssistantVariant = (content: string | null | undefined): 'thinking' | 'conclusion' | null => {
-  const t = normalizeText(content)
-  if (!t) return null
-  const parts = splitAssistantParts(t)
-  if (parts.thinking && parts.conclusion) return 'conclusion'
-  if (parts.conclusion) return 'conclusion'
+const getAssistantVariant = (msg: SuperAssistantMessage): 'thinking' | 'conclusion' | null => {
+  const thinking = normalizeText((msg.thinking as any) || '')
+  const conclusion = normalizeText(msg.content)
+  if (!thinking && !conclusion) return null
+  if (conclusion) return 'conclusion'
   return 'thinking'
 }
 
 const getBubbleClass = (msg: SuperAssistantMessage) => {
   const muted = isUserCancelledMessage(msg)
   if (msg.role !== 'assistant') return { 'message-bubble-muted': muted }
-  const v = getAssistantVariant(msg.content)
+  const v = getAssistantVariant(msg)
   return {
     'message-bubble-muted': muted,
     'message-bubble-thinking': v !== 'conclusion',
@@ -731,79 +737,113 @@ const findSseDelimiter = (s: string): { idx: number; len: number } => {
   return { idx: -1, len: 0 }
 }
 
-const streamChat = async (streamId: string, onDelta: (text: string) => void): Promise<string | null> => {
+const streamChat = async (
+  streamId: string,
+  handlers: {
+    onToken?: (text: string) => void
+    onReasoning?: (text: string) => void
+    onDelta?: (text: string) => void
+    onTool?: (payload: any) => void
+    onToolComplete?: (payload: any) => void
+  }
+): Promise<string | null> => {
   if (streamAbort) streamAbort.abort()
   streamAbort = new AbortController()
-  if (streamWs) {
-    try { streamWs.close() } catch {}
-    streamWs = null
+  if (streamEs) {
+    try { streamEs.close() } catch {}
+    streamEs = null
   }
 
   const token = userStore.token
-  const baseHost = import.meta.env.DEV ? `${window.location.hostname}:5117` : window.location.host
-  const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const wsUrl = `${wsProto}://${baseHost}/api/v1/assistant/chat/ws?stream_id=${encodeURIComponent(streamId)}&token=${encodeURIComponent(token)}`
+  if (!token) throw new Error('未登录')
 
+  const url = `/api/chat/stream?stream_id=${encodeURIComponent(streamId)}&token=${encodeURIComponent(token)}`
   return await new Promise<string | null>((resolve, reject) => {
     let finalSessionId: string | null = null
-    let opened = false
-    const ws = new WebSocket(wsUrl)
-    streamWs = ws
+    let finished = false
+    let sawStructured = false
+
+    const es = new EventSource(url)
+    streamEs = es
 
     const cleanup = () => {
-      if (streamWs === ws) streamWs = null
-      try { ws.close() } catch {}
+      if (streamEs === es) streamEs = null
+      try { es.close() } catch {}
     }
 
-    ws.onopen = () => {
-      opened = true
-    }
-    ws.onerror = () => {
-      if (cancelRequested.value) return
+    const safeReject = (err: Error) => {
+      if (finished) return
+      finished = true
       cleanup()
-      reject(new Error('stream failed'))
+      reject(err)
     }
-    ws.onmessage = (ev) => {
-      if (cancelRequested.value) return
-      let msg: any = null
+    const safeResolve = (sid: string | null) => {
+      if (finished) return
+      finished = true
+      cleanup()
+      resolve(sid)
+    }
+
+    const onJson = (ev: MessageEvent): any => {
       try {
-        msg = JSON.parse(String(ev.data || '{}'))
+        return JSON.parse(String((ev as any).data || '{}'))
       } catch {
-        return
-      }
-      const event = String(msg.event || '')
-      const data = msg.data
-      if (event === 'delta') {
-        onDelta(String((data && data.text) || ''))
-      } else if (event === 'term') {
-        writeTerminal(String((data && (data.data ?? data.text)) || ''))
-      } else if (event === 'done') {
-        const sid = String((data && data.session_id) || '').trim()
-        if (sid) finalSessionId = sid
-        cleanup()
-        resolve(finalSessionId)
-      } else if (event === 'cancel') {
-        cleanup()
-        reject(new Error('已中断'))
-      } else if (event === 'error') {
-        const m = String((data && data.message) || '对话失败')
-        cleanup()
-        reject(new Error(m))
+        return {}
       }
     }
-    ws.onclose = () => {
+
+    es.addEventListener('token', (ev: any) => {
+      if (cancelRequested.value) return
+      const data = onJson(ev)
+      sawStructured = true
+      handlers.onToken?.(String(data?.text || ''))
+    })
+    es.addEventListener('delta', (ev: any) => {
+      if (cancelRequested.value) return
+      if (sawStructured) return
+      const data = onJson(ev)
+      handlers.onDelta?.(String(data?.text || ''))
+    })
+    es.addEventListener('reasoning', (ev: any) => {
+      if (cancelRequested.value) return
+      const data = onJson(ev)
+      sawStructured = true
+      handlers.onReasoning?.(String(data?.text || ''))
+    })
+    es.addEventListener('tool', (ev: any) => {
+      if (cancelRequested.value) return
+      handlers.onTool?.(onJson(ev))
+    })
+    es.addEventListener('tool_complete', (ev: any) => {
+      if (cancelRequested.value) return
+      handlers.onToolComplete?.(onJson(ev))
+    })
+    es.addEventListener('done', (ev: any) => {
+      const data = onJson(ev)
+      const sid = String(data?.session_id || '').trim()
+      if (sid) finalSessionId = sid
+      safeResolve(finalSessionId)
+    })
+    es.addEventListener('cancel', () => {
+      safeReject(new Error('已中断'))
+    })
+    es.addEventListener('error', (ev: any) => {
+      const data = onJson(ev)
+      const m = String(data?.message || '').trim()
+      if (m) {
+        safeReject(new Error(m))
+        return
+      }
+    })
+    es.addEventListener('stream_end', () => {
+      safeResolve(finalSessionId)
+    })
+    es.onerror = () => {
       if (cancelRequested.value) {
-        cleanup()
-        reject(new Error('已中断'))
+        safeReject(new Error('已中断'))
         return
       }
-      if (!opened) {
-        cleanup()
-        reject(new Error('stream failed'))
-        return
-      }
-      cleanup()
-      resolve(finalSessionId)
+      safeReject(new Error('stream failed'))
     }
   })
 }
@@ -823,15 +863,17 @@ const handleCancel = async () => {
         activeAssistantMsg.value.content = '已由用户主动终止。'
       }
       try {
-        await superAssistantApi.chatCancel(sid)
+        const token = userStore.token
+        if (token) {
+          await fetch(`/api/chat/cancel?stream_id=${encodeURIComponent(sid)}&token=${encodeURIComponent(token)}`)
+        }
       } catch {
       } finally {
         if (streamAbort) streamAbort.abort()
-        if (streamWs) {
-          try { streamWs.close() } catch {}
-          streamWs = null
+        if (streamEs) {
+          try { streamEs.close() } catch {}
+          streamEs = null
         }
-        resetTerminal()
         sending.value = false
         isTyping.value = false
         activeStreamId.value = null
@@ -847,7 +889,6 @@ const handleSend = async () => {
   sending.value = true
   isTyping.value = true
   cancelRequested.value = false
-  resetTerminal()
   try {
     const sid = currentSessionId.value || undefined
     const usedModel = selectedModel.value
@@ -871,7 +912,7 @@ const handleSend = async () => {
 
     const userMsg: SuperAssistantMessage = { role: 'user', content: localUserText, ts: Date.now() / 1000 }
     messages.value.push(userMsg)
-    const assistantMsg: SuperAssistantMessage = { role: 'assistant', content: '', ts: Date.now() / 1000 }
+    const assistantMsg = reactive<SuperAssistantMessage>({ role: 'assistant', content: '', thinking: '', streaming: true, ts: Date.now() / 1000 })
     messages.value.push(assistantMsg)
     activeAssistantMsg.value = assistantMsg
     await scrollToBottom()
@@ -885,43 +926,124 @@ const handleSend = async () => {
     }))
     pendingFiles.value = []
 
-    const res = await superAssistantApi.chatStart({
-      session_id: sid || undefined,
-      message: finalText,
-      workspace: selectedWorkspace.value || undefined,
-      model: usedModel || undefined,
-      reasoning_effort: usedReasoning || undefined,
-      show_reasoning: usedReasoning !== 'none',
-      attachments: attachmentsPayload,
+    const token = userStore.token
+    if (!token) throw new Error('未登录')
+    const startResp = await fetch('/api/chat/start', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        session_id: sid || undefined,
+        message: finalText,
+        workspace: selectedWorkspace.value || undefined,
+        model: usedModel || undefined,
+        reasoning_effort: usedReasoning || undefined,
+        show_reasoning: false,
+        attachments: attachmentsPayload,
+      }),
     })
-    const streamId = res.data.stream_id
+    if (!startResp.ok) {
+      throw new Error('发送失败')
+    }
+    const startJson = await startResp.json()
+    const streamId = String(startJson?.stream_id || '').trim()
+    if (!streamId) throw new Error('发送失败')
     activeStreamId.value = streamId
 
-    let pending = ''
+    let answerPending = ''
+    let thinkingPending = ''
     let raf = 0
+    let deltaBuf = ''
+    let deltaInThink = false
+
+    const feedDelta = (chunk: string) => {
+      const s = String(chunk || '')
+      if (!s) return
+      deltaBuf += s
+      while (true) {
+        const lo = deltaBuf.toLowerCase()
+        const openIdx = lo.indexOf('<think>')
+        const closeIdx = lo.indexOf('</think>')
+        if (openIdx === -1 && closeIdx === -1) {
+          if (deltaBuf) {
+            if (deltaInThink) thinkingPending += deltaBuf
+            else answerPending += deltaBuf
+            deltaBuf = ''
+          }
+          break
+        }
+        if (openIdx !== -1 && (closeIdx === -1 || openIdx < closeIdx)) {
+          const before = deltaBuf.slice(0, openIdx)
+          if (before) {
+            if (deltaInThink) thinkingPending += before
+            else answerPending += before
+          }
+          deltaBuf = deltaBuf.slice(openIdx + 7)
+          deltaInThink = true
+          continue
+        }
+        if (closeIdx !== -1) {
+          const before = deltaBuf.slice(0, closeIdx)
+          if (before) {
+            if (deltaInThink) thinkingPending += before
+            else answerPending += before
+          }
+          deltaBuf = deltaBuf.slice(closeIdx + 8)
+          deltaInThink = false
+          continue
+        }
+        break
+      }
+      if (!raf) raf = requestAnimationFrame(flushPending)
+    }
     const flushPending = () => {
       raf = 0
-      if (!pending) return
-      assistantMsg.content += pending
-      pending = ''
+      if (!answerPending && !thinkingPending) return
+      if (thinkingPending) {
+        assistantMsg.thinking = `${assistantMsg.thinking || ''}${thinkingPending}`
+        thinkingPending = ''
+      }
+      if (answerPending) {
+        assistantMsg.content += answerPending
+        answerPending = ''
+      }
       scrollToBottom()
     }
 
-    const newSid = await streamChat(streamId, (delta) => {
-      pending += delta
-      if (!raf) raf = requestAnimationFrame(flushPending)
+    const newSid = await streamChat(streamId, {
+      onToken: (delta) => {
+        answerPending += delta
+        if (!raf) raf = requestAnimationFrame(flushPending)
+      },
+      onReasoning: (delta) => {
+        thinkingPending += delta
+        if (!raf) raf = requestAnimationFrame(flushPending)
+      },
+      onDelta: (delta) => {
+        feedDelta(delta)
+      },
+      onTool: (payload) => {
+        void payload
+      },
+      onToolComplete: (payload) => {
+        void payload
+      },
     })
     if (raf) cancelAnimationFrame(raf)
     flushPending()
 
+    postProcessAssistantMessage(assistantMsg)
+    assistantMsg.streaming = false
     isTyping.value = false
+    sending.value = false
     activeStreamId.value = null
     activeAssistantMsg.value = null
-    resetTerminal()
     await loadSessions()
     const finalSid = (newSid || sid || '').trim()
     if (finalSid) {
-      await loadSession(finalSid)
+      currentSessionId.value = finalSid
     } else {
       await loadSessions()
     }
@@ -937,9 +1059,11 @@ const handleSend = async () => {
     }
     activeStreamId.value = null
     activeAssistantMsg.value = null
-    resetTerminal()
   } finally {
     inputMessage.value = ''
+    if (activeAssistantMsg.value) {
+      ;(activeAssistantMsg.value as any).streaming = false
+    }
     sending.value = false
     cancelRequested.value = false
   }
@@ -966,6 +1090,10 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (streamAbort) streamAbort.abort()
+  if (streamEs) {
+    try { streamEs.close() } catch {}
+    streamEs = null
+  }
 })
 </script>
 
@@ -1327,56 +1455,56 @@ onBeforeUnmount(() => {
   color: #4e5969;
 }
 
-.assistant-thinking-details {
+.message-text :deep(.assistant-thinking-details) {
   margin: 0 0 8px 0;
 }
 
-.assistant-thinking-details > summary {
-  font-size: 12px;
+.message-text :deep(.assistant-thinking-details > summary) {
+  font-size: 11px;
   color: #86909c;
   cursor: pointer;
   user-select: none;
   list-style: none;
 }
 
-.assistant-thinking-details > summary::-webkit-details-marker {
+.message-text :deep(.assistant-thinking-details > summary::-webkit-details-marker) {
   display: none;
 }
 
-.assistant-thinking-body {
+.message-text :deep(.assistant-thinking-body) {
   margin-top: 8px;
   color: #4e5969;
-  background: rgba(134, 144, 156, 0.10);
+  background: rgba(134, 144, 156, 0.12);
   border: 1px dashed rgba(200, 204, 212, 0.9);
   border-radius: 10px;
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.55;
 }
 
-.assistant-thinking-body :deep(*) {
-  font-size: 12px;
+.message-text :deep(.assistant-thinking-body *) {
+  font-size: 11px;
   line-height: 1.55;
   color: #4e5969;
 }
 
-.assistant-thinking-body :deep(h1),
-.assistant-thinking-body :deep(h2),
-.assistant-thinking-body :deep(h3) {
-  font-size: 13px;
+.message-text :deep(.assistant-thinking-body h1),
+.message-text :deep(.assistant-thinking-body h2),
+.message-text :deep(.assistant-thinking-body h3) {
+  font-size: 12px;
   margin: 10px 0 6px 0;
   color: #4e5969;
 }
 
-.assistant-thinking-body :deep(code) {
+.message-text :deep(.assistant-thinking-body code) {
   background: rgba(242, 243, 245, 0.9);
   padding: 1px 5px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 11px;
   color: #4e5969;
 }
 
-.assistant-streaming-raw {
+.message-text :deep(.assistant-streaming-raw) {
   margin: 8px 0 0 0;
   padding: 0;
   white-space: pre-wrap;
@@ -1402,10 +1530,33 @@ onBeforeUnmount(() => {
   background: rgba(19, 20, 22, 0.96);
 }
 
-.assistant-conclusion-body {
+.message-text :deep(.assistant-conclusion-body) {
   margin-top: 8px;
   color: #1d2129;
   font-size: 14px;
+}
+
+.message-text :deep(.assistant-thinking-spinner) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 2px;
+}
+
+.message-text :deep(.assistant-thinking-dot) {
+  width: 6px;
+  height: 6px;
+  background: rgba(134, 144, 156, 0.55);
+  border-radius: 50%;
+  animation: typing 1.1s infinite ease-in-out;
+}
+
+.message-text :deep(.assistant-thinking-dot:nth-child(2)) {
+  animation-delay: 0.15s;
+}
+
+.message-text :deep(.assistant-thinking-dot:nth-child(3)) {
+  animation-delay: 0.3s;
 }
 
 .message-text.markdown-content :deep(ul),

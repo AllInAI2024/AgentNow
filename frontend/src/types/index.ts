@@ -891,6 +891,8 @@ export interface EnableAgentResult {
 export interface SuperAssistantMessage {
   role: 'user' | 'assistant'
   content: string
+  thinking?: string
+  streaming?: boolean
   ts: number
 }
 

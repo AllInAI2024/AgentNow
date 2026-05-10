@@ -6,12 +6,18 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.models import Base, engine, SessionLocal
-from app.routers import auth_router, permission_router, department_router, employee_router, role_router, knowledge_router, hermes_router, agent_template_router, agent_router, super_assistant_router
+from app.routers import auth_router, permission_router, department_router, employee_router, role_router, knowledge_router, hermes_router, agent_template_router, agent_router, super_assistant_router, webui_compat_router
+from app.services.super_assistant_service import prewarm_hermes_agent
+import threading
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    try:
+        threading.Thread(target=prewarm_hermes_agent, daemon=True).start()
+    except Exception:
+        pass
     
     yield
     
@@ -43,6 +49,7 @@ app.include_router(hermes_router, prefix=settings.API_PREFIX)
 app.include_router(agent_template_router, prefix=settings.API_PREFIX)
 app.include_router(agent_router, prefix=settings.API_PREFIX)
 app.include_router(super_assistant_router, prefix=settings.API_PREFIX)
+app.include_router(webui_compat_router)
 
 
 @app.get("/")

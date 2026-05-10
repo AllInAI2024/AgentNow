@@ -4,17 +4,15 @@ import json
 import os
 import queue
 import re
-import shutil
 import sqlite3
-import subprocess
 import threading
 import time
 import uuid
 import base64
 import mimetypes
-import select
-import pty
 import sys
+import hashlib
+import traceback
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -121,6 +119,28 @@ def _safe_json_write(path: Path, data: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
+
+
+def _sha1_text(value: str) -> str:
+    return hashlib.sha1((value or "").strip().encode("utf-8", errors="ignore")).hexdigest()
+
+def _derive_session_title_from_user_text(text: str) -> str:
+    raw = str(text or "").strip()
+    if not raw:
+        return "Untitled"
+    first_line = raw.splitlines()[0].strip()
+    s = re.sub(r"\s+", " ", first_line).strip()
+    if not s:
+        return "Untitled"
+    if len(s) > 64:
+        s = s[:64].rstrip()
+    return s or "Untitled"
+
+def _is_default_session_title(title: str) -> bool:
+    t = str(title or "").strip()
+    if not t:
+        return True
+    return t.lower() in ("untitled", "new chat")
 
 
 def _sse(event: str, data: dict) -> str:
@@ -249,6 +269,9 @@ def _strip_ansi(s: str) -> str:
 
 
 _HERMES_AGENT_ENV_LOCK = threading.Lock()
+_HERMES_AGENT_PREWARM_DONE = threading.Event()
+_HERMES_AGENT_PREWARM_OK = {"yes": False}
+_HERMES_AGENT_IMPORT_LAST_ERROR = {"text": ""}
 
 
 @contextmanager
@@ -273,15 +296,25 @@ def _temporary_environ(updates: Dict[str, Optional[str]]):
 
 
 def _import_hermes_ai_agent() -> Optional[type]:
-    base_home = _get_hermes_base_home()
-    agent_root = base_home / "hermes-agent"
-    if agent_root.exists() and str(agent_root) not in sys.path:
-        sys.path.insert(0, str(agent_root))
     try:
         from run_agent import AIAgent  # type: ignore
         return AIAgent
     except Exception:
+        try:
+            _HERMES_AGENT_IMPORT_LAST_ERROR["text"] = traceback.format_exc(limit=40)[-12000:]
+        except Exception:
+            _HERMES_AGENT_IMPORT_LAST_ERROR["text"] = "import failed"
         return None
+
+
+def prewarm_hermes_agent() -> None:
+    try:
+        _ = _import_hermes_ai_agent()
+        _HERMES_AGENT_PREWARM_OK["yes"] = _ is not None
+    except Exception:
+        _HERMES_AGENT_PREWARM_OK["yes"] = False
+    finally:
+        _HERMES_AGENT_PREWARM_DONE.set()
 
 
 def _safe_yaml_load(path: Path) -> dict:
@@ -338,10 +371,18 @@ class HermesCliStreamParser:
 
         while True:
             nl = self._buf.find("\n")
-            if nl == -1:
+            cr = self._buf.find("\r")
+            if nl == -1 and cr == -1:
                 break
-            line = self._buf[: nl + 1]
-            self._buf = self._buf[nl + 1 :]
+            if cr != -1 and (nl == -1 or cr < nl):
+                cut = cr + 1
+                if cut < len(self._buf) and self._buf[cut] == "\n":
+                    cut += 1
+                line = self._buf[:cut]
+                self._buf = self._buf[cut:]
+            else:
+                line = self._buf[: nl + 1]
+                self._buf = self._buf[nl + 1 :]
             emitted, sid = self._handle_line(line)
             if sid:
                 captured_session_id = sid
@@ -432,11 +473,6 @@ class HermesCliStreamParser:
                     self._opened_think = False
                 return out, sid
             if t.startswith("Query:") or "Initializing agent" in s:
-                if not self._opened_think:
-                    out.append("<think>\n")
-                    self._opened_think = True
-                if t:
-                    out.append(t + ("\n" if not allow_partial else ""))
                 return out, sid
             return out, sid
 
@@ -585,6 +621,7 @@ class StreamState:
     cancelled: bool = False
     proc: Optional[subprocess.Popen] = None
     thread_id: Optional[int] = None
+    legacy_delta_enabled: bool = True
     api_base_url: Optional[str] = None
     api_key: Optional[str] = None
     run_id: Optional[str] = None
@@ -637,10 +674,167 @@ class SuperAssistantService:
     def _get_state_db_path(self, profile_name: str) -> Path:
         return self._get_hermes_home_for_profile(profile_name) / "state.db"
 
+    def _get_webui_sessions_dir(self, hermes_home: Path) -> Path:
+        return Path(hermes_home) / "webui" / "sessions"
+
+    def _candidate_hermes_homes(self, profile_name: str) -> List[Path]:
+        homes: List[Path] = []
+        try:
+            homes.append(_get_hermes_base_home())
+        except Exception:
+            pass
+        try:
+            homes.append(self._get_hermes_home_for_profile(profile_name))
+        except Exception:
+            pass
+        uniq: List[Path] = []
+        seen: set[str] = set()
+        for h in homes:
+            try:
+                p = Path(h).expanduser().resolve()
+            except Exception:
+                p = Path(h).expanduser()
+            key = str(p)
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq.append(p)
+        return uniq
+
+    def _load_webui_session_index(self, hermes_home: Path) -> List[dict]:
+        sessions_dir = self._get_webui_sessions_dir(hermes_home)
+        idx = sessions_dir / "_index.json"
+        if not idx.exists():
+            return []
+        try:
+            raw = json.loads(idx.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        if not isinstance(raw, list):
+            return []
+        out: List[dict] = []
+        for it in raw:
+            if isinstance(it, dict):
+                out.append(it)
+        return out
+
+    def _read_webui_session_file(self, hermes_home: Path, session_id: str) -> dict:
+        sid = (session_id or "").strip()
+        if not sid:
+            return {}
+        sessions_dir = self._get_webui_sessions_dir(hermes_home)
+        candidates = [
+            sessions_dir / f"{sid}.json",
+            sessions_dir / f"session_{sid}.json",
+        ]
+        for p in candidates:
+            if not p.exists():
+                continue
+            try:
+                raw = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(raw, dict):
+                return raw
+        return {}
+
+    def _read_webui_first_user_message_text(self, hermes_home: Path, session_id: str) -> str:
+        sess = self._read_webui_session_file(hermes_home, session_id)
+        msgs = sess.get("messages")
+        if not isinstance(msgs, list):
+            return ""
+        fallback = ""
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            role = str(m.get("role") or "").strip().lower()
+            content = str(m.get("content") or "")
+            if _is_blank_text(content):
+                continue
+            if not fallback:
+                fallback = content
+            if role in ("user", "human"):
+                return content
+        return fallback
+
+    def _extract_thinking_from_webui_message(self, msg: dict) -> Optional[str]:
+        if not isinstance(msg, dict):
+            return None
+        rc = msg.get("reasoning_content")
+        if isinstance(rc, str) and rc.strip():
+            return rc
+        rd = msg.get("reasoning_details")
+        if isinstance(rd, list):
+            for it in rd:
+                if not isinstance(it, dict):
+                    continue
+                thinking = it.get("thinking")
+                if isinstance(thinking, str) and thinking.strip():
+                    return thinking
+        r = msg.get("reasoning")
+        if isinstance(r, str) and r.strip():
+            return r
+        return None
+
     def _get_webui_state_dir(self, profile_name: str) -> Path:
         d = self._get_hermes_home_for_profile(profile_name) / "webui_state"
         d.mkdir(parents=True, exist_ok=True)
         return d
+
+    def _get_thinking_store_path(self, profile_name: str, session_id: str) -> Path:
+        sid = (session_id or "").strip()
+        base = self._get_webui_state_dir(profile_name) / "thinking"
+        base.mkdir(parents=True, exist_ok=True)
+        name = re.sub(r"[^0-9A-Za-z_-]+", "_", sid) or "unknown"
+        return base / f"{name}.json"
+
+    def _load_thinking_map(self, profile_name: str, session_id: str) -> dict[str, list[str]]:
+        p = self._get_thinking_store_path(profile_name, session_id)
+        if not p.exists():
+            return {}
+        raw = _safe_json_load(p)
+        if not isinstance(raw, dict):
+            return {}
+        items = raw.get("items")
+        if not isinstance(items, list):
+            return {}
+        out: dict[str, list[str]] = {}
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            h = str(it.get("answer_hash") or "").strip()
+            t = str(it.get("thinking") or "")
+            if not h or not t.strip():
+                continue
+            out.setdefault(h, []).append(t)
+        return out
+
+    def _persist_thinking_record(self, profile_name: str, *, session_id: str, answer: str, thinking: str) -> None:
+        sid = (session_id or "").strip()
+        if not sid:
+            return
+        a = str(answer or "").strip()
+        th = str(thinking or "").strip()
+        if not a or not th:
+            return
+        p = self._get_thinking_store_path(profile_name, sid)
+        raw = _safe_json_load(p) if p.exists() else {}
+        if not isinstance(raw, dict):
+            raw = {}
+        items = raw.get("items")
+        if not isinstance(items, list):
+            items = []
+        rec = {
+            "ts": _now_s(),
+            "answer_hash": _sha1_text(a),
+            "thinking": th,
+        }
+        items.append(rec)
+        raw["items"] = items[-200:]
+        try:
+            _safe_json_write(p, raw)  # type: ignore[arg-type]
+        except Exception:
+            return
 
     def _get_workspaces_file(self, profile_name: str) -> Path:
         return self._get_webui_state_dir(profile_name) / "workspaces.json"
@@ -860,6 +1054,8 @@ class SuperAssistantService:
         sid = (session_id or "").strip()
         if not sid:
             return []
+        thinking_map = self._load_thinking_map(profile_name, sid)
+        thinking_cursor: dict[str, int] = {}
         db_path = self._get_state_db_path(profile_name)
         if not db_path.exists():
             return []
@@ -884,10 +1080,19 @@ class SuperAssistantService:
                     content = str(row["content"] or "")
                     if _is_blank_text(content):
                         continue
+                    thinking: Optional[str] = None
+                    if role == "assistant" and thinking_map:
+                        h = _sha1_text(content)
+                        lst = thinking_map.get(h) or []
+                        idx = thinking_cursor.get(h, 0)
+                        if idx < len(lst):
+                            thinking = lst[idx]
+                            thinking_cursor[h] = idx + 1
                     out.append(
                         SuperAssistantMessage(
                             role=role,  # type: ignore[arg-type]
                             content=content,
+                            thinking=thinking,
                             ts=float(row["timestamp"] or 0),
                         )
                     )
@@ -895,9 +1100,153 @@ class SuperAssistantService:
         except Exception:
             return []
 
+    def _read_first_user_message_text(self, profile_name: str, session_id: str) -> str:
+        sid = (session_id or "").strip()
+        if not sid:
+            return ""
+        db_path = self._get_state_db_path(profile_name)
+        if not db_path.exists():
+            return ""
+        try:
+            with sqlite3.connect(str(db_path)) as conn:
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT role, content
+                    FROM messages
+                    WHERE session_id = ?
+                    ORDER BY timestamp ASC
+                    LIMIT 50
+                    """,
+                    (sid,),
+                )
+                fallback: str = ""
+                for row in cur.fetchall():
+                    role = str(row["role"] or "").strip().lower()
+                    content = str(row["content"] or "")
+                    if _is_blank_text(content):
+                        continue
+                    if not fallback:
+                        fallback = content
+                    if role in ("user", "human"):
+                        return content
+                return fallback
+        except Exception:
+            return ""
+
+    def _ensure_session_title(self, profile_name: str, session_id: str, user_text: str) -> str:
+        sid = (session_id or "").strip()
+        if not sid:
+            return "Untitled"
+        desired = _derive_session_title_from_user_text(user_text)
+        db_path = self._get_state_db_path(profile_name)
+        if not db_path.exists():
+            return desired
+        try:
+            with sqlite3.connect(str(db_path)) as conn:
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                cur.execute("PRAGMA table_info(sessions)")
+                cols = {row[1] for row in cur.fetchall()}
+                if "title" not in cols:
+                    return desired
+                cur.execute("SELECT title FROM sessions WHERE id = ? LIMIT 1", (sid,))
+                row = cur.fetchone()
+                existing = str(row["title"] if row and "title" in row.keys() else "").strip()
+                if existing and not _is_default_session_title(existing):
+                    return existing
+                cur.execute("UPDATE sessions SET title = ? WHERE id = ?", (desired, sid))
+                conn.commit()
+                return desired
+        except Exception:
+            return desired
+
     def list_sessions(self, *, user: User) -> List[SuperAssistantSessionListItem]:
         profile = self._ensure_profile_for_user(user)
-        items: List[SuperAssistantSessionListItem] = []
+        homes = self._candidate_hermes_homes(profile)
+        by_id: dict[str, dict] = {}
+        for h in homes:
+            for it in self._load_webui_session_index(h):
+                sid = str(it.get("session_id") or it.get("id") or "").strip()
+                if not sid:
+                    continue
+                prev = by_id.get(sid)
+                if prev is None:
+                    by_id[sid] = dict(it)
+                    by_id[sid]["__home"] = str(h)
+                    continue
+                try:
+                    prev_ts = float(prev.get("updated_at") or prev.get("last_message_at") or prev.get("created_at") or 0)
+                except Exception:
+                    prev_ts = 0.0
+                try:
+                    cur_ts = float(it.get("updated_at") or it.get("last_message_at") or it.get("created_at") or 0)
+                except Exception:
+                    cur_ts = 0.0
+                if cur_ts >= prev_ts:
+                    by_id[sid] = dict(it)
+                    by_id[sid]["__home"] = str(h)
+
+        def _build_items(*, require_profile_match: bool) -> List[SuperAssistantSessionListItem]:
+            out: List[SuperAssistantSessionListItem] = []
+            for sid, it in by_id.items():
+                try:
+                    source = str(it.get("source_tag") or it.get("source") or "").strip().lower()
+                    if source == "cron" or sid.startswith("cron_"):
+                        continue
+                    sess_profile = str(it.get("profile") or "default").strip() or "default"
+                    if require_profile_match and sess_profile != (profile or "default"):
+                        continue
+                    title = str(it.get("title") or "").strip()
+                    created_at = float(it.get("created_at") or 0)
+                    updated_at = float(it.get("updated_at") or it.get("last_message_at") or created_at or 0)
+                    last_message_at = it.get("last_message_at")
+                    try:
+                        last_message_at_f = float(last_message_at) if last_message_at is not None else None
+                    except Exception:
+                        last_message_at_f = None
+                    message_count = int(it.get("message_count") or 0)
+
+                    home_str = str(it.get("__home") or "").strip()
+                    home = Path(home_str) if home_str else None
+                    if (message_count <= 0 or _is_default_session_title(title)) and home is not None:
+                        seed = self._read_webui_first_user_message_text(home, sid)
+                        if _is_default_session_title(title) and seed:
+                            title = _derive_session_title_from_user_text(seed)
+                        if message_count <= 0 and seed:
+                            message_count = 1
+
+                    title = str(title or "").strip() or "Untitled"
+                    if message_count <= 0 and _is_default_session_title(title):
+                        continue
+
+                    out.append(
+                        SuperAssistantSessionListItem(
+                            session_id=sid,
+                            title=title,
+                            profile=profile or "default",
+                            created_at=created_at or updated_at or _now_s(),
+                            updated_at=updated_at or created_at or _now_s(),
+                            message_count=message_count,
+                            last_message_at=last_message_at_f or updated_at or None,
+                        )
+                    )
+                except Exception:
+                    continue
+            out.sort(key=lambda s: (s.updated_at or s.created_at), reverse=True)
+            if len(out) > 200:
+                out = out[:200]
+            return out
+
+        items = _build_items(require_profile_match=True)
+        if items:
+            return items
+        items = _build_items(require_profile_match=False)
+        if items:
+            return items
+
+        items = []
         for row in self._read_session_rows(profile, limit=200):
             try:
                 sid = str(row.get("id") or "").strip()
@@ -907,11 +1256,15 @@ class SuperAssistantService:
                 if source == "cron":
                     continue
                 message_count = int(row.get("actual_message_count") or row.get("message_count") or 0)
-                if message_count <= 0:
-                    continue
                 started_at = float(row.get("started_at") or 0)
                 last_activity = float(row.get("last_activity") or started_at or 0)
-                title = str(row.get("title") or "").strip() or "Untitled"
+                title = str(row.get("title") or "").strip()
+                if _is_default_session_title(title):
+                    first_user = self._read_first_user_message_text(profile, sid)
+                    title = self._ensure_session_title(profile, sid, first_user)
+                title = str(title or "").strip() or "Untitled"
+                if message_count <= 0 and _is_default_session_title(title):
+                    continue
                 items.append(
                     SuperAssistantSessionListItem(
                         session_id=sid,
@@ -933,6 +1286,77 @@ class SuperAssistantService:
         if not sid:
             raise FileNotFoundError("Session not found")
 
+        homes = self._candidate_hermes_homes(profile)
+        def _try_read_webui(*, require_profile_match: bool) -> Optional[SuperAssistantSession]:
+            for h in homes:
+                sess = self._read_webui_session_file(h, sid)
+                if not sess:
+                    continue
+                sess_profile = str(sess.get("profile") or "default").strip() or "default"
+                if require_profile_match and sess_profile != (profile or "default"):
+                    continue
+                title = str(sess.get("title") or "").strip() or "Untitled"
+                created_at = float(sess.get("created_at") or _now_s())
+                updated_at = float(sess.get("updated_at") or created_at)
+                model = str(sess.get("model") or "").strip() or None
+                raw_msgs = sess.get("messages")
+                out_msgs: List[SuperAssistantMessage] = []
+                if isinstance(raw_msgs, list):
+                    for m in raw_msgs:
+                        if not isinstance(m, dict):
+                            continue
+                        role = str(m.get("role") or "").strip().lower()
+                        if role not in ("user", "assistant"):
+                            continue
+                        content = str(m.get("content") or "")
+                        if _is_blank_text(content):
+                            continue
+                        thinking = None
+                        if role == "assistant":
+                            thinking = self._extract_thinking_from_webui_message(m)
+                        ts = m.get("timestamp")
+                        try:
+                            ts_f = float(ts) if ts is not None else 0.0
+                        except Exception:
+                            ts_f = 0.0
+                        out_msgs.append(
+                            SuperAssistantMessage(
+                                role=role,  # type: ignore[arg-type]
+                                content=content,
+                                thinking=thinking,
+                                ts=ts_f or 0.0,
+                            )
+                        )
+                if _is_default_session_title(title):
+                    seed = ""
+                    for m in out_msgs:
+                        if m.role == "user" and not _is_blank_text(m.content):
+                            seed = m.content
+                            break
+                    if seed:
+                        title = _derive_session_title_from_user_text(seed)
+                return SuperAssistantSession(
+                    session_id=sid,
+                    title=title,
+                    profile=profile or "default",
+                    hermes_session_id=sid,
+                    hermes_response_id=None,
+                    model=model,
+                    reasoning_effort=None,
+                    show_reasoning=None,
+                    created_at=created_at,
+                    updated_at=updated_at,
+                    message_count=len(out_msgs),
+                    messages=out_msgs,
+                )
+            return None
+
+        session = _try_read_webui(require_profile_match=True)
+        if session is None:
+            session = _try_read_webui(require_profile_match=False)
+        if session is not None:
+            return session
+
         meta = self._read_session_meta(profile, sid)
         messages = self._read_session_messages(profile, sid)
         if not meta and not messages:
@@ -940,7 +1364,17 @@ class SuperAssistantService:
 
         created_at = float(meta.get("started_at") or (messages[0].ts if messages else _now_s()))
         updated_at = float(meta.get("last_activity") or (messages[-1].ts if messages else created_at))
-        title = str(meta.get("title") or "").strip() or "Untitled"
+        title = str(meta.get("title") or "").strip()
+        if _is_default_session_title(title):
+            seed = ""
+            for m in messages:
+                if m.role == "user" and not _is_blank_text(m.content):
+                    seed = m.content
+                    break
+            if not seed:
+                seed = self._read_first_user_message_text(profile, sid)
+            title = self._ensure_session_title(profile, sid, seed)
+        title = str(title or "").strip() or "Untitled"
         model = str(meta.get("model") or "").strip() or None
 
         return SuperAssistantSession(
@@ -1023,6 +1457,7 @@ def start_hermes_chat_stream(
     reasoning_effort: Optional[str] = None,
     show_reasoning: Optional[bool] = None,
     attachments: Optional[list[dict]] = None,
+    legacy_delta_enabled: bool = True,
 ) -> Tuple[str, StreamState]:
     service = SuperAssistantService(db)
     profile = (service._ensure_profile_for_user(user) or "").strip() or "default"
@@ -1054,6 +1489,7 @@ def start_hermes_chat_stream(
             image_atts.append((p, mime))
 
     msg_text = (message or "").strip()
+    title_seed_text = msg_text
     if att_paths and not msg_text:
         msg_text = f"I've uploaded {len(att_paths)} file(s): {', '.join(att_paths)}"
     elif att_paths:
@@ -1067,12 +1503,14 @@ def start_hermes_chat_stream(
         created_at=_now_s(),
         q=queue.Queue(),
         done=threading.Event(),
+        legacy_delta_enabled=bool(legacy_delta_enabled),
     )
     with _STREAMS_LOCK:
         _STREAMS[stream_id] = st
 
     def _run():
         assistant_chunks: List[str] = []
+        reasoning_chunks: List[str] = []
         captured_session_id: Optional[str] = None
         try:
             st.thread_id = threading.current_thread().ident
@@ -1121,241 +1559,207 @@ def start_hermes_chat_stream(
                 env_updates["TERMINAL_CWD"] = str(resolved_ws)
                 env_updates["HERMES_WRITE_SAFE_ROOT"] = str(resolved_ws)
 
-            think_opened = {"yes": False}
-            think_closed = {"yes": False}
+            def _put(event: str, payload: dict) -> None:
+                try:
+                    st.q.put((event, payload))
+                except Exception:
+                    return
 
-            def _send(text: str) -> None:
+            trace_enabled = True
+            model_reasoning_enabled = show_reasoning is True
+            legacy_think_opened = {"yes": False}
+            legacy_think_closed = {"yes": False}
+
+            def _legacy_delta(text: str) -> None:
+                if not st.legacy_delta_enabled:
+                    return
                 if not text:
                     return
+                try:
+                    st.q.put(("delta", {"text": text}))
+                except Exception:
+                    return
+
+            def _legacy_open_think() -> None:
+                if legacy_think_opened["yes"] or not trace_enabled:
+                    return
+                legacy_think_opened["yes"] = True
+                _legacy_delta("<think>\n")
+
+            def _legacy_close_think() -> None:
+                if not legacy_think_opened["yes"] or legacy_think_closed["yes"]:
+                    return
+                legacy_think_closed["yes"] = True
+                _legacy_delta("\n</think>\n\n")
+
+            def _emit_token(text: str) -> None:
+                if not text:
+                    return
+                _legacy_close_think()
                 assistant_chunks.append(text)
-                st.q.put(("delta", {"text": text}))
+                _put("token", {"text": text})
+                _legacy_delta(text)
 
-            def _send_chunked(text: str) -> None:
-                s = str(text or "")
-                if not s:
+            def _emit_reasoning(text: str) -> None:
+                if not trace_enabled:
                     return
-                step = 24
-                for i in range(0, len(s), step):
-                    if st.cancelled:
-                        break
-                    _send(s[i : i + step])
-                    time.sleep(0.01)
-
-            def _open_think() -> None:
-                if think_opened["yes"]:
+                if not text:
                     return
-                think_opened["yes"] = True
-                _send("<think>\n")
-
-            def _close_think() -> None:
-                if not think_opened["yes"] or think_closed["yes"]:
-                    return
-                think_closed["yes"] = True
-                _send("\n</think>\n\n")
+                _legacy_open_think()
+                _legacy_delta(text)
+                reasoning_chunks.append(text)
+                _put("reasoning", {"text": text})
 
             def _on_reasoning_delta(t: str) -> None:
-                _open_think()
-                _send(str(t or ""))
-
-            def _on_status(t: str) -> None:
-                _open_think()
-                _send(str(t or "") + "\n")
+                _emit_reasoning(str(t or ""))
 
             def _on_tool_start(tool_name: str, args_preview: str = "") -> None:
-                _open_think()
                 preview = (args_preview or "").strip()
-                if preview:
-                    _send(f"\n[tool] {tool_name}: {preview}\n")
-                else:
-                    _send(f"\n[tool] {tool_name}\n")
+                _put(
+                    "tool",
+                    {
+                        "event_type": "tool.started",
+                        "name": str(tool_name or ""),
+                        "preview": preview or None,
+                        "args": {},
+                    },
+                )
 
             def _on_tool_complete(tool_name: str, ok: bool = True) -> None:
-                _open_think()
-                _send(f"[tool] {tool_name} {'ok' if ok else 'failed'}\n")
-
-            first_assistant_delta = {"yes": False}
+                _put(
+                    "tool_complete",
+                    {
+                        "event_type": "tool.completed",
+                        "name": str(tool_name or ""),
+                        "is_error": not bool(ok),
+                    },
+                )
 
             def _on_assistant_delta(t: str) -> None:
-                if not first_assistant_delta["yes"]:
-                    first_assistant_delta["yes"] = True
-                    _close_think()
-                _send(str(t or ""))
+                _emit_token(str(t or ""))
+
+            class _ThinkTagDemuxer:
+                def __init__(self) -> None:
+                    self._buf = ""
+                    self._in_think = False
+
+                def feed(self, chunk: str) -> None:
+                    if not chunk:
+                        return
+                    self._buf += chunk
+                    self._drain()
+
+                def flush(self) -> None:
+                    self._drain(flush=True)
+
+                def _drain(self, *, flush: bool = False) -> None:
+                    while True:
+                        lo = self._buf.lower()
+                        open_i = lo.find("<think>")
+                        close_i = lo.find("</think>")
+                        if open_i == -1 and close_i == -1:
+                            if flush and self._buf:
+                                self._emit(self._buf)
+                                self._buf = ""
+                            return
+                        if open_i != -1 and (close_i == -1 or open_i < close_i):
+                            before = self._buf[:open_i]
+                            if before:
+                                self._emit(before)
+                            self._buf = self._buf[open_i + 7 :]
+                            self._in_think = True
+                            continue
+                        if close_i != -1:
+                            before = self._buf[:close_i]
+                            if before:
+                                self._emit(before)
+                            self._buf = self._buf[close_i + 8 :]
+                            self._in_think = False
+                            continue
+
+                def _emit(self, text: str) -> None:
+                    if not text:
+                        return
+                    if self._in_think:
+                        _emit_reasoning(text)
+                    else:
+                        _emit_token(text)
+
+            demux = _ThinkTagDemuxer()
 
             mode_used = {"v": "agent"}
             with _temporary_environ(env_updates):
                 AIAgent = _import_hermes_ai_agent()
+                if AIAgent is None and not _HERMES_AGENT_PREWARM_DONE.is_set():
+                    for _ in range(900):
+                        if st.cancelled:
+                            break
+                        if _HERMES_AGENT_PREWARM_DONE.wait(timeout=0.2):
+                            break
+                    AIAgent = _import_hermes_ai_agent()
                 if AIAgent is not None:
                     mode_used["v"] = "agent"
-                    _open_think()
-                    _send("正在初始化智能体…\n")
+                    resolved_provider: Optional[str] = None
+                    resolved_base_url: Optional[str] = None
+                    resolved_api_key: Optional[str] = None
+                    resolved_api_mode: Optional[str] = None
+                    try:
+                        provider_hint, base_url_hint = _resolve_provider_for_model(selected_model, global_cfg) if selected_model else (None, None)
+                        from hermes_cli.runtime_provider import resolve_runtime_provider  # type: ignore
+                        rt = resolve_runtime_provider(
+                            requested=provider_hint,
+                            explicit_base_url=base_url_hint,
+                            target_model=selected_model or None,
+                        )
+                        resolved_provider = str(rt.get("provider") or provider_hint or "").strip() or None
+                        resolved_base_url = str(rt.get("base_url") or base_url_hint or "").strip() or None
+                        resolved_api_key = str(rt.get("api_key") or "").strip() or None
+                        resolved_api_mode = str(rt.get("api_mode") or "").strip() or None
+                    except Exception:
+                        resolved_provider = None
+                        resolved_base_url = None
+                        resolved_api_key = None
+                        resolved_api_mode = None
+
+                    reasoning_cfg: Optional[dict] = None
+                    if str(reasoning_effort or "").strip() and str(reasoning_effort or "").strip().lower() != "none":
+                        eff = str(reasoning_effort or "").strip() or "medium"
+                        reasoning_cfg = {"enabled": True, "effort": eff}
+                    else:
+                        reasoning_cfg = {"enabled": False, "effort": "none"}
+
                     agent = AIAgent(
+                        base_url=resolved_base_url,
+                        api_key=resolved_api_key,
+                        provider=resolved_provider,
+                        api_mode=resolved_api_mode,
                         model=selected_model or "",
+                        platform="webui",
+                        quiet_mode=True,
                         session_id=hermes_session_id or None,
                         stream_delta_callback=_on_assistant_delta,
-                        reasoning_callback=_on_reasoning_delta if (show_reasoning is not False) else None,
+                        reasoning_callback=_on_reasoning_delta if model_reasoning_enabled else None,
                         tool_progress_callback=_on_tool_start,
                         tool_complete_callback=_on_tool_complete,
-                        status_callback=_on_status,
+                        reasoning_config=reasoning_cfg,
                     )
                     captured_session_id = getattr(agent, "session_id", None) or hermes_session_id
-                    result = agent.run_conversation(msg_text, stream_callback=None)
+                    def _stream_enable_noop(_: str) -> None:
+                        return
+                    result = agent.run_conversation(msg_text, stream_callback=_stream_enable_noop)
                     out_text = ""
                     if isinstance(result, dict):
                         out_text = str(result.get("final_response") or result.get("response") or "")
-                    if out_text and not first_assistant_delta["yes"]:
-                        _close_think()
-                        _send_chunked(out_text)
-                    if not think_closed["yes"]:
-                        _close_think()
+                    if out_text and not assistant_chunks:
+                        _emit_token(out_text)
                 else:
-                    hermes_bin_path = shutil.which("hermes")
-                    if not hermes_bin_path:
-                        raise RuntimeError("hermes not found and hermes-agent not importable")
-
-                    mode_used["v"] = "cli-pty"
-                    _open_think()
-                    _send("正在初始化智能体…\n")
-
-                    cmd: List[str] = [hermes_bin_path]
-                    if profile and profile != "default":
-                        cmd.extend(["-p", profile])
-                    cmd.extend(["chat", "-q", msg_text, "--source", "webui"])
-                    if hermes_session_id:
-                        cmd.extend(["--resume", hermes_session_id])
-
-                    env = os.environ.copy()
-                    env.update(_build_hermes_cli_env(profile_service, profile))
-                    env["PYTHONUNBUFFERED"] = "1"
-                    if resolved_ws:
-                        env["TERMINAL_CWD"] = str(resolved_ws)
-                        env["HERMES_WRITE_SAFE_ROOT"] = str(resolved_ws)
-
-                    parser = HermesCliStreamParser(opened_think=True)
-                    master_fd: Optional[int] = None
-                    slave_fd: Optional[int] = None
-
-                    try:
-                        master_fd, slave_fd = pty.openpty()
-                        proc = subprocess.Popen(
-                            cmd,
-                            stdin=slave_fd,
-                            stdout=slave_fd,
-                            stderr=slave_fd,
-                            env=env,
-                            cwd=resolved_ws or None,
-                            close_fds=True,
-                        )
-                        st.proc = proc
-                        try:
-                            os.close(slave_fd)
-                        except Exception:
-                            pass
-                        slave_fd = None
-
-                        try:
-                            os.set_blocking(master_fd, False)
-                        except Exception:
-                            pass
-
-                        while True:
-                            if st.cancelled:
-                                try:
-                                    proc.terminate()
-                                except Exception:
-                                    pass
-                                break
-
-                            if proc.poll() is not None:
-                                break
-
-                            r, _, _ = select.select([master_fd], [], [], 0.25)
-                            if not r:
-                                continue
-
-                            try:
-                                data = os.read(master_fd, 4096)
-                            except Exception:
-                                data = b""
-
-                            if not data:
-                                continue
-
-                            text = data.decode("utf-8", errors="ignore")
-                            st.q.put(("term", {"data": text}))
-                            emitted, sid = parser.feed(text)
-                            if sid:
-                                captured_session_id = sid
-                            if emitted:
-                                for part in emitted:
-                                    if part:
-                                        _send(part)
-
-                        try:
-                            proc.wait(timeout=2)
-                        except Exception:
-                            try:
-                                proc.kill()
-                            except Exception:
-                                pass
-                            try:
-                                proc.wait(timeout=2)
-                            except Exception:
-                                pass
-
-                        emitted, sid = parser.feed("", flush_partial=True)
-                        if sid:
-                            captured_session_id = sid
-                        if emitted:
-                            for part in emitted:
-                                if part:
-                                    _send(part)
-                    except Exception:
-                        mode_used["v"] = "cli"
-                        try:
-                            if slave_fd is not None:
-                                os.close(slave_fd)
-                        except Exception:
-                            pass
-                        try:
-                            if master_fd is not None:
-                                os.close(master_fd)
-                        except Exception:
-                            pass
-
-                        cmd_q: List[str] = [hermes_bin_path]
-                        if profile and profile != "default":
-                            cmd_q.extend(["-p", profile])
-                        cmd_q.extend(["chat", "-q", msg_text, "-Q", "--source", "webui"])
-                        if hermes_session_id:
-                            cmd_q.extend(["--resume", hermes_session_id])
-                        proc_q = subprocess.Popen(
-                            cmd_q,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT,
-                            text=True,
-                            bufsize=1,
-                            env=env,
-                            cwd=resolved_ws or None,
-                        )
-                        st.proc = proc_q
-                        out = ""
-                        if proc_q.stdout is not None:
-                            out = proc_q.stdout.read() or ""
-                        proc_q.wait()
-                        _close_think()
-                        if out:
-                            _send_chunked(out.strip())
-                    finally:
-                        try:
-                            if slave_fd is not None:
-                                os.close(slave_fd)
-                        except Exception:
-                            pass
-                        try:
-                            if master_fd is not None:
-                                os.close(master_fd)
-                        except Exception:
-                            pass
+                    detail = str(_HERMES_AGENT_IMPORT_LAST_ERROR.get("text") or "").strip()
+                    hint = "请在 AgentNow 后端环境执行 uv sync（确保已包含 hermes-agent 依赖），然后重启后端。"
+                    raise RuntimeError(
+                        "当前后端环境未能加载 hermes-agent（WebUI 的真实流式依赖它）。\n"
+                        + hint
+                        + ("\n\nimport traceback (tail):\n" + detail if detail else "")
+                    )
 
             if st.cancelled:
                 try:
@@ -1365,14 +1769,37 @@ def start_hermes_chat_stream(
                     pass
 
             full = "".join(assistant_chunks).strip()
+            thinking_full = "".join(reasoning_chunks).strip()
+            if not full and thinking_full and "⚕ Hermes" in thinking_full:
+                p = thinking_full.find("⚕ Hermes")
+                ls = thinking_full.rfind("\n", 0, p)
+                if ls == -1:
+                    ls = 0
+                le = thinking_full.find("\n", p)
+                if le == -1:
+                    le = p
+                derived = thinking_full[le:].strip()
+                prefix = thinking_full[:ls].strip()
+                if derived:
+                    full = derived
+                    thinking_full = prefix
 
             sid_out = captured_session_id or hermes_session_id
             if st.cancelled:
+                _legacy_close_think()
                 st.q.put(("cancel", {"ok": True, "session_id": sid_out, "mode": mode_used["v"]}))
             else:
+                _legacy_close_think()
+                try:
+                    if sid_out:
+                        service._ensure_session_title(profile, str(sid_out), title_seed_text)
+                        service._persist_thinking_record(profile, session_id=str(sid_out), answer=full, thinking=thinking_full)
+                except Exception:
+                    pass
                 st.q.put(("done", {"ok": True, "session_id": sid_out, "mode": mode_used["v"]}))
         except Exception as e:
             st.error = str(e)
+            _legacy_close_think()
             st.q.put(("error", {"ok": False, "message": str(e)}))
         finally:
             st.done.set()
@@ -1434,6 +1861,9 @@ def stream_sse_generator(stream_id: str):
         try:
             evt, payload = st.q.get(timeout=0.75)
             yield _sse_bytes(evt, payload)
+            if evt in {"done", "error", "cancel"}:
+                yield _sse_bytes("stream_end", {"stream_id": stream_id})
+                break
         except queue.Empty:
             if st.done.is_set():
                 break
