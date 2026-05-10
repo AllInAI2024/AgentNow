@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import asyncio
+import json
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -10,6 +12,7 @@ import yaml
 
 from app.models import User
 from app.schemas.user import APIResponse
+from app.services.auth_service import decode_access_token, SessionLocal
 from app.schemas.super_assistant import (
     SuperAssistantSession,
     SuperAssistantSessionListResponse,
@@ -269,6 +272,61 @@ def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.websocket("/chat/ws")
+async def chat_ws(
+    ws: WebSocket,
+    stream_id: str = Query(..., description="流ID"),
+    token: str = Query(..., description="Bearer token"),
+):
+    user_id = decode_access_token(token)
+    if user_id is None:
+        await ws.close(code=4401)
+        return
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None or not user.is_active:
+            await ws.close(code=4403)
+            return
+
+        st = get_stream(stream_id)
+        if st is None or st.user_id != user.id:
+            await ws.close(code=4404)
+            return
+
+        await ws.accept()
+
+        await ws.send_text(json.dumps({"event": "open", "data": {"ok": True, "stream_id": stream_id}}, ensure_ascii=False))
+
+        async def _q_get():
+            return await asyncio.to_thread(st.q.get, True, 0.75)
+
+        while True:
+            try:
+                evt, payload = await _q_get()
+                await ws.send_text(json.dumps({"event": evt, "data": payload}, ensure_ascii=False))
+                if evt in {"done", "error", "cancel"}:
+                    break
+            except Exception:
+                if st.done.is_set():
+                    break
+                try:
+                    await ws.send_text(json.dumps({"event": "ping", "data": {}}, ensure_ascii=False))
+                except Exception:
+                    break
+    except WebSocketDisconnect:
+        try:
+            cancel_stream(stream_id, user_id=user_id)
+        except Exception:
+            pass
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 @router.post(

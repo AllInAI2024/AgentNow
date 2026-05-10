@@ -14,11 +14,14 @@ import base64
 import mimetypes
 import select
 import pty
+import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple, List, Any
 from sqlalchemy.orm import Session
+import httpx
 
 import yaml
 
@@ -33,6 +36,7 @@ from app.services.hermes_service import hermes_service
 
 
 _SESSION_ID_RE = re.compile(r"session_id:\s*([0-9A-Za-z_-]+)")
+_SESSION_LINE_RE = re.compile(r"\bSession:\s*([0-9A-Za-z_-]+)\b")
 _RESUMED_LINE_RE = re.compile(r"(?m)^\s*↻\s*Resumed session.*$")
 _ANSI_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _ANSI_OSC_RE = re.compile(r"\x1b\][^\x07]*(?:\x07|\x1b\\)")
@@ -244,12 +248,85 @@ def _strip_ansi(s: str) -> str:
     return t
 
 
+_HERMES_AGENT_ENV_LOCK = threading.Lock()
+
+
+@contextmanager
+def _temporary_environ(updates: Dict[str, Optional[str]]):
+    with _HERMES_AGENT_ENV_LOCK:
+        keys = list((updates or {}).keys())
+        prev: Dict[str, Optional[str]] = {k: os.environ.get(k) for k in keys}
+        try:
+            for k, v in (updates or {}).items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = str(v)
+            yield
+        finally:
+            for k in keys:
+                old = prev.get(k)
+                if old is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = old
+
+
+def _import_hermes_ai_agent() -> Optional[type]:
+    base_home = _get_hermes_base_home()
+    agent_root = base_home / "hermes-agent"
+    if agent_root.exists() and str(agent_root) not in sys.path:
+        sys.path.insert(0, str(agent_root))
+    try:
+        from run_agent import AIAgent  # type: ignore
+        return AIAgent
+    except Exception:
+        return None
+
+
+def _safe_yaml_load(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def _deep_merge_fill(dst: dict, src: dict) -> dict:
+    out = dict(dst or {})
+    for k, v in (src or {}).items():
+        if k not in out:
+            out[k] = v
+            continue
+        if isinstance(out.get(k), dict) and isinstance(v, dict):
+            out[k] = _deep_merge_fill(out[k], v)
+    return out
+
+
+def _ensure_profile_config_has_base(profile_config_path: Path) -> None:
+    base_home = _get_hermes_base_home()
+    base_cfg_path = base_home / "config.yaml"
+    base_cfg = _safe_yaml_load(base_cfg_path)
+    profile_cfg = _safe_yaml_load(profile_config_path)
+    merged = _deep_merge_fill(profile_cfg, base_cfg)
+    try:
+        profile_config_path.write_text(
+            yaml.safe_dump(merged, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
 class HermesCliStreamParser:
-    def __init__(self):
+    def __init__(self, *, opened_think: bool = False):
         self._buf = ""
         self._in_reasoning = False
         self._in_answer = False
-        self._opened_think = False
+        self._opened_think = bool(opened_think)
+        self._in_tools_panel = False
+        self._in_trailer = False
         self._done = False
 
     def feed(self, chunk: str, *, flush_partial: bool = False) -> tuple[list[str], Optional[str]]:
@@ -282,7 +359,7 @@ class HermesCliStreamParser:
         return out, captured_session_id
 
     def _is_border_line(self, s: str) -> bool:
-        t = s.strip()
+        t = s.strip().replace(" ", "")
         if not t:
             return True
         border_chars = set("─┌┐└┘│╭╮╰╯═┃┏┓┗┛┠┨┯┷┳┻╱╲")
@@ -306,15 +383,40 @@ class HermesCliStreamParser:
         if m:
             sid = m.group(1)
             raw = _SESSION_ID_RE.sub("", raw)
+        m2 = _SESSION_LINE_RE.search(raw)
+        if m2 and not sid:
+            sid = m2.group(1)
+
+        s = raw.rstrip("\n")
+        t = s.strip()
+
+        if self._in_trailer:
+            m3 = re.search(r"\b--resume\s+([0-9A-Za-z_-]+)\b", s)
+            if m3 and not sid:
+                sid = m3.group(1)
+            if sid:
+                self._done = True
+            return out, sid
 
         if "Resume this session with:" in raw or raw.lstrip().startswith("Resume this session"):
-            self._done = True
+            self._in_answer = False
+            self._in_trailer = True
             if self._opened_think:
                 out.append("\n</think>\n\n")
                 self._opened_think = False
             return out, sid
 
-        s = raw.rstrip("\n")
+        if self._in_tools_panel:
+            if t.startswith("╰") or "╰" in t:
+                self._in_tools_panel = False
+            return out, sid
+
+        if "Available Tools" in s or "MCP Servers" in s or "Available Skills" in s:
+            self._in_tools_panel = True
+            return out, sid
+
+        if self._is_border_line(s):
+            return out, sid
 
         if not self._in_reasoning and not self._in_answer:
             if "┌─ Reasoning" in s or "┌─ 思考" in s or "┌─ 推理" in s:
@@ -323,19 +425,24 @@ class HermesCliStreamParser:
                     out.append("<think>\n")
                     self._opened_think = True
                 return out, sid
-            if ("╭─" in s or s.startswith("╭")) and ("Hermes" in s or "⚕" in s):
+            if (("⚕" in s and "Hermes" in s) or re.search(r"^\s*─\s*Hermes\b", s)):
                 self._in_answer = True
+                if self._opened_think:
+                    out.append("\n</think>\n\n")
+                    self._opened_think = False
+                return out, sid
+            if t.startswith("Query:") or "Initializing agent" in s:
+                if not self._opened_think:
+                    out.append("<think>\n")
+                    self._opened_think = True
+                if t:
+                    out.append(t + ("\n" if not allow_partial else ""))
                 return out, sid
             return out, sid
 
         if self._in_reasoning:
             if s.startswith("└") and "─" in s:
                 self._in_reasoning = False
-                if self._opened_think:
-                    out.append("\n</think>\n\n")
-                    self._opened_think = False
-                return out, sid
-            if self._is_border_line(s):
                 return out, sid
             content = self._clean_box_content(s)
             if content:
@@ -343,15 +450,14 @@ class HermesCliStreamParser:
             return out, sid
 
         if self._in_answer:
-            if (s.startswith("╰") and ("Hermes" in s or "⚕" in s)) or ("╰─" in s and "Hermes" in s):
+            if t.startswith("Session:") or t.startswith("Duration:") or t.startswith("Messages:") or t.startswith("Resume this session with:"):
                 self._in_answer = False
-                self._done = True
                 return out, sid
-            if self._is_border_line(s):
+            rule = t.replace(" ", "")
+            if rule and all((c == "─") for c in rule):
                 return out, sid
-            content = self._clean_box_content(s)
-            if content:
-                out.append(content + ("\n" if not allow_partial else ""))
+            if t:
+                out.append(t + ("\n" if not allow_partial else ""))
             return out, sid
 
         return out, sid
@@ -478,6 +584,10 @@ class StreamState:
     error: Optional[str] = None
     cancelled: bool = False
     proc: Optional[subprocess.Popen] = None
+    thread_id: Optional[int] = None
+    api_base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    run_id: Optional[str] = None
 
 
 class SuperAssistantService:
@@ -965,18 +1075,13 @@ def start_hermes_chat_stream(
         assistant_chunks: List[str] = []
         captured_session_id: Optional[str] = None
         try:
+            st.thread_id = threading.current_thread().ident
             profile_service = service._get_profile_service()
             global_cfg = _read_global_hermes_config()
-            stream_parser = HermesCliStreamParser()
             if reasoning_effort:
                 profile_service.update_profile_config(profile, {"agent": {"reasoning_effort": reasoning_effort}})
             if show_reasoning is not None:
-                profile_service.update_profile_config(
-                    profile,
-                    {"display": {"show_reasoning": bool(show_reasoning), "streaming": True}},
-                )
-            else:
-                profile_service.update_profile_config(profile, {"display": {"streaming": True}})
+                profile_service.update_profile_config(profile, {"display": {"show_reasoning": bool(show_reasoning)}})
             selected_model = (model or "").strip()
             provider_cfg = profile_service.get_profile_config(profile) or {}
             existing_model_cfg = provider_cfg.get("model", {})
@@ -1002,166 +1107,270 @@ def start_hermes_chat_stream(
                 if model_patch:
                     profile_service.update_profile_config(profile, {"model": model_patch})
 
-            hermes_bin = shutil.which("hermes") or "hermes"
-            cmd: List[str] = [hermes_bin]
-            if profile and profile != "default":
-                cmd.extend(["-p", profile])
-            cmd.extend(["chat", "-q", msg_text, "--source", "webui"])
-            if hermes_session_id:
-                cmd.extend(["--resume", hermes_session_id])
+            profile_dir = profile_service.get_profile_path(profile)
+            if profile_dir is None:
+                profile_dir = Path.home() / ".hermes" / "profiles" / profile
+            profile_config_path, _profile_env_path = profile_service.get_profile_config_path(profile)
+            _ensure_profile_config_has_base(profile_config_path)
 
-            env = os.environ.copy()
-            env.update(_build_hermes_cli_env(profile_service, profile))
+            env_updates: Dict[str, Optional[str]] = {}
+            env_updates.update({k: v for k, v in _build_hermes_cli_env(profile_service, profile).items()})
+            env_updates["HERMES_HOME"] = str(profile_dir)
+            env_updates["PYTHONUNBUFFERED"] = "1"
             if resolved_ws:
-                env["TERMINAL_CWD"] = str(resolved_ws)
-                env["HERMES_WRITE_SAFE_ROOT"] = str(resolved_ws)
-            env["PYTHONUNBUFFERED"] = "1"
-            env.setdefault("TERM", "xterm-256color")
+                env_updates["TERMINAL_CWD"] = str(resolved_ws)
+                env_updates["HERMES_WRITE_SAFE_ROOT"] = str(resolved_ws)
 
-            master_fd: Optional[int] = None
-            proc: Optional[subprocess.Popen] = None
-            try:
-                master_fd, slave_fd = pty.openpty()
-                proc = subprocess.Popen(
-                    cmd,
-                    stdin=slave_fd,
-                    stdout=slave_fd,
-                    stderr=slave_fd,
-                    bufsize=0,
-                    env=env,
-                    cwd=resolved_ws or None,
-                    close_fds=True,
-                )
-                try:
-                    os.close(slave_fd)
-                except Exception:
-                    pass
-            except Exception:
-                if master_fd is not None:
-                    try:
-                        os.close(master_fd)
-                    except Exception:
-                        pass
-                master_fd = None
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    env=env,
-                    cwd=resolved_ws or None,
-                )
+            think_opened = {"yes": False}
+            think_closed = {"yes": False}
 
-            st.proc = proc
-
-            pending = ""
-            last_partial_flush = _now_s()
-
-            def _emit(text: str, *, flush_partial: bool) -> None:
-                nonlocal captured_session_id
+            def _send(text: str) -> None:
                 if not text:
                     return
-                cleaned = _strip_ansi(text).replace("\r", "")
-                if not cleaned:
-                    return
-                chunks, sid = stream_parser.feed(cleaned, flush_partial=flush_partial)
-                if sid:
-                    captured_session_id = sid
-                for c in chunks:
-                    if not c:
-                        continue
-                    assistant_chunks.append(c)
-                    st.q.put(("delta", {"text": c}))
+                assistant_chunks.append(text)
+                st.q.put(("delta", {"text": text}))
 
-            if master_fd is None:
-                if proc.stdout is not None:
-                    for line in iter(proc.stdout.readline, ""):
-                        if not line:
-                            break
-                        if st.cancelled:
-                            break
-                        m = _SESSION_ID_RE.search(line)
-                        if m:
-                            captured_session_id = m.group(1)
-                            continue
-                        if _RESUMED_LINE_RE.search(line):
-                            continue
-                        _emit(line, flush_partial=False)
-            else:
-                try:
-                    while True:
-                        if st.cancelled:
-                            break
-                        if proc.poll() is not None:
-                            break
-                        r, _, _ = select.select([master_fd], [], [], 0.12)
-                        if not r:
-                            now = _now_s()
-                            if pending and (now - last_partial_flush) >= 0.25 and "session_id:" not in pending:
-                                _emit(pending, flush_partial=True)
-                                pending = ""
-                                last_partial_flush = now
-                            continue
+            def _send_chunked(text: str) -> None:
+                s = str(text or "")
+                if not s:
+                    return
+                step = 24
+                for i in range(0, len(s), step):
+                    if st.cancelled:
+                        break
+                    _send(s[i : i + step])
+                    time.sleep(0.01)
+
+            def _open_think() -> None:
+                if think_opened["yes"]:
+                    return
+                think_opened["yes"] = True
+                _send("<think>\n")
+
+            def _close_think() -> None:
+                if not think_opened["yes"] or think_closed["yes"]:
+                    return
+                think_closed["yes"] = True
+                _send("\n</think>\n\n")
+
+            def _on_reasoning_delta(t: str) -> None:
+                _open_think()
+                _send(str(t or ""))
+
+            def _on_status(t: str) -> None:
+                _open_think()
+                _send(str(t or "") + "\n")
+
+            def _on_tool_start(tool_name: str, args_preview: str = "") -> None:
+                _open_think()
+                preview = (args_preview or "").strip()
+                if preview:
+                    _send(f"\n[tool] {tool_name}: {preview}\n")
+                else:
+                    _send(f"\n[tool] {tool_name}\n")
+
+            def _on_tool_complete(tool_name: str, ok: bool = True) -> None:
+                _open_think()
+                _send(f"[tool] {tool_name} {'ok' if ok else 'failed'}\n")
+
+            first_assistant_delta = {"yes": False}
+
+            def _on_assistant_delta(t: str) -> None:
+                if not first_assistant_delta["yes"]:
+                    first_assistant_delta["yes"] = True
+                    _close_think()
+                _send(str(t or ""))
+
+            mode_used = {"v": "agent"}
+            with _temporary_environ(env_updates):
+                AIAgent = _import_hermes_ai_agent()
+                if AIAgent is not None:
+                    mode_used["v"] = "agent"
+                    _open_think()
+                    _send("正在初始化智能体…\n")
+                    agent = AIAgent(
+                        model=selected_model or "",
+                        session_id=hermes_session_id or None,
+                        stream_delta_callback=_on_assistant_delta,
+                        reasoning_callback=_on_reasoning_delta if (show_reasoning is not False) else None,
+                        tool_progress_callback=_on_tool_start,
+                        tool_complete_callback=_on_tool_complete,
+                        status_callback=_on_status,
+                    )
+                    captured_session_id = getattr(agent, "session_id", None) or hermes_session_id
+                    result = agent.run_conversation(msg_text, stream_callback=None)
+                    out_text = ""
+                    if isinstance(result, dict):
+                        out_text = str(result.get("final_response") or result.get("response") or "")
+                    if out_text and not first_assistant_delta["yes"]:
+                        _close_think()
+                        _send_chunked(out_text)
+                    if not think_closed["yes"]:
+                        _close_think()
+                else:
+                    hermes_bin_path = shutil.which("hermes")
+                    if not hermes_bin_path:
+                        raise RuntimeError("hermes not found and hermes-agent not importable")
+
+                    mode_used["v"] = "cli-pty"
+                    _open_think()
+                    _send("正在初始化智能体…\n")
+
+                    cmd: List[str] = [hermes_bin_path]
+                    if profile and profile != "default":
+                        cmd.extend(["-p", profile])
+                    cmd.extend(["chat", "-q", msg_text, "--source", "webui"])
+                    if hermes_session_id:
+                        cmd.extend(["--resume", hermes_session_id])
+
+                    env = os.environ.copy()
+                    env.update(_build_hermes_cli_env(profile_service, profile))
+                    env["PYTHONUNBUFFERED"] = "1"
+                    if resolved_ws:
+                        env["TERMINAL_CWD"] = str(resolved_ws)
+                        env["HERMES_WRITE_SAFE_ROOT"] = str(resolved_ws)
+
+                    parser = HermesCliStreamParser(opened_think=True)
+                    master_fd: Optional[int] = None
+                    slave_fd: Optional[int] = None
+
+                    try:
+                        master_fd, slave_fd = pty.openpty()
+                        proc = subprocess.Popen(
+                            cmd,
+                            stdin=slave_fd,
+                            stdout=slave_fd,
+                            stderr=slave_fd,
+                            env=env,
+                            cwd=resolved_ws or None,
+                            close_fds=True,
+                        )
+                        st.proc = proc
                         try:
-                            data = os.read(master_fd, 4096)
+                            os.close(slave_fd)
                         except Exception:
-                            break
-                        if not data:
-                            break
+                            pass
+                        slave_fd = None
+
                         try:
-                            text = data.decode("utf-8", errors="replace")
+                            os.set_blocking(master_fd, False)
                         except Exception:
-                            text = str(data)
-                        pending += text
+                            pass
 
                         while True:
-                            nl = pending.find("\n")
-                            if nl == -1:
+                            if st.cancelled:
+                                try:
+                                    proc.terminate()
+                                except Exception:
+                                    pass
                                 break
-                            line = pending[: nl + 1]
-                            pending = pending[nl + 1 :]
-                            m = _SESSION_ID_RE.search(line)
-                            if m:
-                                captured_session_id = m.group(1)
+
+                            if proc.poll() is not None:
+                                break
+
+                            r, _, _ = select.select([master_fd], [], [], 0.25)
+                            if not r:
                                 continue
-                            if _RESUMED_LINE_RE.search(line):
+
+                            try:
+                                data = os.read(master_fd, 4096)
+                            except Exception:
+                                data = b""
+
+                            if not data:
                                 continue
-                            _emit(line, flush_partial=False)
-                        now = _now_s()
-                        if pending and (now - last_partial_flush) >= 0.2:
-                            if "session_id:" not in pending:
-                                _emit(pending, flush_partial=True)
-                                pending = ""
-                            last_partial_flush = now
-                finally:
-                    if pending and "session_id:" not in pending:
-                        _emit(pending, flush_partial=True)
-                    try:
-                        os.close(master_fd)
+
+                            text = data.decode("utf-8", errors="ignore")
+                            st.q.put(("term", {"data": text}))
+                            emitted, sid = parser.feed(text)
+                            if sid:
+                                captured_session_id = sid
+                            if emitted:
+                                for part in emitted:
+                                    if part:
+                                        _send(part)
+
+                        try:
+                            proc.wait(timeout=2)
+                        except Exception:
+                            try:
+                                proc.kill()
+                            except Exception:
+                                pass
+                            try:
+                                proc.wait(timeout=2)
+                            except Exception:
+                                pass
+
+                        emitted, sid = parser.feed("", flush_partial=True)
+                        if sid:
+                            captured_session_id = sid
+                        if emitted:
+                            for part in emitted:
+                                if part:
+                                    _send(part)
                     except Exception:
-                        pass
+                        mode_used["v"] = "cli"
+                        try:
+                            if slave_fd is not None:
+                                os.close(slave_fd)
+                        except Exception:
+                            pass
+                        try:
+                            if master_fd is not None:
+                                os.close(master_fd)
+                        except Exception:
+                            pass
+
+                        cmd_q: List[str] = [hermes_bin_path]
+                        if profile and profile != "default":
+                            cmd_q.extend(["-p", profile])
+                        cmd_q.extend(["chat", "-q", msg_text, "-Q", "--source", "webui"])
+                        if hermes_session_id:
+                            cmd_q.extend(["--resume", hermes_session_id])
+                        proc_q = subprocess.Popen(
+                            cmd_q,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            bufsize=1,
+                            env=env,
+                            cwd=resolved_ws or None,
+                        )
+                        st.proc = proc_q
+                        out = ""
+                        if proc_q.stdout is not None:
+                            out = proc_q.stdout.read() or ""
+                        proc_q.wait()
+                        _close_think()
+                        if out:
+                            _send_chunked(out.strip())
+                    finally:
+                        try:
+                            if slave_fd is not None:
+                                os.close(slave_fd)
+                        except Exception:
+                            pass
+                        try:
+                            if master_fd is not None:
+                                os.close(master_fd)
+                        except Exception:
+                            pass
 
             if st.cancelled:
                 try:
-                    proc.terminate()
+                    if st.proc is not None:
+                        st.proc.terminate()
                 except Exception:
                     pass
 
-            rc = proc.wait()
             full = "".join(assistant_chunks).strip()
-            if rc != 0:
-                if st.cancelled:
-                    st.q.put(("cancel", {"ok": True, "session_id": hermes_session_id, "mode": "cli"}))
-                    return
-                err = (full or f"Hermes CLI exited with code {rc}").strip()
-                raise RuntimeError(err)
 
             sid_out = captured_session_id or hermes_session_id
             if st.cancelled:
-                st.q.put(("cancel", {"ok": True, "session_id": sid_out, "mode": "cli"}))
+                st.q.put(("cancel", {"ok": True, "session_id": sid_out, "mode": mode_used["v"]}))
             else:
-                st.q.put(("done", {"ok": True, "session_id": sid_out, "mode": "cli"}))
+                st.q.put(("done", {"ok": True, "session_id": sid_out, "mode": mode_used["v"]}))
         except Exception as e:
             st.error = str(e)
             st.q.put(("error", {"ok": False, "message": str(e)}))
@@ -1189,6 +1398,16 @@ def cancel_stream(stream_id: str, *, user_id: int) -> bool:
     if st.user_id != user_id:
         return False
     st.cancelled = True
+    try:
+        base_home = _get_hermes_base_home()
+        agent_root = base_home / "hermes-agent"
+        if agent_root.exists() and str(agent_root) not in sys.path:
+            sys.path.insert(0, str(agent_root))
+        from tools.interrupt import set_interrupt  # type: ignore
+        if st.thread_id is not None:
+            set_interrupt(True, thread_id=st.thread_id)
+    except Exception:
+        pass
     if st.proc is not None:
         try:
             st.proc.terminate()
