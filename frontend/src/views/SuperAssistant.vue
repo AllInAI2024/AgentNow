@@ -120,11 +120,15 @@
                   </div>
                   <div class="message-content">
                     <div class="message-bubble" :class="getBubbleClass(msg)">
-                      <div
-                        v-if="msg.role === 'assistant'"
-                        class="message-text markdown-content"
-                        v-html="renderAssistantHtml(msg.content)"
-                      ></div>
+                      <template v-if="msg.role === 'assistant'">
+                        <div v-if="isStreamingTerminal(msg)" class="assistant-terminal-wrap">
+                          <details class="assistant-thinking-details" open>
+                            <summary>思考过程</summary>
+                            <div class="assistant-terminal-surface" :ref="setActiveTerminalSurface"></div>
+                          </details>
+                        </div>
+                        <div v-else class="message-text markdown-content" v-html="renderAssistantHtml(msg.content, msg)"></div>
+                      </template>
                       <div v-else class="message-text">{{ msg.content }}</div>
                     </div>
                   </div>
@@ -248,9 +252,15 @@ const loadingWorkspaces = ref(false)
 const selectedWorkspace = ref<string>('')
 
 let streamAbort: AbortController | null = null
+let streamWs: WebSocket | null = null
 const activeStreamId = ref<string | null>(null)
 const cancelRequested = ref(false)
 const activeAssistantMsg = ref<SuperAssistantMessage | null>(null)
+const terminalStreaming = ref(false)
+let terminalSurface: HTMLElement | null = null
+let terminalInstance: any = null
+let terminalFit: any = null
+let terminalPending = ''
 
 marked.setOptions({
   breaks: true,
@@ -270,9 +280,82 @@ const normalizeText = (content: string | null | undefined) => {
   return String(content || '').replace(/\u200b/g, '').trim()
 }
 
+const escapeHtml = (s: string) => {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+const isStreamingTerminal = (msg: SuperAssistantMessage) => {
+  return !!(terminalStreaming.value && sending.value && activeAssistantMsg.value === msg)
+}
+
+const setActiveTerminalSurface = (refEl: any) => {
+  const el = (refEl && (refEl as any).$el) ? (refEl as any).$el : refEl
+  terminalSurface = el instanceof HTMLElement ? el : null
+  if (terminalSurface && terminalStreaming.value) ensureTerminal()
+}
+
+const ensureTerminal = () => {
+  if (!terminalSurface) return
+  if (terminalInstance) return
+  const w = window as any
+  const TerminalCls = w.Terminal
+  if (typeof TerminalCls !== 'function') return
+  terminalInstance = new TerminalCls({
+    cursorBlink: true,
+    fontSize: 13,
+    scrollback: 1200,
+    convertEol: true,
+  })
+  if (w.FitAddon && typeof w.FitAddon.FitAddon === 'function') {
+    terminalFit = new w.FitAddon.FitAddon()
+    terminalInstance.loadAddon(terminalFit)
+  }
+  terminalInstance.open(terminalSurface)
+  try { terminalFit?.fit?.() } catch {}
+  if (terminalPending) {
+    terminalInstance.write(terminalPending)
+    terminalPending = ''
+  }
+}
+
+const writeTerminal = (chunk: string) => {
+  if (!chunk) return
+  if (!terminalStreaming.value) terminalStreaming.value = true
+  if (!terminalInstance) {
+    terminalPending += chunk
+    nextTick(() => ensureTerminal())
+    return
+  }
+  terminalInstance.write(chunk)
+}
+
+const resetTerminal = () => {
+  terminalStreaming.value = false
+  terminalPending = ''
+  try { terminalInstance?.dispose?.() } catch {}
+  terminalInstance = null
+  terminalFit = null
+  terminalSurface = null
+}
+
 const splitAssistantParts = (content: string | null | undefined): { thinking: string; conclusion: string } => {
   const t = normalizeText(content)
   if (!t) return { thinking: '', conclusion: '' }
+
+  const openIdx = t.toLowerCase().indexOf('<think>')
+  if (openIdx >= 0) {
+    const closeIdx = t.toLowerCase().indexOf('</think>', openIdx + 7)
+    if (closeIdx === -1) {
+      const before = t.slice(0, openIdx).trim()
+      const after = t.slice(openIdx + 7).trim()
+      return { thinking: after, conclusion: before }
+    }
+  }
 
   const thinkTagRe = /<think>\s*([\s\S]*?)\s*<\/think>/gi
   const thinkMatches = Array.from(t.matchAll(thinkTagRe))
@@ -315,8 +398,37 @@ const splitAssistantParts = (content: string | null | undefined): { thinking: st
   return { thinking: thinkingParts.join('\n\n'), conclusion: conclusionParts.join('\n\n') }
 }
 
-const renderAssistantHtml = (content: string | null | undefined): string => {
+const renderAssistantHtml = (content: string | null | undefined, msg?: SuperAssistantMessage): string => {
   const { thinking, conclusion } = splitAssistantParts(content)
+  const isStreamingThisMsg = !!(sending.value && msg && activeAssistantMsg.value === msg)
+  if (isStreamingThisMsg) {
+    if (thinking && !conclusion) {
+      return `
+        <details class="assistant-thinking-details" open>
+          <summary>思考过程</summary>
+          <pre class="assistant-streaming-raw">${escapeHtml(thinking)}</pre>
+        </details>
+      `
+    }
+    if (!conclusion) return `<pre class="assistant-streaming-raw">${escapeHtml(thinking)}</pre>`
+    if (!thinking) return `<pre class="assistant-streaming-raw">${escapeHtml(conclusion)}</pre>`
+    return `
+      <details class="assistant-thinking-details" open>
+        <summary>思考过程</summary>
+        <pre class="assistant-streaming-raw">${escapeHtml(thinking)}</pre>
+      </details>
+      <pre class="assistant-streaming-raw">${escapeHtml(conclusion)}</pre>
+    `
+  }
+  if (thinking && !conclusion) {
+    const thinkingHtml = renderMarkdown(thinking)
+    return `
+      <details class="assistant-thinking-details" open>
+        <summary>思考过程</summary>
+        <div class="assistant-thinking-body markdown-content">${thinkingHtml}</div>
+      </details>
+    `
+  }
   if (!conclusion) return renderMarkdown(thinking)
   if (!thinking) return renderMarkdown(conclusion)
   const thinkingHtml = renderMarkdown(thinking)
@@ -597,90 +709,103 @@ const handleDeleteSession = async (sessionId: string) => {
   }
 }
 
-const parseSseEvent = (raw: string): Array<{ event: string; data: string }> => {
-  const blocks = raw.split('\n\n').filter(Boolean)
-  const out: Array<{ event: string; data: string }> = []
-  for (const b of blocks) {
-    const lines = b.split('\n')
-    let event = 'message'
-    const dataLines: string[] = []
-    for (const line of lines) {
-      if (line.startsWith(':')) continue
-      if (line.startsWith('event:')) event = line.slice(6).trim()
-      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
-    }
-    out.push({ event, data: dataLines.join('\n') })
+const parseSseEventBlock = (block: string): Array<{ event: string; data: string }> => {
+  const lines = block.split(/\r?\n/)
+  let event = 'message'
+  const dataLines: string[] = []
+  for (const line of lines) {
+    if (!line) continue
+    if (line.startsWith(':')) continue
+    if (line.startsWith('event:')) event = line.slice(6).trim()
+    else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
   }
-  return out
+  if (dataLines.length === 0 && event === 'message') return []
+  return [{ event, data: dataLines.join('\n') }]
+}
+
+const findSseDelimiter = (s: string): { idx: number; len: number } => {
+  const crlf = s.indexOf('\r\n\r\n')
+  const lf = s.indexOf('\n\n')
+  if (crlf !== -1 && (lf === -1 || crlf < lf)) return { idx: crlf, len: 4 }
+  if (lf !== -1) return { idx: lf, len: 2 }
+  return { idx: -1, len: 0 }
 }
 
 const streamChat = async (streamId: string, onDelta: (text: string) => void): Promise<string | null> => {
   if (streamAbort) streamAbort.abort()
   streamAbort = new AbortController()
+  if (streamWs) {
+    try { streamWs.close() } catch {}
+    streamWs = null
+  }
 
   const token = userStore.token
-  const resp = await fetch(`/api/v1/assistant/chat/stream?stream_id=${encodeURIComponent(streamId)}`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    signal: streamAbort.signal,
-  })
-  if (!resp.ok || !resp.body) {
-    throw new Error('stream failed')
-  }
-  const reader = resp.body.getReader()
-  const decoder = new TextDecoder('utf-8')
-  let buffer = ''
-  let finalSessionId: string | null = null
+  const baseHost = import.meta.env.DEV ? `${window.location.hostname}:5117` : window.location.host
+  const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const wsUrl = `${wsProto}://${baseHost}/api/v1/assistant/chat/ws?stream_id=${encodeURIComponent(streamId)}&token=${encodeURIComponent(token)}`
 
-  try {
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      while (true) {
-        const idx = buffer.indexOf('\n\n')
-        if (idx === -1) break
-        const chunk = buffer.slice(0, idx)
-        buffer = buffer.slice(idx + 2)
-        const events = parseSseEvent(chunk + '\n\n')
-        for (const evt of events) {
-          if (evt.event === 'delta') {
-            if (cancelRequested.value) continue
-            try {
-              const payload = JSON.parse(evt.data)
-              onDelta(String(payload.text || ''))
-            } catch {
-              onDelta(evt.data)
-            }
-          } else if (evt.event === 'error') {
-            let msg = '对话失败'
-            try {
-              const payload = JSON.parse(evt.data)
-              msg = String(payload.message || msg)
-            } catch {}
-            throw new Error(msg)
-          } else if (evt.event === 'cancel') {
-            throw new Error('已中断')
-          } else if (evt.event === 'done') {
-            try {
-              const payload = JSON.parse(evt.data)
-              const sid = String(payload.session_id || '').trim()
-              if (sid) finalSessionId = sid
-            } catch {}
-          }
-        }
+  return await new Promise<string | null>((resolve, reject) => {
+    let finalSessionId: string | null = null
+    let opened = false
+    const ws = new WebSocket(wsUrl)
+    streamWs = ws
+
+    const cleanup = () => {
+      if (streamWs === ws) streamWs = null
+      try { ws.close() } catch {}
+    }
+
+    ws.onopen = () => {
+      opened = true
+    }
+    ws.onerror = () => {
+      if (cancelRequested.value) return
+      cleanup()
+      reject(new Error('stream failed'))
+    }
+    ws.onmessage = (ev) => {
+      if (cancelRequested.value) return
+      let msg: any = null
+      try {
+        msg = JSON.parse(String(ev.data || '{}'))
+      } catch {
+        return
+      }
+      const event = String(msg.event || '')
+      const data = msg.data
+      if (event === 'delta') {
+        onDelta(String((data && data.text) || ''))
+      } else if (event === 'term') {
+        writeTerminal(String((data && (data.data ?? data.text)) || ''))
+      } else if (event === 'done') {
+        const sid = String((data && data.session_id) || '').trim()
+        if (sid) finalSessionId = sid
+        cleanup()
+        resolve(finalSessionId)
+      } else if (event === 'cancel') {
+        cleanup()
+        reject(new Error('已中断'))
+      } else if (event === 'error') {
+        const m = String((data && data.message) || '对话失败')
+        cleanup()
+        reject(new Error(m))
       }
     }
-    return finalSessionId
-  } catch (e) {
-    const msg = String((e as Error)?.message || e)
-    if (cancelRequested.value && /aborted/i.test(msg)) {
-      throw new Error('已中断')
+    ws.onclose = () => {
+      if (cancelRequested.value) {
+        cleanup()
+        reject(new Error('已中断'))
+        return
+      }
+      if (!opened) {
+        cleanup()
+        reject(new Error('stream failed'))
+        return
+      }
+      cleanup()
+      resolve(finalSessionId)
     }
-    throw e
-  }
+  })
 }
 
 const handleCancel = async () => {
@@ -701,6 +826,12 @@ const handleCancel = async () => {
         await superAssistantApi.chatCancel(sid)
       } catch {
       } finally {
+        if (streamAbort) streamAbort.abort()
+        if (streamWs) {
+          try { streamWs.close() } catch {}
+          streamWs = null
+        }
+        resetTerminal()
         sending.value = false
         isTyping.value = false
         activeStreamId.value = null
@@ -716,6 +847,7 @@ const handleSend = async () => {
   sending.value = true
   isTyping.value = true
   cancelRequested.value = false
+  resetTerminal()
   try {
     const sid = currentSessionId.value || undefined
     const usedModel = selectedModel.value
@@ -765,14 +897,27 @@ const handleSend = async () => {
     const streamId = res.data.stream_id
     activeStreamId.value = streamId
 
-    const newSid = await streamChat(streamId, (delta) => {
-      assistantMsg.content += delta
+    let pending = ''
+    let raf = 0
+    const flushPending = () => {
+      raf = 0
+      if (!pending) return
+      assistantMsg.content += pending
+      pending = ''
       scrollToBottom()
+    }
+
+    const newSid = await streamChat(streamId, (delta) => {
+      pending += delta
+      if (!raf) raf = requestAnimationFrame(flushPending)
     })
+    if (raf) cancelAnimationFrame(raf)
+    flushPending()
 
     isTyping.value = false
     activeStreamId.value = null
     activeAssistantMsg.value = null
+    resetTerminal()
     await loadSessions()
     const finalSid = (newSid || sid || '').trim()
     if (finalSid) {
@@ -792,6 +937,7 @@ const handleSend = async () => {
     }
     activeStreamId.value = null
     activeAssistantMsg.value = null
+    resetTerminal()
   } finally {
     inputMessage.value = ''
     sending.value = false
@@ -1228,6 +1374,32 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   font-size: 12px;
   color: #4e5969;
+}
+
+.assistant-streaming-raw {
+  margin: 8px 0 0 0;
+  padding: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  color: inherit;
+  background: transparent;
+  border: none;
+}
+
+.assistant-terminal-wrap {
+  margin-top: 8px;
+}
+
+.assistant-terminal-surface {
+  margin-top: 8px;
+  height: 220px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(200, 204, 212, 0.9);
+  background: rgba(19, 20, 22, 0.96);
 }
 
 .assistant-conclusion-body {
