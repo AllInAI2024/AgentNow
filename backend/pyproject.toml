@@ -12,6 +12,7 @@ dependencies = [
     "cryptography>=42.0.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
+    "hermes-agent @ git+https://github.com/NousResearch/hermes-agent.git@v2026.4.30",
     "python-jose[cryptography]>=3.3.0",
     "bcrypt>=4.1.0",
     "python-multipart>=0.0.6",
@@ -40,6 +41,9 @@ packages = ["app"]
 [tool.hatch.build.targets.sdist]
 include = ["app/", "data/", "*.md", "*.toml", ".env.example"]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -57,6 +61,7 @@ dependencies = [
     "cryptography>=42.0.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
+    "hermes-agent @ git+https://github.com/NousResearch/hermes-agent.git@v2026.4.30",
     "python-jose[cryptography]>=3.3.0",
     "bcrypt>=4.1.0",
     "python-multipart>=0.0.6",

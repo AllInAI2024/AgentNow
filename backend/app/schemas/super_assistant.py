@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class SuperAssistantMessage(BaseModel):
     role: Literal["user", "assistant"] = Field(..., description="消息角色")
     content: str = Field("", description="消息内容")
+    thinking: Optional[str] = Field(None, description="思考过程（可选）")
     ts: float = Field(..., description="时间戳（秒）")
 
 

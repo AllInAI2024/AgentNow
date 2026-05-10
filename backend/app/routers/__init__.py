@@ -7,7 +7,7 @@ from app.routers.knowledge import router as knowledge_router
 from app.routers.hermes import router as hermes_router
 from app.routers.agent_template import router as agent_template_router
 from app.routers.agent import router as agent_router
-from app.routers.super_assistant import router as super_assistant_router
+from app.routers.super_assistant import router as super_assistant_router, webui_compat_router
 
 __all__ = [
     "auth_router",
@@ -20,4 +20,5 @@ __all__ = [
     "agent_template_router",
     "agent_router",
     "super_assistant_router",
+    "webui_compat_router",
 ]
